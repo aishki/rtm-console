@@ -6,7 +6,9 @@ import { useOpenCounts, usePerms } from "@/lib/client/hooks";
 import { useConsole } from "@/lib/client/store";
 import { TABS } from "@/lib/ui/palette";
 import type { TabId } from "@/lib/types";
-import { CarelonMark, LogoLockup } from "@/components/ui/LogoLockup";
+import { CarelonLogo, CarelonMark, carelonClearSpace } from "@/components/ui/LogoLockup";
+
+const LOGO_HEIGHT = 22;
 
 /** Sticky white bar: logos, product name, role-filtered tabs with badges, viewer chip. */
 export function Navbar({ current }: { current: TabId | undefined }) {
@@ -20,8 +22,9 @@ export function Navbar({ current }: { current: TabId | undefined }) {
   return (
     <div className="flex flex-wrap items-center gap-x-7 px-4 shadow-[inset_0_-1px_0_var(--border-hairline)] sm:px-8">
       <div className="order-none flex h-16 min-w-0 shrink-0 items-center gap-5 sm:h-[81px]">
-        <div className="hidden items-center gap-5 w720:flex">
-          <LogoLockup height={28} gap={16} />
+        {/* The logo carries its own clear space; the page gutter already covers its left side. */}
+        <div className="hidden items-center w720:flex" style={{ marginLeft: -carelonClearSpace(LOGO_HEIGHT) }}>
+          <CarelonLogo height={LOGO_HEIGHT} />
           <div className="h-8 w-px bg-hairline" />
         </div>
         <div className="w720:hidden"><CarelonMark size={32} /></div>

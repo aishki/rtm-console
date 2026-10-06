@@ -5,6 +5,7 @@ import { type ReactNode, useEffect } from "react";
 import { usePerms } from "@/lib/client/hooks";
 import { connect, disconnect, useConsole } from "@/lib/client/store";
 import { TABS } from "@/lib/ui/palette";
+import { BitsLogo } from "@/components/ui/LogoLockup";
 import { ContextBar } from "./ContextBar";
 import { Navbar } from "./Navbar";
 import { NudgePopup } from "./NudgePopup";
@@ -17,7 +18,10 @@ function Footer() {
       <span><b className="text-ink">Escalation ladder:</b> Nudge, then Leader, then Ops (per-rule routes configurable).</span>
       <span><b className="text-ink">3× rule:</b> the third instance assigns an incident number and opens an investigation.</span>
       <span><b className="text-ink">Views:</b> TL sees direct reports · Manager sees their span, incident tiles and rules admin · Admin sees everything · Senior Leader sees dashboards · Agent sees their own pop-ups.</span>
-      <span className="ml-auto">© 2026 CGSPH. All rights reserved.</span>
+      <div className="ml-auto flex flex-wrap items-center gap-x-6 gap-y-2">
+        <span className="inline-flex items-center gap-2">Powered by <BitsLogo height={28} /></span>
+        <span>© 2026 CGSPH. All rights reserved.</span>
+      </div>
     </footer>
   );
 }
