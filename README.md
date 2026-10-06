@@ -2,7 +2,24 @@
 
 Real-time monitoring and escalation for the live floor. Agent states flow from the Gencloud/NiceIEX feed through a configurable rules engine, and breaches climb a ladder: **Nudge (agent) → Leader (TL) → Ops (Ops + Manager, with an incident number)**. Five role views (Admin/WFM, Senior Leader, Manager, Team Lead/AM, Agent) scope every number to the viewer's span.
 
-Next.js (App Router) + React + TypeScript, styled with the BITS Design System tokens.
+Next.js 16 (App Router) + React 19 + TypeScript + Tailwind v4, styled with the BITS Design System tokens.
+
+This README is the developer handoff. It covers what is built, what is stubbed, and where each remaining piece of work plugs in.
+
+## Status
+
+| Area | State |
+| --- | --- |
+| Rules engine, escalation, scoping, permissions | Done, unit tested |
+| Five screens, layout chrome, CSV replay dialog | Done, checked against the design reference |
+| API routes with server-side permission checks | Done |
+| CSV replay (upload, mapping, 60× run) | Done |
+| Floor simulator | Done, dev only |
+| **Gencloud/NiceIEX feed adapter** | **Stub.** See [Backend work 1](#1-gencloud-feed-adapter) |
+| **SSO (role and span from the session)** | **Not wired.** See [Backend work 2](#2-sso) |
+| **Persistence** | **None, all state is in memory.** See [Backend work 3](#3-persistence) |
+| Incident-report form ("Open incident draft") | Stub, shows a toast only |
+| Elevance Sans font | Files not supplied; system UI font renders instead |
 
 ## Run it
 
@@ -24,58 +41,207 @@ npm run dev        # http://localhost:3000
 | Variable | Meaning |
 | --- | --- |
 | `NEXT_PUBLIC_FEED=sim` | Use the floor simulator. Dev only: it is ignored when `NODE_ENV=production`. Any other value uses the Gencloud adapter. |
-| `NEXT_PUBLIC_VIEW_AS=1` | Dev/admin flag for the "View as" role selector. Without it every API route answers 401 until SSO is wired in `lib/server/session.ts`. |
-| `GENCLOUD_API_BASE`, `GENCLOUD_CLIENT_ID`, `GENCLOUD_CLIENT_SECRET` | Read by the Gencloud adapter (still a stub). |
+| `NEXT_PUBLIC_VIEW_AS=1` | Dev/admin flag for the "View as" role selector. **Without it every API route answers 401**, because no SSO exists yet. |
+| `GENCLOUD_API_BASE`, `GENCLOUD_CLIENT_ID`, `GENCLOUD_CLIENT_SECRET` | Passed to the Gencloud adapter (currently unused by the stub). |
+
+`.env*` files are gitignored except `.env.example`.
 
 ### Logos
 
-The brand logo PNGs are not in the repository. Copy `carelon-global-solutions.png`, `opssup-logo.png`, `bits-logo.png` and `carelon-icon-mark.png` from the design handoff (`design/assets/logos`) into `public/assets/logos/`.
+The brand logo PNGs are not in the repository. Copy `carelon-global-solutions.png`, `opssup-logo.png`, `bits-logo.png` and `carelon-icon-mark.png` from the design handoff (`design/assets/logos`) into `public/assets/logos/`. Without them the navbar and nudge show broken images.
 
-## Layout
+### What you see in each mode
+
+- **Dev with `NEXT_PUBLIC_FEED=sim`:** 199 simulated agents in 10 teams, starting at 08:15 with 15 minutes of history, random repeat offenders, and one 44-second feed outage four minutes in.
+- **Production build, or any non-sim feed:** an empty floor and "Gencloud not responding · feed stale Ns", because the Gencloud adapter delivers nothing yet. This is expected.
+
+## Architecture
+
+```
+ Gencloud / NiceIEX ──► FeedSource ──► Engine (server, in memory) ──► /api/stream (SSE) ──► Zustand store ──► React screens
+   (or SimFeed, CsvReplayFeed)             ▲                                                                        │
+                                           └────────── /api/* mutations (PERMS checked) ◄───────────────────────────┘
+```
+
+- **The engine runs on the server.** One live runtime serves the whole floor. A feed pushes agent states, queue metrics and heartbeats in; the engine owns the shift clock, state timers, strikes, ledger and incidents, and evaluates every rule once a second.
+- **The browser only renders.** It holds a store fed by the stream and sends mutations to the API. Nothing is computed client-side that affects business state.
+- **Everything is scoped on the server.** Each route resolves the caller's role and span, checks `PERMS`, and only returns data inside that span.
+- **A replay is private to the session that started it.** It gets its own engine, so reviewing a past day never disturbs the live floor. It shares the live rule configuration.
+
+### Layout
 
 ```
 app/
   (console)/layout.tsx            Navbar, context bar, footer, toast stack, nudge host
   (console)/{console,my-view,dashboards,rules,ledger}/page.tsx
-  api/stream                      SSE: scoped snapshot on connect, then a delta every second
-  api/session                     Dev "View as" (role and person)
-  api/rules                       GET / PATCH rule configuration
-  api/instances/[n]/ack, ack-all, [n]/comment
-  api/incidents/[inc]             start / close with disposition
-  api/export/{ledger,incidents}   CSV
-  api/replay                      POST a CSV to start a replay, DELETE to exit
+  api/                            Route handlers (see API reference)
 lib/
+  types.ts                        Shared types, including the stream message shapes
   engine/rules.ts                 Rule definitions, agent tests, evaluate, my targets
   engine/escalation.ts            fire(), strikes, the 3× rule, openIncident()
   engine/scope.ts                 PERMS, span scoping, who may acknowledge or comment
   engine/engine.ts                Clock, timers, feed ingestion, actions
+  engine/engine.test.ts           Unit tests
   feed/FeedSource.ts              The adapter interface
   feed/GencloudFeed.ts            Production adapter (stub)
   feed/SimFeed.ts                 Dev-only simulator
   feed/CsvReplayFeed.ts           Historical replay at 60×
   csv/parse.ts, csv/export.ts     CSV import and exports
-  server/                         Runtime registry, session, route guard, stream snapshots
-  client/                         Zustand store fed by the stream, API client
-components/                       ui/, chrome/, console/, rules/
+  server/runtime.ts               Engine + feed + 1s timer; live and per-session replay registry
+  server/session.ts               Who is calling (cookies today, SSO later)
+  server/guard.ts                 authorize() / authorizeFor(flag) used by every route
+  server/snapshot.ts              Builds the scoped stream messages
+  client/store.ts                 Zustand store and the EventSource connection
+  client/api.ts                   Fetch wrappers for every mutation
+  ui/palette.ts                   Status colors and the tab list
+components/
+  ui/                             Buttons, FilterChip, LogoLockup, DataTable, KpiTile, Toggle, StatusPill
+  chrome/                         ConsoleShell, Navbar, ContextBar, ToastStack, NudgePopup, CsvImportDialog
+  console/                        AgentCard, TeamGroup, AgentGridToolbar, TriggerCard (+ Ladder), IncidentTiles
+  rules/                          RuleRow
 ```
 
-## How it works
+`lib/engine`, `lib/csv` and `lib/types.ts` have no server or browser dependencies and are imported by both sides.
 
-- **The engine runs on the server.** One live runtime serves the whole floor. A feed pushes agent states, queue metrics and heartbeats into the engine; the engine owns the shift clock, state timers, strikes, ledger and incidents, and evaluates every rule once a second.
-- **The browser only renders.** It holds a store fed by `/api/stream` and sends mutations to the API. Every route resolves the caller's role and span and checks `PERMS` before acting, and everything sent to a browser is already scoped to that viewer.
-- **A replay is private to the session that started it.** It gets its own engine, so reviewing a past day never disturbs the live floor. It shares the live rule configuration.
-- **State is in memory.** Run this as a single long-lived Node process. It will not work on serverless hosting as is, and a restart clears the shift.
+## Backend work
+
+### 1. Gencloud feed adapter
+
+Implement `lib/feed/GencloudFeed.ts`. It must satisfy `FeedSource` (`lib/feed/FeedSource.ts`): `subscribe(handlers)` starts delivery and returns an unsubscribe function. The four handlers are the whole contract with the engine:
+
+| Handler | Call it when | Payload |
+| --- | --- | --- |
+| `onRoster` | On connect, and whenever the org or the agents on shift change | `{ org: Team[], agents: RosterAgent[] }`. Replaces the engine's floor. |
+| `onAgentState` | An agent's presence, routing status or hold state changes | `AgentStateEvent` (below) |
+| `onQueue` | Queue observations refresh | `{ cq, sl, asa, ab }`: calls in queue, service level %, ASA seconds, abandon % |
+| `onHeartbeat` | The channel proves it is alive | none |
+
+```ts
+interface AgentStateEvent {
+  agent: string;                          // must match RosterAgent.name
+  state: 'oncall'|'avail'|'acw'|'auxb'|'auxp'|'outb'|'off';
+  callEnded?: { transferred?: boolean };  // set when this transition released a call
+  onHold?: boolean;                       // set on hold start and hold end
+  adh?: number;                           // shift adherence % from NiceIEX
+}
+```
+
+Things the adapter author needs to know:
+
+- **Agents are keyed by name** throughout (events, ledger, incidents, scoping, the "View as" selector). Names must be unique. If Gencloud names can collide, switch the key to the user ID across `lib/types.ts` and the engine before going live.
+- **The engine owns the timers.** Send transitions only; do not send elapsed time. Time in state restarts when `state` changes, and hold time restarts when `onHold` flips.
+- **`callEnded` drives the call metrics.** It increments calls, updates AHT (85/15 moving average), counts a transfer if flagged, and fires the Short call rule when the call lasted under the threshold. Without it none of that happens.
+- **Adherence:** send `adh` from NiceIEX. `deriveAdh` in `lib/server/runtime.ts` makes the engine model adherence drift itself; it is on for the simulator and replay only and should stay off for Gencloud.
+- **Staleness:** any handler call counts as proof of life. A full second with none makes the feed stale: timers freeze, the counter runs, and the "Gencloud not responding" rule fires at its threshold (default 30s). Call `onHeartbeat` at least once a second while the channel is healthy, or quiet periods will read as outages.
+- **Events are queued and applied on the next engine tick**, so handlers can be called from any async callback at any time.
+- **Mapping Gencloud statuses to the seven states** has a starting point in `guessState()` (`lib/csv/parse.ts`), which the CSV import already uses.
+- **Shift clock:** for a non-sim feed the clock starts at the server's local wall-clock time (seconds since midnight) in `createLive()`. There is no shift rollover: strikes, ledger and incidents accumulate until the process restarts. Decide how a shift starts and ends and call `engine.reset({ t })` there.
+
+The adapter is constructed in `createLive()` in `lib/server/runtime.ts`.
+
+### 2. SSO
+
+Identity today is two cookies set by the dev "View as" selector: `rtm_sid` (random session ID) and `rtm_view` (`role:person`). Both are httpOnly, SameSite=Lax. This is a development convenience and anyone can pick any role.
+
+To wire SSO, replace the body of `readSession()` in `lib/server/session.ts` so it returns `{ sid, view: { role, who } }` for the signed-in user, or `null` when nobody is signed in. Everything downstream (`authorize()`, scoping, the stream) already depends only on that return value.
+
+- `role` is one of `admin | senior | mgr | tl | agent`.
+- `who` must equal the person's name **as it appears in the roster**: the TL name on `Team.tl`, the manager name on `Team.mgr`, or the agent name. `resolveView()` snaps an unknown name onto the first person for that role, which is right for the dev selector and wrong for production: make it reject instead once SSO is in.
+- Then turn off `NEXT_PUBLIC_VIEW_AS`. `POST /api/session` already refuses when it is off, and the selector disappears because the stream stops sending the people directory.
+- There is no CSRF protection beyond SameSite=Lax and no rate limiting. Add both with real auth.
+
+### 3. Persistence
+
+All state lives in one object per engine (`EngineState` in `lib/engine/escalation.ts`): rules, ledger, incidents, agents with their strikes. A restart clears the shift and resets rules to defaults.
+
+- Run it as **one long-lived Node process**. Serverless or multi-instance hosting will not work as is: each instance would run its own engine.
+- Every state change goes through a small set of functions, which are the places to add writes: `fire()` and `openIncident()` in `escalation.ts`, and `ack`, `ackAll`, `comment`, `invAction`, `setThr`, `setSev`, `setRoute`, `setOn` in `engine.ts`.
+- Rules are the first thing worth persisting. They are a single shared array created in the registry in `runtime.ts` (`defaultRules()`); load them from storage there.
+- To scale out, keep one engine process and fan the stream out through a broker, or move engine state to a shared store.
+
+### 4. Smaller items
+
+- **Incident draft:** `onDraft` in `app/(console)/console/page.tsx` only shows a toast. Wire it to the incident-report form.
+- **Replay runtimes** are capped at 8 at once (oldest evicted) and otherwise live until the user exits. Add an idle timeout if that matters.
+- **Replay upload limit** is 10 MB (`app/api/replay/route.ts`).
+
+## API reference
+
+All routes are under `/api`. Errors are `{ "error": string }`. Every route answers **401** when there is no session and **403** when the role lacks the permission.
+
+| Route | Who | Request | Response |
+| --- | --- | --- | --- |
+| `GET /session` | anyone | | `{ view, viewAs }` |
+| `POST /session` | anyone, dev flag only | `{ role, who? }` | `{ view }`. 400 unknown role. |
+| `GET /stream` | anyone | | Server-sent events, see below |
+| `GET /rules` | roles with the Rules tab | | `{ rules, canEdit }` |
+| `PATCH /rules` | `rulesEdit` | `{ id, thr?, sev?, route?, on? }` | `{ rule }`. 404 unknown rule, 400 invalid value. |
+| `POST /instances/:n/ack` | Console roles in span; an agent for their own | | `{ instance }`. 404 if outside the span. |
+| `POST /instances/ack-all` | `ackAll` | | `{ count }` |
+| `POST /instances/:n/comment` | the agent it belongs to | `{ text, ack? }`, text 1–140 chars | `{ instance }` |
+| `POST /incidents/:inc` | `invAct`, in span | `{ action: "start" }` or `{ action: "close", disposition }` | `{ incident }`. 409 wrong status. |
+| `GET /export/ledger` | `export` | | `RTM_instance_ledger.csv` |
+| `GET /export/incidents` | `export` | | `RTM_investigation_register.csv` |
+| `POST /replay` | `replay` | multipart: `file`, `cols?`, `smap?` (JSON strings) | `{ view, replay }`. 413 over 10 MB. |
+| `DELETE /replay` | `replay` | | `{ ok: true }` |
+
+Instances outside the caller's span return 404, not 403, so their existence is not revealed.
+
+### Stream
+
+`GET /api/stream` sends `data: <json>\n\n` frames. Types are `InitMsg` and `TickMsg` in `lib/types.ts`.
+
+- The first frame is `type: "init"`: the viewer, the teams in span, the whole scoped ledger, and (dev flag only) the people directory for the selector.
+- Then one `type: "tick"` per engine second, plus one immediately after any mutation. Each carries the clock, feed status, queue, rules, all agents in span, all incidents in span, **only the ledger rows that changed** (matched by `n`), and any toasts and nudges for this viewer.
+- A dropped connection reconnects by itself and gets a fresh `init`.
+- The client must reconnect after the role, person or replay state changes; `lib/client/api.ts` does this.
+- Toasts for call-outs go only to leaders with that call-out in span. An agent only receives their own nudges, Senior Leader receives none, and none are sent during a replay.
+
+### Permissions
+
+`PERMS` in `lib/engine/scope.ts` is the single source. The UI hides what a role cannot do and the API enforces it.
+
+| Role | Tabs | Scope | Rules edit | Investigations | Exports | Ack all | Incident tiles | Replay |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Admin (WFM) | Console, Dashboards, Rules, Ledger | All teams | yes | yes | yes | yes | yes | yes |
+| Senior Leader | Dashboards | All teams | no | no | no | no | no | no |
+| Manager | Console, Dashboards, Rules, Ledger | Their teams | yes | yes | yes | no | yes | yes |
+| Team Lead / AM | Console, Dashboards, Ledger | Their team | no | no | no | no | no | no |
+| Agent | My View | Self | no | no | no | no | no | no |
+
+Queue and floor call-outs are visible to every leader role and never to agents.
 
 ## Business rules
 
-The engine is a port of the design prototype's `rtm-engine.js` and is covered by `lib/engine/engine.test.ts`: strike counting, the 3× rule, capped routes, re-arm logic and scoping.
+The engine is a TypeScript port of the design prototype's `rtm-engine.js`.
 
-One deliberate difference from the prototype: **Adherence breach and Transfer rate fire once per shift.** The written spec says they never re-arm, but the prototype cleared their fired flag on every state change, so an agent below target collected a new strike on each call. This build follows the written rule.
+- **Rule types:** duration (state timer), event (per occurrence: short call), ratio (transfer rate, needs 5 calls), queue (floor metrics), system (feed heartbeat). The 14 defaults are in `defaultRules()`.
+- **Duration rules fire once per state episode** and re-arm when the state changes or the value drops back under the threshold. Offline agents are evaluated only by Prolonged offline.
+- **Strikes** count per agent, per rule, per shift. Full ladders (`nudge`, `lead`): strike 2 reaches the TL, strike 3 and later reach Ops and open or update incident `INC-2026-NNNN`. At most one open incident per agent per rule. Capped routes (`nudgeonly`, `leadonly`) never climb and never open incidents.
+- **Queue and system rules** fire once per breach, re-arm on recovery, and are logged against "Queue" / "Floor".
+- **Time** is seconds since midnight everywhere (`t`, `ackT`, `closedT`).
 
-## Still to do
+### Where this build differs from the prototype
 
-- `GencloudFeed` is a stub. Until it is implemented, a non-sim build shows "Gencloud not responding".
-- SSO: replace `readSession` in `lib/server/session.ts`, then drop `NEXT_PUBLIC_VIEW_AS`.
-- "Open incident draft" only shows a toast; wire it to the incident-report form.
-- Elevance Sans font files are not in the design system yet, so the system UI font renders in its place.
-- Persistence for rules, ledger and incidents.
+- **Adherence breach and Transfer rate fire once per shift.** The written spec says they never re-arm, but the prototype cleared their fired flag on every state change, so an agent below target collected a new strike on each call. This build follows the written rule and therefore opens far fewer incidents than the prototype.
+- **Senior Leader has no Rules tab.** The design README says "read-only for Senior" but `PERMS` and the feature inventory give Senior dashboards only. This build follows `PERMS`. The read-only rendering of the Rules page exists and works if that changes.
+- **Replay is per session**, not a replacement of the whole floor.
+- **Only the agent can attach a reason.** In a leader's nudge preview, "Send reason" with text saves nothing.
+- **A call ends only when the feed says so** (`callEnded`), not on any transition out of On Call.
+
+## Frontend notes
+
+- **State:** live data is in the Zustand store (`useConsole`). Filters, expanded teams, drafts and dialog state are local `useState` and reset when you leave the screen.
+- **Route guard:** `ConsoleShell` redirects to the first allowed tab when the role cannot open the current one. This is a convenience; the API is the actual boundary.
+- **Tokens:** BITS tokens are CSS variables in `app/globals.css`, mapped into the Tailwind theme in the `@theme` block (`text-purple`, `bg-tint`, `rounded-15`, `ring-card`, `num`, and so on). Colors chosen at runtime from engine data are in `lib/ui/palette.ts`.
+- **Breakpoints:** `w560`, `sm` (640), `w720`, `w900`, `xl` (1280) drive the navbar's responsive behavior.
+- **Line height:** Tailwind's default line heights on `text-xs` to `text-lg` are overridden to `normal` to match the design. Set `leading-*` explicitly where needed.
+- **Design rules:** no shadows except toasts and the nudge, no gradients, no entrance animations, sentence case except nav tabs, no emoji.
+- **Font:** when the Elevance Sans files arrive, add the `@font-face` to `globals.css`; `--bits-font-brand` already lists it first.
+- **Next.js 16:** `AGENTS.md` asks you to check `node_modules/next/dist/docs/` before relying on older conventions. Route `params` are Promises and `cookies()` is async.
+
+## Tests
+
+`npm test` runs `lib/engine/engine.test.ts` (32 tests): strike counting, the 3× rule, capped routes, re-arm logic, feed staleness, scoping, the permission table, acknowledge and comment.
+
+Tests drive the engine through the same `ingest` handlers a feed uses, one `tick()` per second, so they are also the best reference for how a feed adapter should behave. There are no API route or component tests yet.
