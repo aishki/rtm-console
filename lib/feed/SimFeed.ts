@@ -54,7 +54,7 @@ export class SimFeed implements FeedSource {
 
   subscribe(handlers: FeedHandlers): () => void {
     this.h = handlers;
-    const org = ORG_DEFAULT.map(({ size: _size, ...t }) => t);
+    const org = ORG_DEFAULT.map(({ team, tl, mgr, lob }) => ({ team, tl, mgr, lob }));
     const seats = ORG_DEFAULT.flatMap(t => Array.from({ length: t.size }, () => t.team));
     const names = makeNames(seats.length);
     const roster = names.map((name, i) => ({
