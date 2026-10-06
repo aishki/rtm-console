@@ -135,7 +135,11 @@ export class GencloudClient {
   async getObservations(queueIds: string[]): Promise<QueueObs[]> {
     const resp = await this.request("POST", "/api/v2/analytics/queues/observations/query", {
       filter: { type: "or", predicates: queueIds.map((id) => ({ dimension: "queueId", value: id })) },
-      metrics: ["oWaiting", "oInteracting", "oOnQueueUsers", "oUserRoutingStatuses", "oServiceLevel"],
+      // NOTE: there is no service-level observation metric — the API rejects oServiceLevel here
+      // (valid: oWaiting/oInteracting/oOnQueueUsers/oUserRoutingStatuses/etc). Including it 400s the
+      // whole query. Real-time service level would have to come from an interval aggregate instead;
+      // serviceLevelPct therefore stays null until that is added.
+      metrics: ["oWaiting", "oInteracting", "oOnQueueUsers", "oUserRoutingStatuses"],
     });
     return parseObservations(resp);
   }
