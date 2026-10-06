@@ -5,6 +5,7 @@ import { STATES, STATE_IDS } from "@/lib/engine/rules";
 import type { AgentState } from "@/lib/types";
 import { FilterChip, FilterClearIcon } from "@/components/ui/FilterChip";
 import { CloseIcon, SearchIcon } from "@/components/ui/primitives";
+import { Select, type SelectOption } from "@/components/ui/Select";
 
 export type SortBy = "team" | "time" | "strikes" | "name";
 export type QuickKey = "breach" | "strikes" | "hold";
@@ -28,6 +29,13 @@ interface Props {
 }
 
 const QUICK: [QuickKey, string][] = [["breach", "Breaching now"], ["strikes", "Has strikes"], ["hold", "On hold"]];
+const STATE_OPTIONS: SelectOption<AgentState | "">[] = [{ value: "", label: "Any state" }, ...STATE_IDS.map(id => ({ value: id, label: STATES[id].label }))];
+const SORT_OPTIONS: SelectOption<SortBy>[] = [
+  { value: "team", label: "Sort: roster order" },
+  { value: "time", label: "Sort: longest in state" },
+  { value: "strikes", label: "Sort: most strikes" },
+  { value: "name", label: "Sort: name A–Z" },
+];
 
 /** Search, team/state/sort selects, quick-filter chips and the result line for the agent grid. */
 export function AgentGridToolbar({ filters: f, onChange, onClear, searchRef, teamGroups, teamCount, quickCounts, filtering, resultText, showExpandControls, onExpandAll, onCollapseAll }: Props) {
@@ -53,25 +61,10 @@ export function AgentGridToolbar({ filters: f, onChange, onClear, searchRef, tea
           )}
         </div>
         {teamCount > 1 && (
-          <select value={f.team} onChange={e => onChange({ team: e.target.value })} aria-label="Filter by team" className={select}>
-            <option value="">All teams ({teamCount})</option>
-            {teamGroups.map(g => (
-              <optgroup key={g.label} label={g.label}>
-                {g.items.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </optgroup>
-            ))}
-          </select>
+          <Select value={f.team} onChange={team => onChange({ team })} options={[{ value: "", label: `All teams (${teamCount})` }, ...teamGroups]} aria-label="Filter by team" className={select} />
         )}
-        <select value={f.state} onChange={e => onChange({ state: e.target.value as AgentState | "" })} aria-label="Filter by state" className={select}>
-          <option value="">Any state</option>
-          {STATE_IDS.map(id => <option key={id} value={id}>{STATES[id].label}</option>)}
-        </select>
-        <select value={f.sortBy} onChange={e => onChange({ sortBy: e.target.value as SortBy })} aria-label="Sort agents" className={select}>
-          <option value="team">Sort: roster order</option>
-          <option value="time">Sort: longest in state</option>
-          <option value="strikes">Sort: most strikes</option>
-          <option value="name">Sort: name A–Z</option>
-        </select>
+        <Select value={f.state} onChange={state => onChange({ state })} options={STATE_OPTIONS} aria-label="Filter by state" className={select} />
+        <Select value={f.sortBy} onChange={sortBy => onChange({ sortBy })} options={SORT_OPTIONS} aria-label="Sort agents" className={select} />
       </div>
       <div className="flex flex-wrap items-center gap-x-5 border-b border-pale-purple pb-1.5 pl-[37px] pr-5">
         {QUICK.map(([k, label]) => (

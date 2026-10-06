@@ -13,9 +13,11 @@ import { CsvImportDialog } from "@/components/chrome/CsvImportDialog";
 import { PurpleButton } from "@/components/ui/buttons";
 import { type Column, DataTable } from "@/components/ui/DataTable";
 import { type Kpi, KpiTile, PageTitle, StatusPill } from "@/components/ui/primitives";
+import { Select } from "@/components/ui/Select";
 
 type Counts = Record<Stage, number> & { total: number };
 interface Bar { label: string; counts: Counts }
+const DISPOSITION_OPTIONS = DISPOSITIONS.map(d => ({ value: d, label: d }));
 
 /** Call-outs grouped by a key, biggest first. */
 function tally(rows: Instance[], key: (r: Instance) => string, cap?: number): Bar[] {
@@ -76,9 +78,7 @@ function IncidentAction({ incident: i, canAct }: { incident: Incident; canAct: b
       {canAct && i.status === "Open" && <PurpleButton compact onClick={() => void attempt(api.incident(i.inc, "start"))}>Start investigation</PurpleButton>}
       {canAct && i.status === "Investigating" && (
         <>
-          <select value={disposition} onChange={e => setDisposition(e.target.value)} aria-label={`Disposition for ${i.inc}`} className="field h-8 px-2 text-[13px]">
-            {DISPOSITIONS.map(d => <option key={d}>{d}</option>)}
-          </select>
+          <Select value={disposition} onChange={setDisposition} options={DISPOSITION_OPTIONS} aria-label={`Disposition for ${i.inc}`} className="field h-8 px-2 text-[13px]" />
           <PurpleButton compact onClick={close}>Close</PurpleButton>
         </>
       )}
