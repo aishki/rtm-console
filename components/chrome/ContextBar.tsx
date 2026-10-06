@@ -14,7 +14,7 @@ function useFeedPill() {
   const replay = useConsole(s => s.replay);
   const staleFor = useConsole(s => s.staleFor);
   if (status !== "ready") return { bg: "#F5F5F5", fg: "#5C5C6F", dot: "#929299", text: status === "unauthorized" ? "Not signed in" : "Connecting…" };
-  if (mode === "replay" && replay) return { bg: "#EBE4FF", fg: "#5009B5", dot: "#5009B5", text: `CSV replay · ${replay.agents} agents · ${replay.events} events${replay.done ? " · complete" : ""}` };
+  if (mode === "replay" && replay) return { bg: "#EBE4FF", fg: "#5009B5", dot: "#5009B5", text: `Data replay · ${replay.agents} agents · ${replay.events} events${replay.done ? " · complete" : ""}` };
   if (staleFor > 0) return { bg: "#FDF3D7", fg: "#7A5300", dot: "#F2BC35", text: `Gencloud not responding · feed stale ${staleFor}s` };
   return { bg: "#D9F5F5", fg: "#028283", dot: "#00BBBA", text: "Live feed · Gencloud/NICE API" };
 }

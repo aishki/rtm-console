@@ -154,7 +154,7 @@ export default function DashboardsPage() {
       <div className="flex flex-wrap items-end gap-4">
         <PageTitle eyebrow="Review" title="Shift dashboards" />
         <div className="flex-1" />
-        {perms?.replay && <PurpleButton variant="outline" onClick={() => setCsvOpen(true)}>Replay a Gencloud export</PurpleButton>}
+        {perms?.replay && <PurpleButton variant="outline" onClick={() => setCsvOpen(true)}>Import floor data</PurpleButton>}
       </div>
       <div className="grid grid-cols-[repeat(auto-fit,minmax(170px,1fr))] gap-4">
         {kpis.map(k => <KpiTile key={k.label} kpi={k} />)}
@@ -194,7 +194,7 @@ export default function DashboardsPage() {
           onClose={() => setCsvOpen(false)}
           onStarted={() => {
             setCsvOpen(false);
-            toast("info", "Replay started at 60×", "The rules engine is processing your Gencloud day. Results land in Dashboards and the Instance Ledger.");
+            toast("info", "Replay started at 60×", "The rules engine is processing the imported day. Results land in Dashboards and the Instance Ledger.");
             router.push("/console");
           }}
         />

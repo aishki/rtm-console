@@ -48,3 +48,6 @@ next-env.d.ts
 
 # brand logo binaries: copy from the handoff's design/assets/logos (see README)
 /public/assets/logos/*.png
+
+# real floor exports: internal queue names and IDs, never commit
+/GenCloudOverall

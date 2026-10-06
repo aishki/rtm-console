@@ -13,7 +13,7 @@ This README is the developer handoff. It covers what is built, what is stubbed, 
 | Rules engine, escalation, scoping, permissions | Done, unit tested |
 | Five screens, layout chrome, CSV replay dialog | Done, checked against the design reference |
 | API routes with server-side permission checks | Done |
-| CSV replay (upload, mapping, 60× run) | Done |
+| Floor data import (Excel template or CSV, 60× replay) | Done |
 | Floor simulator | Done, dev only |
 | **Gencloud/NiceIEX feed adapter** | **Stub.** See [Backend work 1](#1-gencloud-feed-adapter) |
 | **SSO (role and span from the session)** | **Not wired.** See [Backend work 2](#2-sso) |
@@ -55,6 +55,27 @@ The brand logo PNGs are not in the repository. Copy `carelon-global-solutions.pn
 - **Dev with `NEXT_PUBLIC_FEED=sim`:** 199 simulated agents in 10 teams, starting at 08:15 with 15 minutes of history, random repeat offenders, and one 44-second feed outage four minutes in.
 - **Production build, or any non-sim feed:** an empty floor and "Gencloud not responding · feed stale Ns", because the Gencloud adapter delivers nothing yet. This is expected.
 
+## Importing floor data
+
+Admins and Managers can replay a day of their own data instead of the simulator: **Dashboards → Import floor data**.
+
+1. **Download template** gives `RTM_floor_data_template.xlsx` (built on request by `lib/import/xlsx.ts`). It has instructions and a sample day, so it runs as downloaded.
+2. Fill it in and upload it. The file is checked first and the dialog lists every problem, or a summary and any warnings.
+3. **Start replay** runs the day through the rules engine at 60× (a nine-hour shift takes about nine minutes). Only the session that started it sees it; **Exit replay** returns to the live floor.
+
+| Sheet | Required | Columns | Unlocks |
+| --- | --- | --- | --- |
+| Roster | Yes | Agent Name, Team, Team Lead, Manager, LOB\*, Adherence %\* | Agent grid, role scoping, My View |
+| Agent Status | Yes | Agent Name, Status, Start Time, Transferred\* | State timers, strikes, nudges, incidents, Short call, Transfer rate |
+| Holds | No | Agent Name, Hold Start, Hold End | Long hold |
+| Queue Intervals | No | Interval Start, Calls Waiting\*, Service Level %\*, ASA (s)\*, Abandon %\* | Queue tiles and the three queue rules |
+
+\* optional column. One file is one shift. Times are used exactly as written, with no timezone conversion. Statuses can be the seven console states or Genesys names ("On Queue", "After Call Work", "Meal"), which are mapped by `guessState()`. The Queue Intervals sheet accepts the all-queues totals from a Genesys queue performance export, including its 0–1 fractions.
+
+A raw Gencloud agent-status CSV still works in the same dialog, with column and status mapping, but it carries statuses only: no org, holds or queue data.
+
+Validation and the sheet contract live in `lib/import/floor.ts` (pure, tested in `floor.test.ts`).
+
 ## Architecture
 
 ```
@@ -85,7 +106,9 @@ lib/
   feed/FeedSource.ts              The adapter interface
   feed/GencloudFeed.ts            Production adapter (stub)
   feed/SimFeed.ts                 Dev-only simulator
-  feed/CsvReplayFeed.ts           Historical replay at 60×
+  feed/CsvReplayFeed.ts           Historical replay at 60× (CSV or imported workbook)
+  import/floor.ts                 Template contract and validation
+  import/xlsx.ts                  Reads uploads, builds the template (exceljs)
   csv/parse.ts, csv/export.ts     CSV import and exports
   server/runtime.ts               Engine + feed + 1s timer; live and per-session replay registry
   server/session.ts               Who is calling (cookies today, SSO later)
@@ -163,7 +186,7 @@ All state lives in one object per engine (`EngineState` in `lib/engine/escalatio
 
 - **Incident draft:** `onDraft` in `app/(console)/console/page.tsx` only shows a toast. Wire it to the incident-report form.
 - **Replay runtimes** are capped at 8 at once (oldest evicted) and otherwise live until the user exits. Add an idle timeout if that matters.
-- **Replay upload limit** is 10 MB (`app/api/replay/route.ts`).
+- **Upload limit** is 10 MB (`lib/server/upload.ts`).
 
 ## API reference
 
@@ -182,7 +205,9 @@ All routes are under `/api`. Errors are `{ "error": string }`. Every route answe
 | `POST /incidents/:inc` | `invAct`, in span | `{ action: "start" }` or `{ action: "close", disposition }` | `{ incident }`. 409 wrong status. |
 | `GET /export/ledger` | `export` | | `RTM_instance_ledger.csv` |
 | `GET /export/incidents` | `export` | | `RTM_investigation_register.csv` |
-| `POST /replay` | `replay` | multipart: `file`, `cols?`, `smap?` (JSON strings) | `{ view, replay }`. 413 over 10 MB. |
+| `GET /import/template` | `replay` | | `RTM_floor_data_template.xlsx` |
+| `POST /import/validate` | `replay` | multipart: `file` (.xlsx) | `{ summary, warnings }`, or 400 `{ error, errors[] }` |
+| `POST /replay` | `replay` | multipart: `file` (.xlsx template, or .csv with `cols?`, `smap?` JSON strings) | `{ view, replay }`. 400 `{ error, errors[] }`, 413 over 10 MB. |
 | `DELETE /replay` | `replay` | | `{ ok: true }` |
 
 Instances outside the caller's span return 404, not 403, so their existence is not revealed.
@@ -226,6 +251,7 @@ The engine is a TypeScript port of the design prototype's `rtm-engine.js`.
 - **Adherence breach and Transfer rate fire once per shift.** The written spec says they never re-arm, but the prototype cleared their fired flag on every state change, so an agent below target collected a new strike on each call. This build follows the written rule and therefore opens far fewer incidents than the prototype.
 - **Senior Leader has no Rules tab.** The design README says "read-only for Senior" but `PERMS` and the feature inventory give Senior dashboards only. This build follows `PERMS`. The read-only rendering of the Rules page exists and works if that changes.
 - **Replay is per session**, not a replacement of the whole floor.
+- **Queue rules run during a replay when the import has queue data.** The prototype always switched them off.
 - **Only the agent can attach a reason.** In a leader's nudge preview, "Send reason" with text saves nothing.
 - **A call ends only when the feed says so** (`callEnded`), not on any transition out of On Call.
 
@@ -242,6 +268,6 @@ The engine is a TypeScript port of the design prototype's `rtm-engine.js`.
 
 ## Tests
 
-`npm test` runs `lib/engine/engine.test.ts` (32 tests): strike counting, the 3× rule, capped routes, re-arm logic, feed staleness, scoping, the permission table, acknowledge and comment.
+`npm test` runs 39 tests. `lib/engine/engine.test.ts` covers strike counting, the 3× rule, capped routes, re-arm logic, feed staleness, scoping, the permission table, acknowledge and comment. `lib/import/floor.test.ts` covers the import validation and runs the downloadable template through the engine end to end.
 
 Tests drive the engine through the same `ingest` handlers a feed uses, one `tick()` per second, so they are also the best reference for how a feed adapter should behave. There are no API route or component tests yet.
