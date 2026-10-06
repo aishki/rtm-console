@@ -26,6 +26,7 @@ export interface GencloudClientConfig {
 }
 
 const MAX_MEMBER_PAGES = 50;
+const MAX_RATE_LIMIT_RETRIES = 4;
 
 const num = (v: unknown): number => {
   const n = Number(v ?? 0);
@@ -79,7 +80,7 @@ export class GencloudClient {
     private readonly fetchFn: typeof fetch = (...a) => fetch(...a),
   ) {}
 
-  private async request(method: "GET" | "POST", path: string, body?: unknown): Promise<Json> {
+  private async request(method: "GET" | "POST", path: string, body?: unknown, attempt = 0): Promise<Json> {
     const res = await this.fetchFn(`${this.cfg.apiBase}${path}`, {
       method,
       headers: {
@@ -89,6 +90,16 @@ export class GencloudClient {
       body: body === undefined ? undefined : JSON.stringify(body),
     });
     if (res.status === 401) throw new Error("HTTP 401");
+    // Rate limited: wait (honouring Retry-After) and retry, bounded. Genesys returns 429 under
+    // bursty load such as fetching members for many large queues at once.
+    if (res.status === 429 && attempt < MAX_RATE_LIMIT_RETRIES) {
+      const retryAfter = Number(res.headers.get("retry-after"));
+      const waitMs = Number.isFinite(retryAfter) && retryAfter > 0
+        ? Math.min(retryAfter * 1000, 15000)
+        : Math.min(1000 * 2 ** attempt, 8000);
+      await new Promise((r) => setTimeout(r, waitMs));
+      return this.request(method, path, body, attempt + 1);
+    }
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return res.json();
   }
