@@ -157,12 +157,13 @@ function TriggerFeed() {
   // Stub: wire this to the incident-report form.
   const onDraft = useCallback((r: Instance) => toast("esc", `Incident draft · ${r.inc}`, `Pre-filled draft for ${r.agent} (${r.rule}) opened for review.`), [toast]);
   return (
-    <div className="panel flex min-w-0 max-w-[440px] flex-[1_1_340px] flex-col">
+    <div className="panel flex min-w-0 max-w-[440px] flex-[1_1_340px] flex-col pb-4">
       <div className="panel-head !flex-nowrap">
         <h2 className="panel-title">Trigger feed</h2>
         <span className="panel-sub">{alerts.filter(r => r.status === "open").length} open</span>
       </div>
-      <div className="flex max-h-[calc(100vh-320px)] min-h-[360px] flex-col gap-2.5 overflow-auto p-3.5">
+      {/* The panel's own bottom padding keeps the scrolling cards and scrollbar off its rounded edge. */}
+      <div className="flex max-h-[calc(100vh-336px)] min-h-[360px] flex-col gap-2.5 overflow-auto px-3.5 pt-3.5">
         {alerts.map(r => <TriggerCard key={r.n} alert={r} onAck={onAck} onDraft={onDraft} />)}
         {alerts.length === 0 && <div className="px-3 py-10 text-center leading-normal text-muted">No open triggers in your span. The floor is green.</div>}
       </div>
