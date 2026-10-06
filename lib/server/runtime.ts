@@ -64,7 +64,7 @@ function createLive(rules: Rule[]): Runtime {
     const now = new Date();
     const t = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
     return createRuntime("live", rules, 1, () => new GencloudFeed({
-      apiBase: process.env.GENCLOUD_API_BASE, clientId: process.env.GENCLOUD_CLIENT_ID, clientSecret: process.env.GENCLOUD_CLIENT_SECRET,
+      apiBase: process.env.GENCLOUD_API_BASE, token: process.env.GENESYS_TOKEN, viewConfigId: process.env.RTM_VIEW_CONFIG_ID, clientId: process.env.GENCLOUD_CLIENT_ID, clientSecret: process.env.GENCLOUD_CLIENT_SECRET,
     }), engine => engine.reset({ t }));
   }
   const rt = createRuntime("live", rules, 1,
