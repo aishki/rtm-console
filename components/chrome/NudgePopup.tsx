@@ -47,7 +47,8 @@ export function NudgePopup() {
 
   return (
     <div className="fixed bottom-6 left-6 z-[60] flex w-[360px] max-w-[calc(100vw-48px)] flex-col gap-2">
-      <span className="text-xs font-semibold text-muted">{isAgent ? "Your screen · live nudge" : "Associate screen · nudge preview"}</span>
+      {/* Floats over whatever the page has scrolled to, so it carries its own solid backing. */}
+      <span className="self-start rounded-pill bg-[var(--dark-purple)] px-3 py-1 text-xs font-semibold text-white shadow-[0_4px_12px_rgba(35,30,51,0.22)]">{isAgent ? "Your screen · live nudge" : "Associate screen · nudge preview"}</span>
       <div role="dialog" aria-label="Nudge" className="flex flex-col gap-3 rounded-20 bg-white p-[18px] shadow-[var(--shadow-nudge)]">
         <div className="flex items-center gap-2.5">
           <CarelonMark size={28} alt="" />

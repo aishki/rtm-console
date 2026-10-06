@@ -27,7 +27,7 @@ interface Props<T> {
   empty?: ReactNode;
 }
 
-/** The console table: grey Inter header, row dividers, 14px body. */
+/** The console table: tinted Inter header, row dividers, 14px body. */
 export function DataTable<T>({ columns, rows, rowKey, rowStyle, stickyHeader = false, padY = 10, padX = 14, headPadY = 10, empty }: Props<T>) {
   const last = columns.length - 1;
   const pad = (i: number, y: number): CSSProperties => ({ padding: `${y}px ${i === 0 || i === last ? 20 : padX}px` });
@@ -35,11 +35,11 @@ export function DataTable<T>({ columns, rows, rowKey, rowStyle, stickyHeader = f
     <>
       <table className="w-full border-collapse text-sm">
         <thead>
-          <tr className={stickyHeader ? undefined : "bg-page"}>
+          <tr>
             {columns.map((c, i) => (
               <th
                 key={c.key} scope="col"
-                className={`font-ui text-xs font-semibold text-muted ${c.align === "right" ? "text-right" : "text-left"} ${stickyHeader ? "sticky top-0 z-[1] bg-page" : ""} ${c.thClass ?? ""}`}
+                className={`th ${c.align === "right" ? "text-right" : "text-left"} ${stickyHeader ? "sticky top-0 z-[1]" : ""} ${c.thClass ?? ""}`}
                 style={pad(i, headPadY)}
               >
                 {c.header}

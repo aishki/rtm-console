@@ -7,6 +7,7 @@ import { STATE_OPTIONS } from "@/lib/engine/rules";
 import type { ImportSummary } from "@/lib/import/floor";
 import { ApiError, api, download, downloadText } from "@/lib/client/api";
 import { PurpleButton, TertiaryButton } from "@/components/ui/buttons";
+import { Select, type SelectOption } from "@/components/ui/Select";
 
 interface LoadedCsv { kind: "csv"; file: File; headers: string[]; rows: string[][]; cols: CsvCols; smap: Record<string, MappedState> }
 interface LoadedWorkbook { kind: "xlsx"; file: File; summary: ImportSummary; warnings: string[] }
@@ -18,6 +19,7 @@ const COLUMNS: { key: keyof CsvCols; label: string; required: boolean }[] = [
   { key: "start", label: "Start time", required: true },
   { key: "team", label: "Team", required: false },
 ];
+const STATE_SELECT: SelectOption<MappedState>[] = STATE_OPTIONS.map(([value, label]) => ({ value, label }));
 const count = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 const problems = (e: unknown, fallback: string) => (e instanceof ApiError ? e.details : [e instanceof Error ? e.message : fallback]);
 
@@ -133,10 +135,10 @@ export function CsvImportDialog({ onClose, onStarted }: { onClose: () => void; o
             {COLUMNS.map(c => (
               <label key={c.key} className="grid grid-cols-[200px_minmax(0,1fr)] items-center gap-3 text-sm">
                 <span>{c.label} <span className={`text-xs font-semibold ${c.required ? "text-error-text" : "text-muted"}`}>{c.required ? "Required" : "Optional"}</span></span>
-                <select value={csv.cols[c.key]} onChange={e => setLoaded({ ...csv, cols: { ...csv.cols, [c.key]: Number(e.target.value) } })} className="field h-9 px-2.5">
-                  {!c.required && <option value={-1}>None</option>}
-                  {csv.headers.map((h, i) => <option key={i} value={i}>{h}</option>)}
-                </select>
+                <Select
+                  value={String(csv.cols[c.key])} onChange={v => setLoaded({ ...csv, cols: { ...csv.cols, [c.key]: Number(v) } })} className="field h-9 px-2.5"
+                  options={[...(c.required ? [] : [{ value: "-1", label: "None" }]), ...csv.headers.map((h, i) => ({ value: String(i), label: h }))]}
+                />
               </label>
             ))}
             <span className="mt-2 text-sm font-semibold text-muted">Status mapping (Gencloud status to console state)</span>
@@ -144,9 +146,7 @@ export function CsvImportDialog({ onClose, onStarted }: { onClose: () => void; o
               {statuses.map(s => (
                 <label key={s} className="grid grid-cols-[minmax(0,1fr)_150px] items-center gap-2.5">
                   <span className="truncate font-ui text-[13px] text-strong">{s}</span>
-                  <select value={csv.smap[s] || guessState(s)} onChange={e => setLoaded({ ...csv, smap: { ...csv.smap, [s]: e.target.value as MappedState } })} className="field h-[34px] px-2 text-[13px]">
-                    {STATE_OPTIONS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-                  </select>
+                  <Select value={csv.smap[s] || guessState(s)} onChange={v => setLoaded({ ...csv, smap: { ...csv.smap, [s]: v } })} options={STATE_SELECT} className="field h-[34px] px-2 text-[13px]" />
                 </label>
               ))}
             </div>

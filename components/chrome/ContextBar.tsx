@@ -7,6 +7,9 @@ import { usePerms } from "@/lib/client/hooks";
 import { useConsole } from "@/lib/client/store";
 import type { Role } from "@/lib/types";
 import { PurpleButton } from "@/components/ui/buttons";
+import { Select, type SelectOption } from "@/components/ui/Select";
+
+const ROLE_OPTIONS: SelectOption<Role>[] = ROLES.map(([value, label]) => ({ value, label }));
 
 function useFeedPill() {
   const status = useConsole(s => s.status);
@@ -43,18 +46,13 @@ export function ContextBar() {
         <>
           <label className="flex items-center gap-2.5">
             <span className="text-[13px] font-semibold text-muted">View as</span>
-            <select value={view.role} onChange={e => void attempt(api.setView(e.target.value as Role, null))} className={`${select} border-purple`}>
-              {ROLES.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
-            </select>
+            <Select value={view.role} onChange={role => void attempt(api.setView(role, null))} options={ROLE_OPTIONS} className={`${select} border-purple`} />
           </label>
           {groups.length > 0 && (
-            <select value={view.who ?? ""} aria-label="Person" onChange={e => void attempt(api.setView(view.role, e.target.value))} className={`${select} border-line`}>
-              {groups.map(g => (
-                <optgroup key={g.label} label={g.label}>
-                  {g.items.map(p => <option key={p} value={p}>{p}</option>)}
-                </optgroup>
-              ))}
-            </select>
+            <Select
+              value={view.who ?? ""} aria-label="Person" onChange={who => void attempt(api.setView(view.role, who))} className={`${select} border-line`}
+              options={groups.map(g => ({ label: g.label, items: g.items.map(p => ({ value: p, label: p })) }))}
+            />
           )}
         </>
       )}

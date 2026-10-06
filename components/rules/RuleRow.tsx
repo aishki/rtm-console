@@ -4,6 +4,10 @@ import { ROUTES } from "@/lib/engine/rules";
 import { SEV } from "@/lib/ui/palette";
 import type { Route, Rule, Severity } from "@/lib/types";
 import { Toggle } from "@/components/ui/primitives";
+import { Select, type SelectOption } from "@/components/ui/Select";
+
+const SEVERITIES: SelectOption<Severity>[] = [{ value: "warn", label: "Warning" }, { value: "crit", label: "Critical" }];
+const ROUTE_OPTIONS: SelectOption<Route>[] = ROUTES.map(([value, label]) => ({ value, label }));
 
 interface Props { rule: Rule; canEdit: boolean; onPatch: (rule: Rule, patch: Partial<Pick<Rule, "thr" | "sev" | "route" | "on">>) => void }
 
@@ -26,18 +30,13 @@ export function RuleRow({ rule: r, canEdit, onPatch }: Props) {
         <span className="ml-1.5 font-ui text-xs text-muted">{r.unit}</span>
       </td>
       <td className="px-3.5 py-2.5">
-        <select
-          value={r.sev} disabled={!canEdit} aria-label={`${r.name} severity`} onChange={e => onPatch(r, { sev: e.target.value as Severity })}
-          className="h-[34px] rounded-pill border px-2.5 text-[13px] font-semibold disabled:cursor-not-allowed" style={{ borderColor: sev.fg, background: sev.bg, color: sev.fg }}
-        >
-          <option value="warn">Warning</option>
-          <option value="crit">Critical</option>
-        </select>
+        <Select
+          value={r.sev} disabled={!canEdit} aria-label={`${r.name} severity`} onChange={v => onPatch(r, { sev: v })} options={SEVERITIES} detached
+          className="h-[34px] rounded-pill border px-3 text-[13px] font-semibold" style={{ borderColor: sev.fg, background: sev.bg, color: sev.fg }}
+        />
       </td>
       <td className="px-3.5 py-2.5">
-        <select value={r.route} disabled={!canEdit} aria-label={`${r.name} escalation route`} onChange={e => onPatch(r, { route: e.target.value as Route })} className="field h-[34px] px-2.5 text-[13px]">
-          {ROUTES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-        </select>
+        <Select value={r.route} disabled={!canEdit} aria-label={`${r.name} escalation route`} onChange={v => onPatch(r, { route: v })} options={ROUTE_OPTIONS} className="field h-[34px] px-2.5 text-[13px]" />
       </td>
       <td className="px-5 py-2.5"><Toggle checked={r.on} disabled={!canEdit} label={`Enable ${r.name}`} onChange={on => onPatch(r, { on })} /></td>
     </tr>

@@ -39,9 +39,9 @@ export default function RulesPage() {
         <div className="overflow-x-auto">
           <table className="w-full border-collapse text-sm">
             <thead>
-              <tr className="bg-page">
+              <tr>
                 {HEADERS.map((h, i) => (
-                  <th key={h} scope="col" className={`py-3 text-left font-ui text-xs font-semibold text-muted ${i === 0 || i === HEADERS.length - 1 ? "px-5" : "px-3.5"}`}>{h}</th>
+                  <th key={h} scope="col" className={`th py-3 text-left ${i === 0 || i === HEADERS.length - 1 ? "px-5" : "px-3.5"}`}>{h}</th>
                 ))}
               </tr>
             </thead>
