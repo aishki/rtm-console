@@ -1,26 +1,203 @@
 @import "tailwindcss";
 
+/* ---------- BITS Design System tokens (design/_ds/.../tokens/*.css) ---------- */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* colors.css: palette */
+  --purple: #5009B5;
+  --white: #FFFFFF;
+  --light-purple: #794CFF;
+  --cyan: #44B8F3;
+  --turquoise: #00BBBA;
+  --dark-purple: #2B1B49;
+  --pale-purple: #EBE4FF;
+  --pale-cyan: #E1EDFF;
+  --pale-turquoise: #D9F5F5;
+  --light-gray: #F5F5F5;
+  --dark-gray: #231E33;
+  --cyan-text: #0C7DB6;
+  --turquoise-text: #028283;
+  --purple-900: #280559;
+  --purple-700: #5009B5;
+  --purple-600: #6F1DF4;
+  --purple-500: #794CFF;
+  --primary-300: #E6D9FE;
+  --primary-500: #CDB3FD;
+  --primary-600: #C1A0FD;
+  --purple-050: #F3F2FF;
+  --purple-025: #F3ECFF;
+  --neutral-50: #FFFFFF;
+  --neutral-100: #F5F5F5;
+  --neutral-150: #F1F1F1;
+  --neutral-300: #D9D9D9;
+  --neutral-350: #CBD2DC;
+  --neutral-400: #BEBFC3;
+  --neutral-500: #929299;
+  --neutral-700: #828294;
+  --neutral-800: #5C5C6F;
+  --neutral-900: #303044;
+  --neutral-1000: #111125;
+  --success: #449E3C;
+  --info: #0263FF;
+  --warning: #F2BC35;
+  --error: #D20A36;
+
+  /* colors.css: semantic aliases */
+  --text-heading: var(--purple);
+  --text-body: var(--dark-gray);
+  --text-strong: var(--neutral-900);
+  --text-muted: var(--neutral-800);
+  --text-subtle: var(--neutral-700);
+  --text-inverse: var(--white);
+  --surface-page: var(--light-gray);
+  --surface-card: var(--white);
+  --surface-tint: var(--purple-050);
+  --surface-tint-strong: var(--primary-300);
+  --border-card: var(--pale-purple);
+  --border-hairline: rgba(0, 0, 0, 0.12);
+  --border-neutral: var(--neutral-350);
+  --border-row: var(--neutral-150);
+  --action-primary: var(--purple);
+  --action-primary-hover: #3E0790;
+  --action-primary-active: var(--purple-900);
+  --action-on-primary: var(--white);
+  --control-selected: var(--purple-600);
+  --control-unselected: rgba(60, 60, 67, 0.18);
+  --focus-ring: var(--cyan-text);
+
+  /* Console status tints (README, design tokens) */
+  --success-text: #2F6E29;
+  --success-tint: #E5F2E3;
+  --warning-text: #7A5300;
+  --warning-tint: #FDF3D7;
+  --warning-fill: #FFFBF0;
+  --error-text: #B00830;
+  --error-tint: #FBE3E8;
+  --error-fill: #FFF5F7;
+
+  /* fonts.css: Elevance Sans binaries are not in the design system yet (get them from
+     Brandhub), so the system UI stack renders until an @font-face is added. */
+  --bits-font-brand: "Elevance Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --bits-font-ui: var(--font-inter), Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+
+  /* elevation.css: shadows only on floating layers */
+  --ring-card: inset 0 0 0 1px var(--border-card);
+  --ring-button: inset 0 0 0 1px var(--action-primary);
+  --shadow-toast: inset 0 0 0 1px var(--border-card), 0 12px 32px rgba(35, 30, 51, 0.16);
+  --shadow-nudge: inset 0 0 0 1px var(--border-card), 0 16px 40px rgba(35, 30, 51, 0.22);
+
+  /* motion.css */
+  --bits-ease: cubic-bezier(0.2, 0, 0.2, 1);
+  --duration-fast: 120ms;
+  --duration-base: 200ms;
+
+  /* spacing.css */
+  --navbar-height: 81px;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-purple: var(--purple);
+  --color-purple-hover: var(--action-primary-hover);
+  --color-purple-900: var(--purple-900);
+  --color-purple-600: var(--purple-600);
+  --color-purple-500: var(--purple-500);
+  --color-primary-300: var(--primary-300);
+  --color-primary-500: var(--primary-500);
+  --color-tint: var(--purple-050);
+  --color-pale-purple: var(--pale-purple);
+  --color-ink: var(--text-body);
+  --color-strong: var(--text-strong);
+  --color-muted: var(--text-muted);
+  --color-subtle: var(--text-subtle);
+  --color-page: var(--surface-page);
+  --color-line: var(--border-neutral);
+  --color-row: var(--border-row);
+  --color-hairline: var(--border-hairline);
+  --color-neutral-300: var(--neutral-300);
+  --color-neutral-400: var(--neutral-400);
+  --color-neutral-500: var(--neutral-500);
+  --color-success: var(--success);
+  --color-success-text: var(--success-text);
+  --color-success-tint: var(--success-tint);
+  --color-warning: var(--warning);
+  --color-warning-text: var(--warning-text);
+  --color-warning-tint: var(--warning-tint);
+  --color-warning-fill: var(--warning-fill);
+  --color-error: var(--error);
+  --color-error-text: var(--error-text);
+  --color-error-tint: var(--error-tint);
+  --color-error-fill: var(--error-fill);
+  --color-turquoise: var(--turquoise);
+  --color-turquoise-text: var(--turquoise-text);
+  --color-turquoise-tint: var(--pale-turquoise);
+  --color-cyan: var(--cyan);
+  --color-focus: var(--focus-ring);
+
+  --font-brand: var(--bits-font-brand);
+  --font-ui: var(--bits-font-ui);
+  --font-sans: var(--bits-font-brand);
+
+  /* The BITS type scale sets no line-height on small sizes; keep the font's own. */
+  --text-xs--line-height: normal;
+  --text-sm--line-height: normal;
+  --text-base--line-height: normal;
+  --text-lg--line-height: normal;
+  --text-4xl--line-height: 1.15;
+
+  /* radius.css */
+  --radius-4: 4px;
+  --radius-8: 8px;
+  --radius-15: 15px;
+  --radius-16: 16px;
+  --radius-20: 20px;
+  --radius-30: 30px;
+  --radius-41: 41px;
+  --radius-pill: 108px;
+
+  --ease-standard: var(--bits-ease);
+
+  /* Navbar breakpoints (README, responsive behavior). sm = 640px and xl = 1280px are Tailwind's own. */
+  --breakpoint-w560: 35rem;
+  --breakpoint-w720: 45rem;
+  --breakpoint-w900: 56.25rem;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+/* The BITS card ring: an inset 1px line instead of a border or a shadow. */
+@utility ring-card {
+  box-shadow: var(--ring-card);
+}
+/* Numbers, timers, table headers and IDs. */
+@utility num {
+  font-family: var(--bits-font-ui);
+  font-variant-numeric: tabular-nums;
+}
+@utility scrollbar-none {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+@layer base {
+  html, body { margin: 0; background: var(--surface-page); }
+  body { font-family: var(--bits-font-brand); font-size: 14px; line-height: normal; color: var(--text-body); }
+  a { color: var(--purple); }
+  a:hover { color: var(--action-primary-hover); }
+  select, input, textarea, button { font-family: inherit; }
+  button:not(:disabled), select:not(:disabled), label { cursor: pointer; }
+  select:focus-visible, input:focus-visible, textarea:focus-visible, button:focus-visible, a:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 2px;
+  }
+  mark { background: var(--primary-300); color: var(--purple-900); border-radius: 3px; }
+  b { font-weight: 600; }
+}
+
+@layer components {
+  .panel { background: var(--surface-card); border-radius: 20px; box-shadow: var(--ring-card); }
+  .panel-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; padding: 18px 20px; border-bottom: 1px solid var(--border-card); }
+  .panel-title { margin: 0; font-size: 20px; font-weight: 500; line-height: normal; color: var(--purple); letter-spacing: -0.01em; }
+  .panel-sub { font-size: 13px; color: var(--text-muted); }
+  .field { box-sizing: border-box; border-radius: 8px; border: 1px solid var(--border-neutral); background: var(--white); color: var(--text-body); font-size: 14px; }
+  .field:disabled { cursor: not-allowed; }
+  .pill { display: inline-block; font-size: 12px; font-weight: 600; border-radius: 108px; padding: 2px 10px; }
 }
