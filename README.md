@@ -48,7 +48,7 @@ npm run dev        # http://localhost:3000
 
 ### Logos
 
-The brand logo PNGs are not in the repository. Copy `carelon-global-solutions.png`, `opssup-logo.png`, `bits-logo.png` and `carelon-icon-mark.png` from the design handoff (`design/assets/logos`) into `public/assets/logos/`. Without them the navbar and nudge show broken images.
+The brand logo PNGs are in `public/assets/logos/`: `carelon-global-solutions.png` (navbar), `bits-logo.png` (footer) and `carelon-icon-mark.png` (nudge). The originals are in the design handoff (`design/assets/logos`).
 
 ### What you see in each mode
 
