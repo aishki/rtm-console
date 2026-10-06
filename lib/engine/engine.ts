@@ -95,14 +95,15 @@ export function createEngine(hooks: EngineHooks = {}, opts: EngineOptions = {}) 
 
   function evaluate() {
     evaluateAgents(S.agents, S.rules, (r, a) => { fire(r, a); });
-    if (S.mode === "replay") return;
+    // Queue rules run whenever there is queue data; a replay only has it if the import supplied it.
     const q = S.queue;
     if (q) {
       floorRule("cq", q.cq > thr("cq"), `${Math.round(q.cq)} calls waiting`);
       floorRule("sl", q.sl < thr("sl"), `SL at ${q.sl.toFixed(0)}%`);
       floorRule("aband", q.ab > thr("aband"), `abandon at ${q.ab.toFixed(1)}%`);
     }
-    floorRule("gnr", S.staleFor >= thr("gnr"), `feed stale ${S.staleFor}s, states may be outdated`);
+    // A replay has no live heartbeat to watch.
+    if (S.mode !== "replay") floorRule("gnr", S.staleFor >= thr("gnr"), `feed stale ${S.staleFor}s, states may be outdated`);
   }
 
   /** Advance the shift clock by one second. */

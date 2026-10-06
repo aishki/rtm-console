@@ -46,5 +46,8 @@ next-env.d.ts
 # design handoff: internal reference material, kept local
 /design_handoff_rtm_console
 
-# brand logo binaries: copy from the handoff's design/assets/logos (see README)
-/public/assets/logos/*.png
+# real floor exports: internal queue names and IDs, never commit
+/GenCloudOverall
+
+# reference material used for the docs design, not ours to publish
+/docs/vrs-admin-manual.pdf

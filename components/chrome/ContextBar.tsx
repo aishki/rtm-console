@@ -7,6 +7,9 @@ import { usePerms } from "@/lib/client/hooks";
 import { useConsole } from "@/lib/client/store";
 import type { Role } from "@/lib/types";
 import { PurpleButton } from "@/components/ui/buttons";
+import { Select, type SelectOption } from "@/components/ui/Select";
+
+const ROLE_OPTIONS: SelectOption<Role>[] = ROLES.map(([value, label]) => ({ value, label }));
 
 function useFeedPill() {
   const status = useConsole(s => s.status);
@@ -14,7 +17,7 @@ function useFeedPill() {
   const replay = useConsole(s => s.replay);
   const staleFor = useConsole(s => s.staleFor);
   if (status !== "ready") return { bg: "#F5F5F5", fg: "#5C5C6F", dot: "#929299", text: status === "unauthorized" ? "Not signed in" : "Connecting…" };
-  if (mode === "replay" && replay) return { bg: "#EBE4FF", fg: "#5009B5", dot: "#5009B5", text: `CSV replay · ${replay.agents} agents · ${replay.events} events${replay.done ? " · complete" : ""}` };
+  if (mode === "replay" && replay) return { bg: "#EBE4FF", fg: "#5009B5", dot: "#5009B5", text: `Data replay · ${replay.agents} agents · ${replay.events} events${replay.done ? " · complete" : ""}` };
   if (staleFor > 0) return { bg: "#FDF3D7", fg: "#7A5300", dot: "#F2BC35", text: `Gencloud not responding · feed stale ${staleFor}s` };
   return { bg: "#D9F5F5", fg: "#028283", dot: "#00BBBA", text: "Live feed · Gencloud/NICE API" };
 }
@@ -43,18 +46,13 @@ export function ContextBar() {
         <>
           <label className="flex items-center gap-2.5">
             <span className="text-[13px] font-semibold text-muted">View as</span>
-            <select value={view.role} onChange={e => void attempt(api.setView(e.target.value as Role, null))} className={`${select} border-purple`}>
-              {ROLES.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
-            </select>
+            <Select value={view.role} onChange={role => void attempt(api.setView(role, null))} options={ROLE_OPTIONS} className={`${select} border-purple`} />
           </label>
           {groups.length > 0 && (
-            <select value={view.who ?? ""} aria-label="Person" onChange={e => void attempt(api.setView(view.role, e.target.value))} className={`${select} border-line`}>
-              {groups.map(g => (
-                <optgroup key={g.label} label={g.label}>
-                  {g.items.map(p => <option key={p} value={p}>{p}</option>)}
-                </optgroup>
-              ))}
-            </select>
+            <Select
+              value={view.who ?? ""} aria-label="Person" onChange={who => void attempt(api.setView(view.role, who))} className={`${select} border-line`}
+              options={groups.map(g => ({ label: g.label, items: g.items.map(p => ({ value: p, label: p })) }))}
+            />
           )}
         </>
       )}

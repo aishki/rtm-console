@@ -3,7 +3,7 @@ import type { ReplayEvent } from "@/lib/csv/parse";
 import { type Engine, createEngine } from "@/lib/engine/engine";
 import { defaultRules } from "@/lib/engine/rules";
 import type { FeedSource } from "@/lib/feed/FeedSource";
-import { CsvReplayFeed, REPLAY_SPEED } from "@/lib/feed/CsvReplayFeed";
+import { CsvReplayFeed, REPLAY_SPEED, type ReplayExtras } from "@/lib/feed/CsvReplayFeed";
 import { GencloudFeed } from "@/lib/feed/GencloudFeed";
 import { SimFeed } from "@/lib/feed/SimFeed";
 
@@ -108,10 +108,10 @@ export function runtimeFor(sid: string): Runtime {
 }
 
 /** Start replaying an export for this session, through the same rule configuration as the live floor. */
-export function startReplay(sid: string, events: ReplayEvent[]): Runtime {
+export function startReplay(sid: string, events: ReplayEvent[], extras: ReplayExtras = {}): Runtime {
   exitReplay(sid);
   if (registry.replays.size >= MAX_REPLAYS) exitReplay(registry.replays.keys().next().value!);
-  const rt = createRuntime("replay", registry.rules, REPLAY_SPEED, () => new CsvReplayFeed(events), (engine, feed) => {
+  const rt = createRuntime("replay", registry.rules, REPLAY_SPEED, () => new CsvReplayFeed(events, extras), (engine, feed) => {
     const csv = feed as CsvReplayFeed;
     engine.reset({ t: csv.startT, mode: "replay", replay: csv.meta });
   });
