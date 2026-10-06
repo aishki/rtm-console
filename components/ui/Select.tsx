@@ -136,8 +136,8 @@ export function Select<T extends string>({ value, onChange, options, disabled = 
         onMouseEnter={() => setActive(i)} onClick={() => pick(i)}
         className={`flex cursor-pointer items-center justify-between gap-3 whitespace-nowrap px-3 py-2 ${i === active ? "bg-pale-purple" : ""} ${isSelected ? "font-semibold text-purple" : i === active ? "text-purple-900" : "text-ink"}`}
       >
-        {o.label}
-        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true" className={isSelected ? "" : "invisible"}>
+        <span title={o.label} className="truncate">{o.label}</span>
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true" className={`shrink-0 ${isSelected ? "" : "invisible"}`}>
           <path d="m2.5 7.4 3 3 6-6.6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
       </div>
@@ -166,11 +166,11 @@ export function Select<T extends string>({ value, onChange, options, disabled = 
           ref={menuRef} id={id} role="listbox" aria-label={aria["aria-label"]}
           // Keeps focus on the trigger, which owns the keyboard.
           onMouseDown={e => e.preventDefault()} onClick={e => e.stopPropagation()}
-          className="invisible fixed z-[110] overflow-auto [scrollbar-color:var(--primary-500)_transparent] [scrollbar-width:thin] border border-purple bg-white font-brand text-ink shadow-[0_12px_32px_rgba(35,30,51,0.16)]"
+          className="invisible fixed z-[110] max-w-[min(420px,calc(100vw-16px))] overflow-auto [scrollbar-color:var(--primary-500)_transparent] [scrollbar-width:thin] border border-purple bg-white font-brand text-ink shadow-[0_12px_32px_rgba(35,30,51,0.16)]"
         >
           {options.map(o => "items" in o ? (
             <div key={o.label} role="group" aria-label={o.label}>
-              <div className="px-3 pb-1 pt-2.5 font-ui text-[11px] font-semibold uppercase tracking-[0.04em] text-muted">{o.label}</div>
+              <div className="truncate px-3 pb-1 pt-2.5 font-ui text-[11px] font-semibold uppercase tracking-[0.04em] text-muted">{o.label}</div>
               {o.items.map(option)}
             </div>
           ) : option(o))}
