@@ -124,15 +124,13 @@ export function createEngine(hooks: EngineHooks = {}, opts: EngineOptions = {}) 
     const alive = beat;
     beat = false;
     if (alive) {
-      if (S.staleFor > 0) {
-        S.staleFor = 0;
-        toast({ kind: "info", title: "Gencloud feed recovered", body: "Heartbeat restored. States are updating again and the stale counter is cleared." });
-      }
+      S.staleFor = 0;
       advance();
     } else {
-      // Feed is silent: agent states freeze and the stale counter runs.
+      // Feed is silent: agent states freeze and the stale counter runs. Feed status is shown
+      // persistently in the ContextBar, and a sustained outage still escalates via the gnr rule,
+      // so no transient "not responding" / "recovered" toast is raised here.
       S.staleFor++;
-      if (S.staleFor === 1) toast({ kind: "crit", title: "Gencloud not responding", body: "The feed heartbeat has gone silent. Agent states are frozen until it returns." });
     }
     evaluate();
   }

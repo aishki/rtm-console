@@ -244,7 +244,9 @@ describe("re-arm logic", () => {
     run(1);
     expect(e.S.staleFor).toBe(0);
     expect(agent("Amara Reyes").stTime).toBe(10);
-    expect(toasts.map(t => t.title)).toEqual(["Gencloud not responding", "Queue · Gencloud not responding · Critical", "Gencloud feed recovered"]);
+    // The transient "not responding"/"recovered" toasts are suppressed (feed status lives in the
+    // ContextBar); only the sustained-outage gnr escalation still toasts.
+    expect(toasts.map(t => t.title)).toEqual(["Queue · Gencloud not responding · Critical"]);
     for (let i = 0; i < 30; i++) e.tick();
     expect(e.S.ledger.map(r => r.ruleId)).toEqual(["gnr", "gnr"]);
   });
