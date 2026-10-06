@@ -15,7 +15,7 @@ This README is the developer handoff. It covers what is built, what is stubbed, 
 | API routes with server-side permission checks | Done |
 | CSV replay (upload, mapping, 60× run) | Done |
 | Floor simulator | Done, dev only |
-| **Gencloud/NiceIEX feed adapter** | **Stub.** See [Backend work 1](#1-gencloud-feed-adapter) |
+| **Gencloud/NiceIEX feed adapter** | **Implemented (v1).** Live: agent presence/routing and queue metrics. See [Backend work 1](#1-gencloud-feed-adapter) for env and run instructions. |
 | **SSO (role and span from the session)** | **Not wired.** See [Backend work 2](#2-sso) |
 | **Persistence** | **None, all state is in memory.** See [Backend work 3](#3-persistence) |
 | Incident-report form ("Open incident draft") | Stub, shows a toast only |
@@ -40,9 +40,11 @@ npm run dev        # http://localhost:3000
 
 | Variable | Meaning |
 | --- | --- |
-| `NEXT_PUBLIC_FEED=sim` | Use the floor simulator. Dev only: it is ignored when `NODE_ENV=production`. Any other value uses the Gencloud adapter. |
-| `NEXT_PUBLIC_VIEW_AS=1` | Dev/admin flag for the "View as" role selector. **Without it every API route answers 401**, because no SSO exists yet. |
-| `GENCLOUD_API_BASE`, `GENCLOUD_CLIENT_ID`, `GENCLOUD_CLIENT_SECRET` | Passed to the Gencloud adapter (currently unused by the stub). |
+| `NEXT_PUBLIC_FEED=sim` | Use the floor simulator. Dev only: it is ignored when `NODE_ENV=production`. Set to a non-"sim" value (e.g., `gencloud`) to use the Gencloud adapter. |
+| `NEXT_PUBLIC_VIEW_AS=1` | Dev/admin flag for the "View as" role selector. **Without it every API route answers 401**, because no SSO exists yet. Required for Gencloud development. |
+| `GENESYS_TOKEN` | Hand-grabbed supervisor bearer token from the browser DevTools Network tab (Authorization header of an api.mypurecloud.com request). Short-lived; bootstrap failure keeps the feed silent until restart. |
+| `GENCLOUD_API_BASE` | Gencloud API base URL, e.g. `https://api.mypurecloud.com`. |
+| `RTM_VIEW_CONFIG_ID` | Saved "CSBDProviderData" view ID (default: `9c9f8fd2-acab-4282-9442-ddba152f9c18`, the 89-queue voice-floor view). |
 
 `.env*` files are gitignored except `.env.example`.
 
@@ -53,7 +55,7 @@ The brand logo PNGs are not in the repository. Copy `carelon-global-solutions.pn
 ### What you see in each mode
 
 - **Dev with `NEXT_PUBLIC_FEED=sim`:** 199 simulated agents in 10 teams, starting at 08:15 with 15 minutes of history, random repeat offenders, and one 44-second feed outage four minutes in.
-- **Production build, or any non-sim feed:** an empty floor and "Gencloud not responding · feed stale Ns", because the Gencloud adapter delivers nothing yet. This is expected.
+- **Dev/prod with `NEXT_PUBLIC_FEED=gencloud` and valid `GENESYS_TOKEN`:** live agents and queues from the watched view (presence/routing state and queue metrics). Bootstrap failure or expired token keeps the feed silent until restart.
 
 ## Architecture
 
@@ -107,37 +109,41 @@ components/
 
 ### 1. Gencloud feed adapter
 
-Implement `lib/feed/GencloudFeed.ts`. It must satisfy `FeedSource` (`lib/feed/FeedSource.ts`): `subscribe(handlers)` starts delivery and returns an unsubscribe function. The four handlers are the whole contract with the engine:
+Implemented in `lib/feed/GencloudFeed.ts`. It establishes a WebSocket connection to Gencloud Notifications API and ingests agent presence/routing state and queue metrics.
 
-| Handler | Call it when | Payload |
-| --- | --- | --- |
-| `onRoster` | On connect, and whenever the org or the agents on shift change | `{ org: Team[], agents: RosterAgent[] }`. Replaces the engine's floor. |
-| `onAgentState` | An agent's presence, routing status or hold state changes | `AgentStateEvent` (below) |
-| `onQueue` | Queue observations refresh | `{ cq, sl, asa, ab }`: calls in queue, service level %, ASA seconds, abandon % |
-| `onHeartbeat` | The channel proves it is alive | none |
+#### Run instructions
 
-```ts
-interface AgentStateEvent {
-  agent: string;                          // must match RosterAgent.name
-  state: 'oncall'|'avail'|'acw'|'auxb'|'auxp'|'outb'|'off';
-  callEnded?: { transferred?: boolean };  // set when this transition released a call
-  onHold?: boolean;                       // set on hold start and hold end
-  adh?: number;                           // shift adherence % from NiceIEX
-}
-```
+1. **Environment:**
+   - `NEXT_PUBLIC_FEED=gencloud` (or any non-"sim" value; dev default is "sim")
+   - `NEXT_PUBLIC_VIEW_AS=1` (required for admin access without SSO)
+   - `GENESYS_TOKEN`: hand-grabbed supervisor bearer token from the browser DevTools Network tab. Grab it from the Authorization header of any api.mypurecloud.com request. Short-lived (typically 8 hours). On bootstrap failure (e.g., expired token), the feed stays silent; restart the server with a fresh token.
+   - `GENCLOUD_API_BASE`: e.g., `https://api.mypurecloud.com`
+   - `RTM_VIEW_CONFIG_ID`: saved "CSBDProviderData" view ID (default: `9c9f8fd2-acab-4282-9442-ddba152f9c18` for the 89-queue voice-floor view)
 
-Things the adapter author needs to know:
+2. **Start the dev server:**
+   ```bash
+   npm run dev        # http://localhost:3000
+   # Or choose a port:
+   npm run dev -- -p 3001
+   ```
 
-- **Agents are keyed by name** throughout (events, ledger, incidents, scoping, the "View as" selector). Names must be unique. If Gencloud names can collide, switch the key to the user ID across `lib/types.ts` and the engine before going live.
-- **The engine owns the timers.** Send transitions only; do not send elapsed time. Time in state restarts when `state` changes, and hold time restarts when `onHold` flips.
-- **`callEnded` drives the call metrics.** It increments calls, updates AHT (85/15 moving average), counts a transfer if flagged, and fires the Short call rule when the call lasted under the threshold. Without it none of that happens.
-- **Adherence:** send `adh` from NiceIEX. `deriveAdh` in `lib/server/runtime.ts` makes the engine model adherence drift itself; it is on for the simulator and replay only and should stay off for Gencloud.
-- **Staleness:** any handler call counts as proof of life. A full second with none makes the feed stale: timers freeze, the counter runs, and the "Gencloud not responding" rule fires at its threshold (default 30s). Call `onHeartbeat` at least once a second while the channel is healthy, or quiet periods will read as outages.
-- **Events are queued and applied on the next engine tick**, so handlers can be called from any async callback at any time.
-- **Mapping Gencloud statuses to the seven states** has a starting point in `guessState()` (`lib/csv/parse.ts`), which the CSV import already uses.
-- **Shift clock:** for a non-sim feed the clock starts at the server's local wall-clock time (seconds since midnight) in `createLive()`. There is no shift rollover: strikes, ledger and incidents accumulate until the process restarts. Decide how a shift starts and ends and call `engine.reset({ t })` there.
+3. **What you see:** Live agents and queues from the watched view. Agent presence/routing state (Avail, On Call, ACW, aux modes, Offline) and queue metrics (calls in queue, service level, ASA, abandon %) update in real time.
 
-The adapter is constructed in `createLive()` in `lib/server/runtime.ts`.
+#### V1 scope and gaps
+
+**Live now:**
+- Agent presence/routing state (triggers ACW, Aux, Offline, Long Call, and related escalation rules)
+- Queue metrics: calls in queue, service level %, ASA seconds, abandon % (trigger queue rules and feed-stale detection)
+
+**Not yet live (depend on conversation-level topics and WFM adherence API — later tasks):**
+- Call release detection (`callEnded`), so AHT, Short Call, Transfer, and Hold Duration rules remain quiet
+- Shift adherence tracking
+
+**Org model (v1 simplification):**
+- One team per queue. Team Lead and Manager cells show blank; real org hierarchy is a later mapping task.
+
+**Authentication (v1 simplified):**
+- Hand-grabbed short-lived bearer token. Production OAuth (client credentials) is a later task.
 
 ### 2. SSO
 
