@@ -1,0 +1,702 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>RTM Console - Simulation Guide</title>
+<meta name="author" content="Arielle Jimera (BITS Automation Team)">
+<meta name="subject" content="Floor data import and replay user guide">
+<style>
+  :root {
+    --purple: #5009B5; --deep: #2E1A5E; --ink: #231E33; --strong: #303044; --muted: #6B6B7E; --subtle: #8A8A9A;
+    --tint: #F4EFFC; --tint-2: #EDE6FA; --line: #E4DEEF; --row: #ECECF1;
+    --red: #C8102E; --red-bg: #FDECEF; --amber: #B97D00; --amber-bg: #FFF6E0; --amber-line: #E6A700;
+    --green: #2F6E29; --green-bg: #E5F2E3; --turq: #00BBBA; --turq-text: #028283; --turq-bg: #D9F5F5; --gold: #F2BC35;
+  }
+  @page {
+    size: Letter; margin: 21mm 17mm 20mm;
+    @top-left { content: "RTM Console \00B7  Simulation Guide"; font: 600 7.6pt "Segoe UI", Arial, sans-serif; color: #5009B5; vertical-align: bottom; padding-bottom: 5mm; }
+    @bottom-left { content: "Simulation Guide"; font: 7.6pt "Segoe UI", Arial, sans-serif; color: #9A9AA8; vertical-align: top; padding-top: 6mm; }
+    @bottom-right { content: "Page " counter(page); font: 7.6pt "Segoe UI", Arial, sans-serif; color: #9A9AA8; vertical-align: top; padding-top: 6mm; }
+  }
+  @page cover { margin: 17mm 17mm 16mm; @top-left { content: none; } @bottom-left { content: none; } @bottom-right { content: none; } }
+  * { box-sizing: border-box; }
+  html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body { margin: 0; font: 9.6pt/1.55 "Segoe UI", Arial, sans-serif; color: var(--ink); }
+  p { margin: 0 0 8pt; }
+  b, strong { font-weight: 700; }
+  a { color: var(--purple); font-weight: 600; text-decoration: underline; text-underline-offset: 2px; }
+
+  /* ---------- cover ---------- */
+  .cover { page: cover; break-after: page; }
+  .hero { background: linear-gradient(135deg, #4A0CA8 0%, #33107A 45%, #26094F 100%); border-radius: 16pt; padding: 34pt 32pt 30pt; color: #fff; }
+  .eyebrow { font: 600 6.6pt "Consolas", monospace; letter-spacing: 0.26em; text-transform: uppercase; color: #BCA6E8; }
+  .hero h1 { margin: 16pt 0 0; font-size: 27pt; line-height: 1.12; font-weight: 600; letter-spacing: -0.01em; }
+  .hero h1 span { display: block; color: #C7A9FF; }
+  .hero .desc { margin: 12pt 0 0; max-width: 360pt; font-size: 11.2pt; line-height: 1.45; color: #E3D8F8; }
+  .hero .tag { margin: 14pt 0 0; font-size: 9.6pt; font-weight: 600; color: #C7A9FF; }
+  .meta { display: grid; grid-template-columns: 1.15fr 1.5fr 1.2fr 1fr; gap: 14pt; margin-top: 24pt; padding-top: 14pt; border-top: 1px solid rgba(255,255,255,0.22); }
+  .meta div span { display: block; font: 600 5.8pt "Consolas", monospace; letter-spacing: 0.24em; text-transform: uppercase; color: #BCA6E8; margin-bottom: 4pt; }
+  .meta div b { font-size: 9.2pt; font-weight: 600; line-height: 1.35; display: block; }
+  .prepared { margin: 22pt 0 0; padding-left: 12pt; border-left: 3pt solid var(--purple); }
+  .prepared span { font: 600 5.8pt "Consolas", monospace; letter-spacing: 0.24em; text-transform: uppercase; color: var(--subtle); }
+  .prepared b { display: block; margin-top: 5pt; font-size: 10.6pt; color: var(--deep); }
+  .prepared i { display: block; font-style: normal; font-size: 8.6pt; color: var(--muted); }
+  .contents-title { margin: 24pt 0 8pt; font-size: 11.5pt; font-weight: 700; color: var(--deep); }
+  .toc { columns: 2; column-gap: 26pt; }
+  .toc a { display: flex; gap: 10pt; padding: 6.2pt 0; border-bottom: 1px dotted #C9C4D6; font-size: 8.6pt; font-weight: 400; color: var(--strong); text-decoration: none; break-inside: avoid; }
+  .toc a .n { width: 12pt; color: var(--muted); }
+  .toc a .t { flex: 1; }
+  .toc a .pg { font-weight: 700; color: var(--purple); }
+
+  /* ---------- headings ---------- */
+  h1.sec { margin: 22pt 0 10pt; padding-bottom: 6pt; border-bottom: 1.6pt solid var(--purple); font-size: 17.5pt; line-height: 1.2; font-weight: 600; color: var(--deep); break-after: avoid; }
+  h1.sec .n { color: var(--purple); margin-right: 5pt; }
+  h1.sec:first-of-type { margin-top: 0; }
+  h2 { margin: 15pt 0 6pt; font-size: 11.4pt; font-weight: 700; color: var(--deep); break-after: avoid; }
+  h3 { margin: 12pt 0 4pt; font-size: 9.8pt; font-weight: 700; color: var(--deep); break-after: avoid; }
+  .lead { font-size: 10.4pt; line-height: 1.55; color: var(--muted); margin-bottom: 10pt; break-after: avoid; }
+
+  /* ---------- inline ---------- */
+  .ui { display: inline-block; padding: 0 5pt; margin: 0 1pt; border-radius: 3pt; background: var(--tint-2); color: var(--purple); font-size: 8.2pt; font-weight: 600; line-height: 1.6; white-space: nowrap; }
+  code { font: 8.4pt "Consolas", monospace; background: #F3F3F6; border-radius: 3pt; padding: 1pt 4pt; color: var(--strong); }
+  .badge { display: inline-block; padding: 0 5pt; border-radius: 3pt; font-size: 6.6pt; font-weight: 700; letter-spacing: 0.08em; line-height: 1.75; vertical-align: 1pt; color: #fff; background: var(--purple); }
+  .badge.opt { background: #8A8A9A; }
+  .pill { display: inline-block; padding: 0 6pt; border-radius: 20pt; font-size: 7.4pt; font-weight: 700; line-height: 1.8; }
+  .pill.nudge { background: var(--turq-bg); color: var(--turq-text); } .pill.lead { background: #FDF3D7; color: #7A5300; } .pill.ops { background: #EBE4FF; color: var(--purple); }
+  .pill.err { background: var(--red-bg); color: var(--red); } .pill.warn { background: #FDF3D7; color: #7A5300; }
+
+  /* ---------- lists ---------- */
+  ul { margin: 0 0 8pt; padding-left: 14pt; }
+  li { margin-bottom: 4pt; }
+  ol.steps { list-style: none; margin: 4pt 0 10pt; padding: 0; counter-reset: s; }
+  ol.steps > li { counter-increment: s; position: relative; padding-left: 22pt; margin-bottom: 7pt; break-inside: avoid; }
+  ol.steps > li::before { content: counter(s); position: absolute; left: 0; top: 1pt; width: 13.5pt; height: 13.5pt; border-radius: 50%; background: var(--purple); color: #fff; font-size: 7.4pt; font-weight: 700; line-height: 13.5pt; text-align: center; }
+  ul.check { list-style: none; padding: 0; margin: 4pt 0 10pt; }
+  ul.check li { position: relative; padding-left: 20pt; margin-bottom: 6pt; break-inside: avoid; }
+  ul.check li::before { content: ""; position: absolute; left: 0; top: 2.4pt; width: 9.5pt; height: 9.5pt; border: 1.3pt solid var(--purple); border-radius: 2.5pt; }
+
+  /* ---------- tables ---------- */
+  table { width: 100%; border-collapse: collapse; margin: 4pt 0 11pt; font-size: 8.7pt; line-height: 1.5; }
+  th { text-align: left; padding: 6.5pt 9pt; background: var(--tint-2); color: var(--deep); font-weight: 700; font-size: 8.4pt; }
+  td { padding: 7pt 9pt; border-bottom: 1px solid var(--row); vertical-align: top; }
+  td:first-child { font-weight: 700; color: var(--ink); }
+  tr { break-inside: avoid; }
+  thead { display: table-header-group; }
+  table { break-inside: avoid; } table.long { break-inside: auto; }
+  table.tight td { padding: 4.2pt 9pt; } table.tight th { padding: 5pt 9pt; }
+  table.plain td:first-child { font-weight: 400; }
+  .num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+  /* ---------- callouts ---------- */
+  .note, .warn, .imp { margin: 6pt 0 12pt; padding: 10pt 13pt 4pt; border-radius: 4pt; break-inside: avoid; }
+  .note > b:first-child, .warn > b:first-child, .imp > b:first-child { display: block; margin-bottom: 4pt; font-size: 7.2pt; letter-spacing: 0.11em; text-transform: uppercase; }
+  .note { background: var(--tint); border-left: 3pt solid var(--purple); } .note > b:first-child { color: var(--purple); }
+  .warn { background: var(--amber-bg); border-left: 3pt solid var(--amber-line); } .warn > b:first-child { color: var(--amber); }
+  .imp { background: var(--red-bg); border: 1.2pt solid var(--red); border-radius: 8pt; padding: 12pt 15pt 6pt; } .imp > b:first-child { color: var(--red); font-size: 8pt; }
+  .note li, .warn li, .imp li { margin-bottom: 3pt; }
+
+  /* ---------- figures ---------- */
+  figure { margin: 8pt 0 13pt; break-inside: avoid; }
+  figcaption { margin-top: 6pt; text-align: center; font-size: 7.6pt; font-style: italic; color: var(--subtle); }
+  .split { display: grid; grid-template-columns: 1fr 1fr; gap: 20pt; align-items: start; margin-bottom: 4pt; }
+  .split figure { margin-top: 2pt; }
+
+  .flow { display: grid; grid-template-columns: 1fr 14pt 1fr 14pt 1fr 14pt 1fr; align-items: stretch; }
+  .flow .box { border: 1px solid var(--line); border-radius: 8pt; padding: 9pt 6pt; text-align: center; background: #fff; }
+  .flow .box.on { background: var(--tint); border-color: #D6C8F2; }
+  .flow .box b { display: block; font-size: 9pt; color: var(--purple); }
+  .flow .box span { display: block; margin-top: 3pt; font-size: 7.4pt; line-height: 1.35; color: var(--muted); }
+  .flow .arr { align-self: center; text-align: center; color: var(--purple); font-size: 11pt; font-weight: 700; }
+
+  .mock { border: 1px solid #D9D3E8; border-radius: 9pt; background: #fff; box-shadow: 0 2pt 8pt rgba(46,26,94,0.07); overflow: hidden; }
+  .mock .bar { display: flex; align-items: center; gap: 4pt; padding: 6pt 10pt; background: #F7F5FB; border-bottom: 1px solid #E7E2F1; font-size: 7pt; color: var(--subtle); }
+  .mock .bar i { width: 5pt; height: 5pt; border-radius: 50%; background: #D5D0E0; }
+  .mock .body { padding: 13pt 14pt; }
+  .dlg h4 { margin: 0 0 4pt; font-size: 12pt; font-weight: 600; color: var(--purple); }
+  .dlg p { font-size: 7.6pt; line-height: 1.45; color: var(--strong); margin-bottom: 8pt; }
+  .dlg .step1 { display: flex; align-items: center; gap: 8pt; background: var(--tint); border-radius: 7pt; padding: 7pt 9pt; margin-bottom: 8pt; }
+  .dlg .step1 div { flex: 1; font-size: 7.2pt; line-height: 1.4; color: var(--strong); } .dlg .step1 div b { display: block; color: #280559; }
+  .btn { display: inline-block; padding: 3.5pt 9pt; border-radius: 20pt; font-size: 7.4pt; font-weight: 700; white-space: nowrap; }
+  .btn.solid { background: var(--purple); color: #fff; } .btn.out { color: var(--purple); box-shadow: inset 0 0 0 1px var(--purple); background: #fff; } .btn.off { background: #B79BE0; color: #fff; }
+  .dlg .lbl { font-size: 7.2pt; font-weight: 700; color: var(--muted); margin-bottom: 4pt; }
+  .dlg .drop { border: 1.4pt dashed #CDB3FD; border-radius: 7pt; padding: 11pt; text-align: center; font-size: 8pt; margin-bottom: 7pt; } .dlg .drop span { display: block; font-size: 6.8pt; color: var(--muted); margin-top: 2pt; }
+  .dlg .sum { font: 700 7.2pt "Segoe UI"; color: var(--turq-text); margin-bottom: 6pt; }
+  .dlg ul { font-size: 7.2pt; margin: 0 0 6pt; padding-left: 11pt; } .dlg ul.w { color: #7A5300; } .dlg ul.e { color: #B00830; font-weight: 600; }
+  .dlg .foot { display: flex; align-items: center; gap: 6pt; margin-top: 4pt; } .dlg .foot .sp { flex: 1; font-size: 7.4pt; font-weight: 600; color: var(--purple); }
+
+  .sheet { border: 1px solid #C9CED6; border-radius: 4pt; overflow: hidden; font: 7.3pt "Segoe UI", Arial, sans-serif; }
+  .sheet table { margin: 0; font-size: 7.3pt; line-height: 1.35; }
+  .sheet th { background: var(--purple); color: #fff; padding: 4pt 6pt; font-size: 7.2pt; border-right: 1px solid #6A2BC6; }
+  .sheet td { padding: 3.4pt 6pt; border-bottom: 1px solid #E3E6EA; border-right: 1px solid #E3E6EA; font-weight: 400 !important; color: var(--strong); white-space: nowrap; }
+  .sheet .tabs { display: flex; gap: 1pt; background: #EEF0F3; border-top: 1px solid #C9CED6; padding: 0 4pt; }
+  .sheet .tabs span { padding: 3pt 7pt; font-size: 6.6pt; color: var(--muted); } .sheet .tabs span.on { background: #fff; color: var(--green); font-weight: 700; border-bottom: 1.6pt solid var(--green); }
+
+  .tl { position: relative; height: 74pt; margin: 4pt 8pt 0; }
+  .tl .axis { position: absolute; left: 0; right: 0; top: 34pt; height: 3pt; border-radius: 2pt; background: #E4DEEF; }
+  .tl .run { position: absolute; top: 34pt; height: 3pt; background: var(--purple); border-radius: 2pt; }
+  .tl .pt { position: absolute; top: 28.5pt; width: 14pt; height: 14pt; margin-left: -7pt; border-radius: 50%; background: #fff; border: 3pt solid var(--purple); }
+  .tl .pt.g { border-color: #B9B4C8; }
+  .tl .cap { position: absolute; width: 120pt; margin-left: -60pt; text-align: center; font-size: 7.4pt; line-height: 1.35; color: var(--muted); }
+  .tl .cap b { display: block; color: var(--deep); font-size: 8pt; } .tl .cap.top { top: 0; } .tl .cap.bot { top: 48pt; }
+  .tl .brace { position: absolute; top: 20pt; font-size: 6.8pt; color: var(--purple); font-weight: 700; text-align: center; }
+
+  .ladder { display: grid; grid-template-columns: 1fr 1fr 1fr; position: relative; padding: 2pt 0; }
+  .ladder::before { content: ""; position: absolute; left: 16.6%; right: 16.6%; top: 22pt; height: 2.4pt; background: linear-gradient(90deg, var(--turq), var(--gold) 50%, var(--purple)); }
+  .ladder div { text-align: center; position: relative; }
+  .ladder div span { display: block; font-size: 7.4pt; color: var(--muted); }
+  .ladder div i { display: block; width: 13pt; height: 13pt; border-radius: 50%; margin: 3.5pt auto 5pt; border: 2.4pt solid #fff; }
+  .ladder div b { display: block; font-size: 10pt; color: var(--deep); }
+  .ladder div em { display: block; font-style: normal; font-size: 7.6pt; color: var(--muted); }
+
+  .card { border: 1px solid #E4DEEF; border-radius: 9pt; padding: 10pt 11pt; font-size: 7.8pt; }
+  .card .row1 { display: flex; align-items: baseline; gap: 6pt; } .card .row1 b { font-size: 8.8pt; } .card .row1 time { margin-left: auto; color: var(--muted); font-size: 7.2pt; }
+  .card .txt { margin: 5pt 0 7pt; color: var(--strong); } .card .txt i { font-style: normal; font-weight: 700; color: var(--purple); }
+  .rungs { display: flex; align-items: center; font-size: 7pt; font-weight: 700; margin-bottom: 8pt; }
+  .rungs span { display: inline-flex; align-items: center; gap: 3pt; } .rungs span::before { content: ""; width: 6.5pt; height: 6.5pt; border-radius: 50%; background: currentColor; }
+  .rungs hr { flex: 1; border: 0; height: 1.6pt; margin: 0 5pt; }
+
+  .qr { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 9pt; margin: 4pt 0 12pt; }
+  .qr div { border: 1px solid var(--line); border-radius: 7pt; padding: 9pt 10pt; font-size: 8pt; line-height: 1.5; color: var(--strong); break-inside: avoid; }
+  .qr div span { display: block; margin-bottom: 4pt; font: 700 6pt "Consolas", monospace; letter-spacing: 0.2em; text-transform: uppercase; color: var(--purple); }
+  .faq h3 { margin-top: 11pt; } .faq p { margin-bottom: 4pt; } .faq > div { break-inside: avoid; }
+  .tick { color: var(--green); font-weight: 700; } .dash { color: #B4B4C0; }
+</style>
+</head>
+<body>
+
+<!-- ============================ COVER ============================ -->
+<section class="cover">
+  <div class="hero">
+    <div class="eyebrow">Carelon Global Solutions &nbsp;&middot;&nbsp; BITS</div>
+    <h1>RTM Console <span>Simulation Guide</span></h1>
+    <p class="desc">How to run the console on your own floor data: fill in the Excel template, upload it, and watch the day replay through the rules engine.</p>
+    <p class="tag">Real-Time Monitoring &amp; Escalation</p>
+    <div class="meta">
+      <div><span>For</span><b>Admin (WFM) &middot; Managers</b></div>
+      <div><span>Covers</span><b>Floor data import and replay</b></div>
+      <div><span>You will need</span><b>Excel &middot; a day of agent statuses</b></div>
+      <div><span>Edition</span><b>6 October 2026</b></div>
+    </div>
+  </div>
+
+  <div class="prepared">
+    <span>Prepared by</span>
+    <b>Arielle Jimera</b>
+    <i>UI/UX Designer / Developer &middot; BITS Automation Team</i>
+  </div>
+
+  <div class="contents-title">Contents</div>
+  <nav class="toc">
+    <a href="#s1"><span class="n">1</span><span class="t">Quick start</span><span class="pg">{{p1}}</span></a>
+    <a href="#s2"><span class="n">2</span><span class="t">How the simulation works</span><span class="pg">{{p2}}</span></a>
+    <a href="#s3"><span class="n">3</span><span class="t">Filling in the template</span><span class="pg">{{p3}}</span></a>
+    <a href="#s4"><span class="n">4</span><span class="t">Uploading and checking the file</span><span class="pg">{{p4}}</span></a>
+    <a href="#s5"><span class="n">5</span><span class="t">How time works</span><span class="pg">{{p5}}</span></a>
+    <a href="#s6"><span class="n">6</span><span class="t">Rules and escalation</span><span class="pg">{{p6}}</span></a>
+    <a href="#s7"><span class="n">7</span><span class="t">Reading the result</span><span class="pg">{{p7}}</span></a>
+    <a href="#s8"><span class="n">8</span><span class="t">Messages and their meaning</span><span class="pg">{{p8}}</span></a>
+    <a href="#s9"><span class="n">9</span><span class="t">Limits</span><span class="pg">{{p9}}</span></a>
+    <a href="#s10"><span class="n">10</span><span class="t">Frequently asked questions</span><span class="pg">{{p10}}</span></a>
+    <a href="#s11"><span class="n">11</span><span class="t">Quick reference card</span><span class="pg">{{p11}}</span></a>
+  </nav>
+</section>
+
+<!-- ============================ 1 ============================ -->
+<h1 class="sec" id="s1"><span class="n">1</span> Quick start</h1>
+<p class="lead">The whole flow takes a few minutes. If you only read one section, read this one. Every step is explained in detail later in the guide.</p>
+
+<div class="split">
+  <div>
+    <ol class="steps">
+      <li>Open <span class="ui">Dashboards</span> and click <span class="ui">Import floor data</span>. Only <b>Admin (WFM)</b> and <b>Manager</b> see this button.</li>
+      <li>Click <span class="ui">Download template</span>. You get <code>RTM_floor_data_template.xlsx</code>.</li>
+      <li>Fill in the <b>Roster</b> and <b>Agent Status</b> sheets with your own data (<a href="#s3">Section 3</a>).</li>
+      <li>Drop the file on the dialog. The console checks it and shows a summary, or a list of what to fix (<a href="#s4">Section 4</a>).</li>
+      <li>Click <span class="ui">Start replay</span>. The day plays back at 60 times normal speed (<a href="#s5">Section 5</a>).</li>
+      <li>Review <span class="ui">Dashboards</span> and <span class="ui">Instance Ledger</span> (<a href="#s7">Section 7</a>).</li>
+      <li>Click <span class="ui">Exit replay</span> in the top bar to return to the live floor.</li>
+    </ol>
+    <div class="note">
+      <b>Try it first</b>
+      <p>The template already contains a sample day for 8 agents in 2 teams. Download it and upload it straight back to see the whole flow before preparing real data.</p>
+    </div>
+  </div>
+  <figure>
+    <div class="mock"><div class="bar"><i></i><i></i><i></i>&nbsp; Import floor data</div>
+      <div class="body dlg">
+        <h4>Import floor data</h4>
+        <p>Download the Excel template, fill in your roster and the day's agent statuses, and upload it.</p>
+        <div class="step1"><div><b>Step 1 &middot; Get the template</b>Sheets for the roster, agent statuses, holds and queue intervals.</div><span class="btn out">Download template</span></div>
+        <div class="lbl">Step 2 &middot; Upload the filled-in file</div>
+        <div class="drop">Drop the file here, or <b style="color:var(--purple)">browse</b><span>Excel template (.xlsx), or a raw Gencloud agent-status export (.csv)</span></div>
+        <div class="foot"><span class="sp">Download sample CSV &rarr;</span><span class="btn out">Cancel</span><span class="btn off">Start replay</span></div>
+      </div>
+    </div>
+    <figcaption>The Import floor data dialog, before a file is chosen.</figcaption>
+  </figure>
+</div>
+
+<!-- ============================ 2 ============================ -->
+<h1 class="sec" id="s2"><span class="n">2</span> How the simulation works</h1>
+<p class="lead">The console does not load a finished day. It re-enacts your day from the first row to the last, in fast-forward, and works out the escalations as it goes.</p>
+
+<h2>Two ways the console can run without a live feed</h2>
+<table>
+  <thead><tr><th style="width:23%">Mode</th><th style="width:42%">Where the data comes from</th><th>Use it for</th></tr></thead>
+  <tbody>
+    <tr><td>Built-in simulator</td><td>Invented by the app: 199 made-up agents in 10 teams.</td><td>Demos and trying the screens. Development builds only.</td></tr>
+    <tr><td>Imported replay</td><td>An Excel file you fill in with a real or planned day.</td><td>Seeing what the console would have done on your floor. <b>This guide.</b></td></tr>
+  </tbody>
+</table>
+
+<h2>Why it replays instead of loading</h2>
+<p>Your file records what agents <b>did</b>: "Joshua went into ACW at 10:14:05", "Joshua went Available at 10:17:40". It does not record what the console <b>should have done about it</b>. That part is worked out by the rules engine, and the engine only works by watching time pass.</p>
+
+<figure>
+  <div class="flow">
+    <div class="box"><b>Your Excel file</b><span>roster, statuses, holds, queue numbers</span></div><div class="arr">&rarr;</div>
+    <div class="box"><b>Replay feed</b><span>plays the rows back in time order</span></div><div class="arr">&rarr;</div>
+    <div class="box on"><b>Rules engine</b><span>runs the clock and checks every rule</span></div><div class="arr">&rarr;</div>
+    <div class="box"><b>Screens</b><span>grid, trigger feed, dashboards, ledger</span></div>
+  </div>
+  <figcaption>The same path the live Gencloud feed will take. Only the first box changes.</figcaption>
+</figure>
+
+<h2>What happens every simulated second</h2>
+<ol class="steps">
+  <li><b>The timers advance.</b> The engine keeps a shift clock and, for each agent, how long they have been in their current status.</li>
+  <li><b>Events are applied.</b> Any status change, hold or queue update stamped at that second takes effect. A status change resets that agent's timer to zero.</li>
+  <li><b>Every rule is checked.</b> For example, when Joshua's ACW timer reaches 120 seconds, the Extended ACW rule fires.</li>
+</ol>
+<p>A rule firing is called a <b>call-out</b>. Each one counts a <b>strike</b> for that agent and that rule, and the strike number decides who is told (<a href="#s6">Section 6</a>). Nudges, strikes, incidents and the ledger are all produced this way. None of them are in your file.</p>
+
+<div class="note">
+  <b>A faithful preview</b>
+  <p>This is exactly what the console will do with the live feed. The replay swaps the live feed for your recorded day and runs the clock faster, using the rules as they are currently set on the <span class="ui">Rules Engine</span> screen.</p>
+</div>
+
+<!-- ============================ 3 ============================ -->
+<h1 class="sec" id="s3"><span class="n">3</span> Filling in the template</h1>
+<p class="lead">The workbook has four data sheets. Two are required. The other two are optional, and each one switches on more of the console.</p>
+
+<table>
+  <thead><tr><th style="width:24%">Sheet</th><th style="width:15%"></th><th>What it switches on</th></tr></thead>
+  <tbody>
+    <tr><td>Roster</td><td><span class="badge">REQUIRED</span></td><td>The agent grid, the Team Lead, Manager and Agent views, and My View.</td></tr>
+    <tr><td>Agent Status</td><td><span class="badge">REQUIRED</span></td><td>State timers, strikes, nudges, incidents, and the Short call and Transfer rate rules.</td></tr>
+    <tr><td>Holds</td><td><span class="badge opt">OPTIONAL</span></td><td>The Long hold rule.</td></tr>
+    <tr><td>Queue Intervals</td><td><span class="badge opt">OPTIONAL</span></td><td>The four queue tiles on the Console, and the Queue backlog, Service level and Abandon rate rules.</td></tr>
+  </tbody>
+</table>
+<p>The workbook also has an <b>Instructions</b> sheet and a <b>Lists</b> sheet that feeds the Status dropdown. Leave both as they are.</p>
+
+<div class="warn">
+  <b>Keep the structure</b>
+  <p>Do not rename the sheets or change the header row. Column order does not matter, and extra columns are ignored, but the sheet names and header text are how the console finds your data.</p>
+</div>
+
+<h2>Roster</h2>
+<p>One row per agent on shift. This sheet decides who appears on the grid and who can see whom.</p>
+<figure>
+  <div class="sheet">
+    <table>
+      <thead><tr><th>Agent Name</th><th>Team</th><th>Team Lead</th><th>Manager</th><th>LOB</th><th>Adherence %</th></tr></thead>
+      <tbody>
+        <tr><td>Amara Reyes</td><td>Team Alpha</td><td>Rina Velasco</td><td>Ava Santiago</td><td>PAP Intake</td><td>97</td></tr>
+        <tr><td>Joshua Lim</td><td>Team Alpha</td><td>Rina Velasco</td><td>Ava Santiago</td><td>PAP Intake</td><td>95</td></tr>
+        <tr><td>Katrina Uy</td><td>Team Bravo</td><td>Marco Tan</td><td>Ava Santiago</td><td>PAP Intake</td><td>96</td></tr>
+      </tbody>
+    </table>
+    <div class="tabs"><span>Instructions</span><span class="on">Roster</span><span>Agent Status</span><span>Holds</span><span>Queue Intervals</span><span>Lists</span></div>
+  </div>
+  <figcaption>The Roster sheet (sample data).</figcaption>
+</figure>
+<table>
+  <thead><tr><th style="width:22%">Column</th><th style="width:15%"></th><th>What to enter</th></tr></thead>
+  <tbody>
+    <tr><td>Agent Name</td><td><span class="badge">REQUIRED</span></td><td>Must be unique, and must match the name used on the other sheets exactly, including spelling and spacing.</td></tr>
+    <tr><td>Team</td><td><span class="badge">REQUIRED</span></td><td>The agent's team. A team has exactly one team lead and one manager.</td></tr>
+    <tr><td>Team Lead</td><td><span class="badge">REQUIRED</span></td><td>Sets the Team Lead view: this person sees only this team.</td></tr>
+    <tr><td>Manager</td><td><span class="badge">REQUIRED</span></td><td>Sets the Manager view: this person sees every team listed under them.</td></tr>
+    <tr><td>LOB</td><td><span class="badge opt">OPTIONAL</span></td><td>Line of business, shown in the team filter. Defaults to the team name.</td></tr>
+    <tr><td>Adherence %</td><td><span class="badge opt">OPTIONAL</span></td><td>Adherence at the start of the day, 0 to 100. Defaults to 96.</td></tr>
+  </tbody>
+</table>
+
+<h2>Agent Status</h2>
+<p>One row every time an agent's status changes. A status lasts until that agent's next row. Rows do not need to be sorted; the console orders them by time.</p>
+<figure>
+  <div class="sheet">
+    <table>
+      <thead><tr><th>Agent Name</th><th>Status</th><th>Start Time</th><th>Transferred</th></tr></thead>
+      <tbody>
+        <tr><td>Joshua Lim</td><td>Available</td><td>2026-10-01 08:00:20</td><td></td></tr>
+        <tr><td>Joshua Lim</td><td>On Call</td><td>2026-10-01 08:02:05</td><td></td></tr>
+        <tr><td>Joshua Lim</td><td>ACW</td><td>2026-10-01 08:09:40</td><td>Y</td></tr>
+        <tr><td>Joshua Lim</td><td>Available</td><td>2026-10-01 08:13:15</td><td></td></tr>
+      </tbody>
+    </table>
+    <div class="tabs"><span>Instructions</span><span>Roster</span><span class="on">Agent Status</span><span>Holds</span><span>Queue Intervals</span><span>Lists</span></div>
+  </div>
+  <figcaption>One agent's first few minutes. The call lasted 7 min 35 s and was transferred; the ACW that followed lasted 3 min 35 s, which breaches the 120-second rule.</figcaption>
+</figure>
+<table>
+  <thead><tr><th style="width:22%">Column</th><th style="width:15%"></th><th>What to enter</th></tr></thead>
+  <tbody>
+    <tr><td>Agent Name</td><td><span class="badge">REQUIRED</span></td><td>An agent from the Roster sheet.</td></tr>
+    <tr><td>Status</td><td><span class="badge">REQUIRED</span></td><td>Pick from the dropdown: <b>On Call, Available, ACW, Aux Break, Aux Personal, Outbound, Offline</b>. Genesys names such as "On Queue", "After Call Work", "Meal" and "Break" are recognised too.</td></tr>
+    <tr><td>Start Time</td><td><span class="badge">REQUIRED</span></td><td>When the status began, as a date and time, for example <code>2026-10-01 08:00:00</code>.</td></tr>
+    <tr><td>Transferred</td><td><span class="badge opt">OPTIONAL</span></td><td><b>Y</b> on the row that ends a call (the first status after On Call) if that call was transferred.</td></tr>
+  </tbody>
+</table>
+<div class="note">
+  <b>How a call is counted</b>
+  <p>A call is counted when an agent <b>leaves On Call</b>. The time they spent in On Call is the call length. That feeds the call count, average handle time and the Short call rule.</p>
+</div>
+
+<h2>Holds <span class="badge opt">OPTIONAL</span></h2>
+<p>One row per hold: <b>Agent Name</b>, <b>Hold Start</b>, <b>Hold End</b>. A hold only counts while that agent is On Call.</p>
+
+<h2>Queue Intervals <span class="badge opt">OPTIONAL</span></h2>
+<p>One row per interval for the floor as a whole. Each row's values stay in effect until the next row.</p>
+<table>
+  <thead><tr><th style="width:25%">Column</th><th>What to enter</th></tr></thead>
+  <tbody>
+    <tr><td>Interval Start</td><td>Start of the interval. Required if you use this sheet.</td></tr>
+    <tr><td>Calls Waiting</td><td>Calls in queue. A Genesys interval export does not include this; without it the Queue backlog rule cannot fire.</td></tr>
+    <tr><td>Service Level %</td><td>0 to 100, or 0 to 1 as Genesys exports it.</td></tr>
+    <tr><td>ASA (s)</td><td>Average speed of answer, in seconds.</td></tr>
+    <tr><td>Abandon %</td><td>0 to 100, or 0 to 1.</td></tr>
+  </tbody>
+</table>
+<div class="note">
+  <b>Using a Genesys export</b>
+  <p>You can paste the all-queues <b>total</b> rows from a Genesys queue performance export straight into this sheet. Use the totals rows only, not the per-queue rows.</p>
+</div>
+
+<h2>Before you upload</h2>
+<ul class="check">
+  <li><b>Every agent on Agent Status is on the Roster</b>, spelled the same way.</li>
+  <li><b>Each team has one team lead and one manager</b> on every row.</li>
+  <li><b>Everyone who was working at the start has a row at the start time.</b> Agents are Offline until their first row (<a href="#s5">Section 5</a>).</li>
+  <li><b>Start Time cells hold a date and a time</b>, not text such as "morning".</li>
+  <li><b>The file covers one shift</b>, saved as <code>.xlsx</code> and under 10 MB.</li>
+</ul>
+
+<!-- ============================ 4 ============================ -->
+<h1 class="sec" id="s4"><span class="n">4</span> Uploading and checking the file</h1>
+<p class="lead">The file is checked before anything starts. You always see the result of the check first, and nothing runs until you click Start replay.</p>
+
+<div class="split">
+  <figure>
+    <div class="mock"><div class="body dlg">
+      <div class="lbl">Step 2 &middot; Upload the filled-in file</div>
+      <div class="drop">Drop the file here, or <b style="color:var(--purple)">browse</b><span>October_1_floor.xlsx is ready. Drop another file to replace it.</span></div>
+      <div class="sum">8 agents &middot; 2 teams &middot; 1393 status changes &middot; 84 holds &middot; 18 queue intervals &middot; 08:00:20 to 17:04:51</div>
+      <ul class="w"><li>1 agent(s) have no status rows and stay Offline: Lara Mendoza.</li></ul>
+      <div class="foot"><span class="sp"></span><span class="btn out">Cancel</span><span class="btn solid">Start replay</span></div>
+    </div></div>
+    <figcaption>A file that passed: summary in teal, warnings in amber.</figcaption>
+  </figure>
+  <figure>
+    <div class="mock"><div class="body dlg">
+      <div class="lbl">Step 2 &middot; Upload the filled-in file</div>
+      <div class="drop">Drop the file here, or <b style="color:var(--purple)">browse</b><span>Excel template (.xlsx), or a raw Gencloud agent-status export (.csv)</span></div>
+      <ul class="e"><li>Roster: agent names must be unique. Repeated: Amara Reyes.</li><li>Agent Status: these agents are not in the Roster sheet: Josh Lim.</li></ul>
+      <div class="foot"><span class="sp"></span><span class="btn out">Cancel</span><span class="btn off">Start replay</span></div>
+    </div></div>
+    <figcaption>A file with problems: every error is listed at once.</figcaption>
+  </figure>
+</div>
+
+<table>
+  <thead><tr><th style="width:20%">Result</th><th style="width:40%">What you see</th><th>What to do</th></tr></thead>
+  <tbody>
+    <tr><td><span class="pill nudge">Passed</span></td><td>A teal summary line: agents, teams, status changes, holds, queue intervals and the time range.</td><td>Check the numbers look right, then click <span class="ui">Start replay</span>.</td></tr>
+    <tr><td><span class="pill warn">Warnings</span></td><td>Amber lines under the summary.</td><td>Read them. The replay still runs, but something may not behave as you expect.</td></tr>
+    <tr><td><span class="pill err">Errors</span></td><td>Red lines, with row numbers. <span class="ui">Start replay</span> stays disabled.</td><td>Fix the file in Excel and drop it again. All problems are listed together, so one round is usually enough.</td></tr>
+  </tbody>
+</table>
+<p>Every message is explained in <a href="#s8">Section 8</a>.</p>
+
+<h3>Uploading a raw Gencloud CSV instead</h3>
+<p>The same dialog accepts a Genesys agent-status export as <code>.csv</code>. It asks you to confirm which column is the agent, status and start time, and how each status maps to a console state. A CSV carries statuses only: teams get placeholder leaders, and there are no holds or queue numbers. Use the template when you want the role views and queue rules to be real.</p>
+
+<!-- ============================ 5 ============================ -->
+<h1 class="sec" id="s5"><span class="n">5</span> How time works</h1>
+<p class="lead">Nothing about the start time is fixed. The replay takes its timing entirely from the Start Time column on the Agent Status sheet.</p>
+
+<figure>
+  <div class="tl">
+    <div class="axis"></div>
+    <div class="run" style="left:11%; right:9%"></div>
+    <div class="pt g" style="left:11%"></div><div class="pt" style="left:17%"></div><div class="pt" style="left:78%"></div><div class="pt g" style="left:91%"></div>
+    <div class="cap top" style="left:17%"><b>First status row</b>08:00:20</div>
+    <div class="cap top" style="left:78%"><b>Last status row</b>17:04:51</div>
+    <div class="cap bot" style="left:11%"><b>Replay starts</b>30 seconds earlier</div>
+    <div class="cap bot" style="left:91%"><b>Replay ends</b>10 minutes later</div>
+  </div>
+  <figcaption>The replay runs from just before your first row to just after your last. The 10 minutes at the end give rules time to fire on the final status.</figcaption>
+</figure>
+
+<table>
+  <thead><tr><th style="width:18%"></th><th style="width:44%">How it is decided</th><th>Example</th></tr></thead>
+  <tbody>
+    <tr><td>Start</td><td>30 seconds before the earliest status row.</td><td>First row at 06:30:00, so the replay starts at 06:29:30.</td></tr>
+    <tr><td>End</td><td>10 minutes after the last status row.</td><td>Last row at 17:05:00, so it ends at 17:15:00.</td></tr>
+    <tr><td>Shift clock</td><td>Shows the time of day from your file.</td><td>A row stamped 14:05:00 happens when the clock reads 14:05:00.</td></tr>
+    <tr><td>Speed</td><td>60 times normal: one real second plays one minute of the shift.</td><td>One hour of shift takes one minute.</td></tr>
+  </tbody>
+</table>
+
+<div class="split">
+  <div>
+    <h2 style="margin-top:4pt">How long a replay takes</h2>
+    <table>
+      <thead><tr><th>Your file covers</th><th>Replay takes about</th></tr></thead>
+      <tbody>
+        <tr><td>2 hours</td><td class="num">2 minutes</td></tr>
+        <tr><td>4 hours</td><td class="num">4 minutes</td></tr>
+        <tr><td>9 hours (08:00 to 17:00)</td><td class="num">9 minutes</td></tr>
+        <tr><td>12 hours</td><td class="num">12 minutes</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="warn" style="margin-top:4pt">
+    <b>Agents start Offline</b>
+    <p>Every agent is Offline until their first status row. If the file starts at 08:00 and an agent's first row is at 09:00, they sit Offline for that hour and can trigger the Prolonged offline rule.</p>
+    <p>If people were already working when the file starts, give each of them a row at the start time.</p>
+  </div>
+</div>
+
+<h2>Good to know</h2>
+<ul>
+  <li><b>Times are used exactly as typed.</b> There is no timezone conversion. Whatever the cell says is what the clock shows.</li>
+  <li><b>One file is one shift.</b> A file spanning more than about a day and a half is rejected.</li>
+  <li><b>Night shifts that cross midnight work</b>, as long as the rows carry real dates. The clock keeps counting past 24:00, so 1:30 am on the second day reads 25:30:00.</li>
+  <li><b>Holds and Queue Intervals use the same clock.</b> A queue row stamped before the first status row simply applies from the start.</li>
+  <li><b>You do not have to watch.</b> Leave the tab open and come back; the result stays on screen after "Replay complete".</li>
+</ul>
+
+<!-- ============================ 6 ============================ -->
+<h1 class="sec" id="s6"><span class="n">6</span> Rules and escalation</h1>
+<p class="lead">The replay uses the rules exactly as they are currently set on the Rules Engine screen. Change a threshold there and the next replay uses the new value.</p>
+
+<h2>The rules, with their default settings</h2>
+<table class="long">
+  <thead><tr><th style="width:20%">Rule</th><th style="width:30%">Fires when</th><th style="width:11%">Default</th><th style="width:16%">Starts with</th><th>Needs sheet</th></tr></thead>
+  <tbody>
+    <tr><td>Extended ACW</td><td>In ACW longer than</td><td class="num">120 s</td><td><span class="pill nudge">Agent</span></td><td>Agent Status</td></tr>
+    <tr><td>Unscheduled Aux</td><td>In Aux Personal longer than</td><td class="num">300 s</td><td><span class="pill nudge">Agent</span></td><td>Agent Status</td></tr>
+    <tr><td>Overbreak</td><td>In Aux Break longer than</td><td class="num">900 s</td><td><span class="pill nudge">Agent</span></td><td>Agent Status</td></tr>
+    <tr><td>Short call</td><td>A call released in under</td><td class="num">30 s</td><td><span class="pill nudge">Agent</span></td><td>Agent Status</td></tr>
+    <tr><td>Transfer rate</td><td>Transfers above, after 5 or more calls</td><td class="num">25 %</td><td><span class="pill nudge">Agent</span></td><td>Agent Status (Transferred)</td></tr>
+    <tr><td>Adherence breach</td><td>Adherence below</td><td class="num">90 %</td><td><span class="pill nudge">Agent</span></td><td>Roster</td></tr>
+    <tr><td>Long hold</td><td>On hold longer than</td><td class="num">120 s</td><td><span class="pill nudge">Agent</span></td><td>Holds</td></tr>
+    <tr><td>Prolonged offline</td><td>Offline mid-shift longer than</td><td class="num">600 s</td><td><span class="pill lead">Team Lead</span></td><td>Agent Status</td></tr>
+    <tr><td>Long call</td><td>On Call longer than</td><td class="num">900 s</td><td><span class="pill lead">Team Lead</span></td><td>Agent Status</td></tr>
+    <tr><td>Outbound call</td><td>In Outbound longer than</td><td class="num">600 s</td><td><span class="pill lead">Team Lead</span></td><td>Agent Status</td></tr>
+    <tr><td>Queue backlog</td><td>Calls waiting above</td><td class="num">8</td><td><span class="pill lead">Team Lead</span></td><td>Queue Intervals</td></tr>
+    <tr><td>Service level</td><td>Service level below</td><td class="num">80 %</td><td><span class="pill lead">Team Lead</span></td><td>Queue Intervals</td></tr>
+    <tr><td>Abandon rate</td><td>Abandon above</td><td class="num">5 %</td><td><span class="pill lead">Team Lead</span></td><td>Queue Intervals</td></tr>
+  </tbody>
+</table>
+<p style="font-size:8.2pt; color:var(--muted)">A fourteenth rule, Gencloud not responding, watches the live feed itself and does not apply to a replay.</p>
+
+<h2>How escalation climbs</h2>
+<p>Strikes are counted per agent, per rule, for the shift. The same agent breaking the same rule again moves one step up the ladder:</p>
+<figure>
+  <div class="ladder">
+    <div><span>Strike 1</span><i style="background:var(--turq)"></i><b>Nudge</b><em>Private pop-up to the agent</em></div>
+    <div><span>Strike 2</span><i style="background:var(--gold)"></i><b>Leader</b><em>Alert to the Team Lead</em></div>
+    <div><span>Strike 3 and later</span><i style="background:var(--purple)"></i><b>Ops</b><em>Ops and Manager, incident opened</em></div>
+  </div>
+</figure>
+<ul>
+  <li><b>Once per episode.</b> A timer rule fires once each time the agent enters that status and overstays. Staying longer does not add strikes. Leaving, coming back and overstaying again is a new strike.</li>
+  <li><b>One incident per agent per rule.</b> The third strike opens an incident numbered <code>INC-2026-NNNN</code>. Later strikes on the same rule raise that incident's count instead of opening another.</li>
+  <li><b>Rules that start with the Team Lead</b> skip the nudge: strikes 1 and 2 go to the Team Lead, strike 3 to Ops.</li>
+  <li><b>Adherence breach and Transfer rate fire once per shift</b> and do not repeat.</li>
+  <li><b>Queue rules are not about one agent.</b> They are logged against "Queue", fire once per breach, can fire again after the number recovers, and never open incidents.</li>
+</ul>
+<div class="note">
+  <b>Adherence is modelled, not imported</b>
+  <p>Adherence starts at the Roster value, falls slowly while an agent is in Aux Personal or Offline, and recovers slowly while On Call. Real adherence will come from NiceIEX once the live feed is connected.</p>
+</div>
+
+<!-- ============================ 7 ============================ -->
+<h1 class="sec" id="s7"><span class="n">7</span> Reading the result</h1>
+<p class="lead">While a replay runs, the top bar shows a purple "Data replay" pill and the shift clock runs through your day. Move between screens at any time; each one shows the day up to the point the replay has reached.</p>
+
+<div class="split">
+  <div>
+    <table>
+      <thead><tr><th style="width:34%">Screen</th><th>What it shows</th></tr></thead>
+      <tbody>
+        <tr><td>Console</td><td>The agent grid with statuses and timers, cards glowing amber or red while in breach, and the trigger feed of the latest 40 call-outs.</td></tr>
+        <tr><td>Dashboards</td><td>Totals by stage, call-outs by rule and by agent, the investigation register and a team breakdown. <b>The best end-of-day summary.</b></td></tr>
+        <tr><td>Instance Ledger</td><td>Every call-out in order. Can be exported to CSV.</td></tr>
+        <tr><td>Rules Engine</td><td>The thresholds the replay is using.</td></tr>
+        <tr><td>My View</td><td>Switch <span class="ui">View as</span> to Agent and pick someone to see the day from their side.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <figure>
+    <div class="mock"><div class="bar"><i></i><i></i><i></i>&nbsp; Trigger feed</div><div class="body">
+      <div class="card">
+        <div class="row1"><b>Joshua Lim</b><span class="pill ops">Escalated</span><time>10:42:17</time></div>
+        <div class="txt"><b>Extended ACW</b> &middot; 2:00 &middot; strike 3 &middot; <i>INC-2026-0002</i></div>
+        <div class="rungs"><span style="color:var(--turq-text)">Nudge</span><hr style="background:var(--gold)"><span style="color:#7A5300">Leader</span><hr style="background:var(--purple)"><span style="color:var(--purple)">Ops</span></div>
+        <span class="btn solid">Acknowledge</span> <span class="btn out">Open incident draft</span>
+      </div>
+    </div></div>
+    <figcaption>A call-out in the trigger feed: who, which rule, the strike number, and how far up the ladder it went.</figcaption>
+  </figure>
+</div>
+
+<h2>What is different from a live floor</h2>
+<ul>
+  <li><b>No pop-ups.</b> Nudges and call-out toasts are switched off during a replay so you are not flooded. They are still recorded in the trigger feed and the ledger.</li>
+  <li><b>Only you see it.</b> The replay belongs to your session. Everyone else keeps seeing the live floor, and so do you once you click <span class="ui">Exit replay</span>.</li>
+  <li><b>You can still act on it.</b> Acknowledging call-outs and working incidents works inside a replay, which is useful for training. It is all discarded when you exit.</li>
+  <li><b>Role views follow your file.</b> The people in the <span class="ui">View as</span> selector become the team leads, managers and agents from your Roster.</li>
+  <li><b>Queue tiles show your numbers</b>, or a dash if the file has no Queue Intervals sheet.</li>
+</ul>
+<div class="warn">
+  <b>Export before you exit</b>
+  <p>A replay is not saved. When you click <span class="ui">Exit replay</span> the results are gone. If you need to keep them, use <span class="ui">Export CSV</span> on the Instance Ledger and <span class="ui">Export incidents CSV</span> on Dashboards first.</p>
+</div>
+
+<!-- ============================ 8 ============================ -->
+<h1 class="sec" id="s8"><span class="n">8</span> Messages and their meaning</h1>
+<p class="lead">Errors must be fixed before the replay can run. Warnings are for your information; the replay still runs.</p>
+
+<h2>Errors</h2>
+<table class="long">
+  <thead><tr><th style="width:44%">Message</th><th>What to do</th></tr></thead>
+  <tbody>
+    <tr><td>Sheet "Roster" is missing. / Sheet "Agent Status" is missing.</td><td>Keep the sheet names from the template. Both sheets are required.</td></tr>
+    <tr><td>Sheet "…" is missing the "…" column.</td><td>Restore the header. Column order does not matter, but the header text does.</td></tr>
+    <tr><td>Roster: rows … need an agent name, team, team lead and manager.</td><td>Fill in the empty cells on those rows, or delete the rows.</td></tr>
+    <tr><td>Roster: agent names must be unique.</td><td>Two rows share a name. Make them different, for example by adding an initial.</td></tr>
+    <tr><td>Roster: a team has one team lead and one manager.</td><td>The same team appears with different leaders on different rows. Make them consistent.</td></tr>
+    <tr><td>Agent Status: these agents are not in the Roster sheet.</td><td>A name has no matching Roster row. Usually a spelling or spacing difference.</td></tr>
+    <tr><td>Agent Status: rows … have a start time that could not be read.</td><td>Enter a real date and time, such as <code>2026-10-01 08:00:00</code>.</td></tr>
+    <tr><td>Agent Status needs at least two status rows to build a timeline.</td><td>Add more rows. One row gives the replay nothing to play.</td></tr>
+    <tr><td>The file spans more than one day.</td><td>Split it into one file per shift.</td></tr>
+    <tr><td>This is not an Excel workbook.</td><td>Save the file as <code>.xlsx</code>. Older <code>.xls</code> files are not accepted.</td></tr>
+    <tr><td>The file is larger than 10 MB.</td><td>Remove unused sheets or split the day.</td></tr>
+  </tbody>
+</table>
+
+<h2>Warnings</h2>
+<table>
+  <thead><tr><th style="width:44%">Message</th><th>What it means</th></tr></thead>
+  <tbody>
+    <tr><td>N agent(s) have no status rows and stay Offline.</td><td>They are on the Roster but never appear on Agent Status. They sit Offline all day and trigger Prolonged offline.</td></tr>
+    <tr><td>Status "…" is not a console state; treated as …</td><td>A status name was not one of the seven, so the console picked the closest match. Anything it does not recognise becomes Aux Personal.</td></tr>
+    <tr><td>No queue intervals, so the queue tiles stay empty and queue rules are off.</td><td>Expected if you left the Queue Intervals sheet empty.</td></tr>
+    <tr><td>Queue Intervals: no "Calls Waiting" values.</td><td>The Queue backlog rule cannot fire. The other queue rules still work.</td></tr>
+    <tr><td>Holds: skipped rows …</td><td>Those rows had an unknown agent, an unreadable time, or an end before the start.</td></tr>
+  </tbody>
+</table>
+
+<!-- ============================ 9 ============================ -->
+<h1 class="sec" id="s9"><span class="n">9</span> Limits</h1>
+<ul>
+  <li><b>It is a preview, not a record.</b> Results are held for your session only and are discarded when you exit the replay or the server restarts.</li>
+  <li><b>One shift per file</b>, up to 10 MB, in <code>.xlsx</code> format.</li>
+  <li><b>The speed is fixed at 60 times.</b> There is no pause, skip or instant mode yet.</li>
+  <li><b>Statuses come from your file, not from Gencloud.</b> The result is only as accurate as the rows you enter.</li>
+  <li><b>Adherence is estimated</b> from time in status, not imported per interval.</li>
+  <li><b>The built-in simulator</b> (the made-up floor) runs in development builds only. A production build with no live feed shows an empty floor until you import a file.</li>
+</ul>
+<div class="imp">
+  <b>Handle real exports with care</b>
+  <p>Genesys exports contain internal queue names and identifiers. Keep working files on your own drive or the team's shared drive. Do not email them outside the team or add them to the code repository.</p>
+</div>
+
+<!-- ============================ 10 ============================ -->
+<h1 class="sec" id="s10"><span class="n">10</span> Frequently asked questions</h1>
+<div class="faq">
+  <div><h3>Why does a nine-hour shift take nine minutes?</h3>
+  <p>The console replays the day second by second at 60 times normal speed, so one hour of shift takes one minute. It has to walk through the day because escalations depend on how long each status lasted (<a href="#s2">Section 2</a>).</p></div>
+
+  <div><h3>Does every file start at 08:00?</h3>
+  <p>No. The replay starts 30 seconds before your earliest status row, whatever time that is. 08:00 is only what the sample data uses.</p></div>
+
+  <div><h3>Will other people see my replay?</h3>
+  <p>No. It is private to your session. The live floor keeps running for everyone else.</p></div>
+
+  <div><h3>Can I pause, skip ahead or change the speed?</h3>
+  <p>Not yet. The speed is fixed at 60 times. You can leave the tab open and come back when it finishes.</p></div>
+
+  <div><h3>Half my agents are showing as breaching Prolonged offline. Why?</h3>
+  <p>They had no status row near the start of the file, so they were Offline until their first row. Add a row for each of them at the start time.</p></div>
+
+  <div><h3>I changed a threshold. Do I need to upload again?</h3>
+  <p>Yes. A threshold change applies from that moment on, so earlier parts of a running replay used the old value. Exit the replay and start it again for a clean result.</p></div>
+
+  <div><h3>Can I use our real Genesys export directly?</h3>
+  <p>An agent-status export can be uploaded as a CSV (<a href="#s4">Section 4</a>). A queue performance export has no agents in it, so it can only fill the Queue Intervals sheet of the template.</p></div>
+
+  <div><h3>The Team Lead and Manager names in "View as" changed. Is that right?</h3>
+  <p>Yes. During a replay the selector lists the people from your Roster sheet, so you can check each person's view of the day.</p></div>
+
+  <div><h3>Who do I contact if the upload keeps failing?</h3>
+  <p>The BITS Automation Team. Send the file and the messages shown in the dialog.</p></div>
+</div>
+
+<!-- ============================ 11 ============================ -->
+<h1 class="sec" id="s11" style="break-before: page"><span class="n">11</span> Quick reference card</h1>
+<div class="qr">
+  <div><span>Import</span>Dashboards &rarr; Import floor data &rarr; Download template &rarr; fill in &rarr; drop the file &rarr; <b>Start replay</b>.</div>
+  <div><span>Required sheets</span><b>Roster</b>: agent, team, team lead, manager. <b>Agent Status</b>: agent, status, start time.</div>
+  <div><span>Optional sheets</span><b>Holds</b> adds Long hold. <b>Queue Intervals</b> adds the queue tiles and three queue rules.</div>
+  <div><span>Timing</span>Starts 30 s before the first row. Ends 10 min after the last. Runs at 60&times;: one hour takes one minute.</div>
+  <div><span>Ladder</span>Strike 1 nudge &rarr; strike 2 Team Lead &rarr; strike 3 Ops and an incident. Counted per agent, per rule.</div>
+  <div><span>Finish</span>Export the ledger and incidents if you need them, then <b>Exit replay</b>. Nothing is saved.</div>
+</div>
+
+<h2>What each sheet unlocks</h2>
+<table class="tight">
+  <thead><tr><th style="width:34%"></th><th style="text-align:center">Roster</th><th style="text-align:center">Agent Status</th><th style="text-align:center">Holds</th><th style="text-align:center">Queue Intervals</th></tr></thead>
+  <tbody style="text-align:center">
+    <tr><td style="text-align:left">Agent grid and role views</td><td class="tick">&#10003;</td><td class="tick">&#10003;</td><td class="dash">&mdash;</td><td class="dash">&mdash;</td></tr>
+    <tr><td style="text-align:left">ACW, aux, break, offline, long call, outbound</td><td class="dash">&mdash;</td><td class="tick">&#10003;</td><td class="dash">&mdash;</td><td class="dash">&mdash;</td></tr>
+    <tr><td style="text-align:left">Short call and Transfer rate</td><td class="dash">&mdash;</td><td class="tick">&#10003;</td><td class="dash">&mdash;</td><td class="dash">&mdash;</td></tr>
+    <tr><td style="text-align:left">Adherence breach</td><td class="tick">&#10003;</td><td class="tick">&#10003;</td><td class="dash">&mdash;</td><td class="dash">&mdash;</td></tr>
+    <tr><td style="text-align:left">Long hold</td><td class="dash">&mdash;</td><td class="dash">&mdash;</td><td class="tick">&#10003;</td><td class="dash">&mdash;</td></tr>
+    <tr><td style="text-align:left">Queue tiles, backlog, service level, abandon</td><td class="dash">&mdash;</td><td class="dash">&mdash;</td><td class="dash">&mdash;</td><td class="tick">&#10003;</td></tr>
+  </tbody>
+</table>
+
+<div class="split" style="grid-template-columns: 1.35fr 1fr; margin-top: 4pt">
+  <div>
+    <h2 style="margin-top:0">Status names</h2>
+<table class="tight">
+  <thead><tr><th style="width:24%">Console state</th><th>Also recognised</th></tr></thead>
+  <tbody>
+    <tr><td>On Call</td><td>On Queue, Interacting, Communicating, Talking, Inbound</td></tr>
+    <tr><td>Available</td><td>Idle, Ready</td></tr>
+    <tr><td>ACW</td><td>After Call Work, Wrap-up</td></tr>
+    <tr><td>Aux Break</td><td>Break, Meal, Lunch</td></tr>
+    <tr><td>Outbound</td><td>Any name containing "Outbound"</td></tr>
+    <tr><td>Offline</td><td>Logged out, Logout</td></tr>
+    <tr><td>Aux Personal</td><td>Anything else, for example Away, Meeting, Training</td></tr>
+  </tbody>
+</table>
+  </div>
+  <div class="imp">
+    <b>Remember</b>
+    <ul>
+      <li><b>Names must match exactly</b> between the Roster and the other sheets.</li>
+      <li><b>Give everyone a row at the start time</b>, or they begin the day Offline.</li>
+      <li><b>Read the warnings</b> before clicking Start replay.</li>
+      <li><b>Export before you exit.</b> A replay is not saved.</li>
+    </ul>
+  </div>
+</div>
+
+</body>
+</html>
