@@ -61,7 +61,7 @@ export function AgentGridToolbar({ filters: f, onChange, onClear, searchRef, tea
           )}
         </div>
         {teamCount > 1 && (
-          <Select value={f.team} onChange={team => onChange({ team })} options={[{ value: "", label: `All teams (${teamCount})` }, ...teamGroups]} aria-label="Filter by team" className={select} />
+          <Select value={f.team} onChange={team => onChange({ team })} options={[{ value: "", label: `All teams (${teamCount})` }, ...teamGroups]} aria-label="Filter by team" className={`${select} !max-w-[240px]`} />
         )}
         <Select value={f.state} onChange={state => onChange({ state })} options={STATE_OPTIONS} aria-label="Filter by state" className={select} />
         <Select value={f.sortBy} onChange={sortBy => onChange({ sortBy })} options={SORT_OPTIONS} aria-label="Sort agents" className={select} />
