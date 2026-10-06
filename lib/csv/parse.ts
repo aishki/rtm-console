@@ -3,7 +3,7 @@ import { clock } from "@/lib/engine/format";
 
 export type MappedState = AgentState | "ignore";
 export interface CsvCols { agent: number; status: number; start: number; team: number }
-export interface ReplayEvent { agent: string; state: AgentState; team: string; abs: number; t: number }
+export interface ReplayEvent { agent: string; state: AgentState; team: string; abs: number; t: number; /** The call this status ended was transferred (set on the row that leaves On Call). */ transferred?: boolean }
 
 export function parseCSV(text: string): string[][] {
   const rows: string[][] = [];

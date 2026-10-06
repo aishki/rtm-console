@@ -29,8 +29,8 @@ function useKpis(): Kpi[] {
     const onCall = count("oncall"), avail = count("avail"), aux = count("auxb", "auxp"), off = count("off");
     const avgAht = agents.length ? Math.round(agents.reduce((s, a) => s + a.aht, 0) / agents.length) : 0;
     const avgAdh = agents.length ? agents.reduce((s, a) => s + a.adh, 0) / agents.length : 100;
-    const noQueue = (label: string): Kpi => ({ label, value: "—", sub: replay ? "No queue data in CSV" : "Waiting for queue data", level: "ok", muted: true });
-    const q = replay ? null : queue;
+    const noQueue = (label: string): Kpi => ({ label, value: "—", sub: replay ? "No queue data in this import" : "Waiting for queue data", level: "ok", muted: true });
+    const q = queue;
     return [
       q ? { label: "Service level", value: q.sl.toFixed(0) + "%", sub: `Target ≥ ${thr("sl")}%`, level: q.sl < thr("sl") ? "crit" : q.sl < thr("sl") + 5 ? "warn" : "ok" } : noQueue("Service level"),
       q ? { label: "Calls in queue", value: Math.round(q.cq), sub: `Alert > ${thr("cq")}`, level: q.cq > thr("cq") ? "crit" : q.cq > thr("cq") - 3 ? "warn" : "ok" } : noQueue("Calls in queue"),

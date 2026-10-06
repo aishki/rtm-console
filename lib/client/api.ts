@@ -1,13 +1,22 @@
 "use client";
 
 import type { CsvCols, MappedState } from "@/lib/csv/parse";
+import type { ImportSummary } from "@/lib/import/floor";
 import type { Incident, Instance, ReplayMeta, Role, Rule, View } from "@/lib/types";
 import { connect, useConsole } from "./store";
+
+/** A refusal from the API. `details` lists every problem when the server found several. */
+export class ApiError extends Error {
+  constructor(message: string, readonly details: string[] = [message]) { super(message); }
+}
 
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, init);
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(typeof data.error === "string" ? data.error : `Request failed (${res.status}).`);
+  if (!res.ok) {
+    const message = typeof data.error === "string" ? data.error : `Request failed (${res.status}).`;
+    throw new ApiError(message, Array.isArray(data.errors) ? data.errors : [message]);
+  }
   return data as T;
 }
 const post = <T,>(path: string, body?: unknown) =>
@@ -35,11 +44,20 @@ export const api = {
   incident: (inc: string, action: "start" | "close", disposition?: string) => post<{ incident: Incident }>(`/api/incidents/${encodeURIComponent(inc)}`, { action, disposition }),
   patchRule: (id: Rule["id"], patch: Partial<Pick<Rule, "thr" | "sev" | "route" | "on">>) =>
     call<{ rule: Rule }>("/api/rules", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, ...patch }) }),
-  async startReplay(file: File, cols: CsvCols, smap: Record<string, MappedState>) {
+  /** Check a filled-in Excel template without starting a replay. */
+  validateImport(file: File) {
     const form = new FormData();
     form.set("file", file);
-    form.set("cols", JSON.stringify(cols));
-    form.set("smap", JSON.stringify(smap));
+    return call<{ summary: ImportSummary; warnings: string[] }>("/api/import/validate", { method: "POST", body: form });
+  },
+  /** Start a replay from an Excel template, or from a CSV export with its column and status mapping. */
+  async startReplay(file: File, csv?: { cols: CsvCols; smap: Record<string, MappedState> }) {
+    const form = new FormData();
+    form.set("file", file);
+    if (csv) {
+      form.set("cols", JSON.stringify(csv.cols));
+      form.set("smap", JSON.stringify(csv.smap));
+    }
     const res = await call<{ view: View; replay: ReplayMeta }>("/api/replay", { method: "POST", body: form });
     useConsole.setState({ nudge: null });
     await connect();
