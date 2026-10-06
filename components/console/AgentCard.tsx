@@ -19,17 +19,17 @@ export const AgentCard = memo(function AgentCard({ agent: a, rules, query, showM
   const skin = crit ? "bg-error-fill shadow-[inset_0_0_0_2px_var(--error)]" : breach ? "bg-warning-fill shadow-[inset_0_0_0_2px_var(--warning)]" : "bg-white ring-card";
   const metric = (label: string, value: string | number) => <span className="whitespace-nowrap">{label} <b className="text-ink">{value}</b></span>;
   return (
-    <div className={`relative flex flex-col gap-2 rounded-15 px-3.5 py-3 ${skin}`}>
+    <div className={`relative flex min-w-0 flex-col gap-2 rounded-15 px-3.5 py-3 ${skin}`}>
       {strikes > 0 && (
         <span title="Triggers this shift" className="absolute right-3 top-2.5 rounded-pill bg-pale-purple px-2 py-px font-ui text-xs font-semibold text-purple">×{strikes}</span>
       )}
       <div className="flex min-w-0 flex-col gap-0.5 pr-9">
-        <span className="truncate text-sm font-semibold"><Name name={a.name} query={query} /></span>
-        <span className="text-xs text-muted">{a.team}</span>
+        <span title={a.name} className="truncate text-sm font-semibold"><Name name={a.name} query={query} /></span>
+        <span title={a.team} className="truncate text-xs text-muted">{a.team}</span>
       </div>
       <div className="flex items-center gap-2">
         <span className="h-[9px] w-[9px] shrink-0 rounded-full" style={{ background: s.color }} />
-        <span className="text-[13px] font-medium">{s.label}</span>
+        <span className="truncate text-[13px] font-medium">{s.label}</span>
         {a.onHold && <span className="rounded-pill bg-warning-tint px-[7px] py-px font-ui text-[11px] font-semibold text-warning-text">Hold {fmt(a.holdTime)}</span>}
         <span className={`num ml-auto text-[13px] font-semibold ${crit ? "text-error-text" : breach ? "text-warning-text" : "text-ink"}`}>{fmt(a.stTime)}</span>
       </div>
