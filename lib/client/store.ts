@@ -58,9 +58,9 @@ function apply(msg: StreamMsg) {
   const { toast } = useConsole.getState();
   useConsole.setState(s => ({
     status: "ready", t: msg.t, mode: msg.mode, staleFor: msg.staleFor, replay: msg.replay, queue: msg.queue,
-    rules: msg.rules, agents: msg.agents, incidents: msg.incidents,
+    rules: msg.rules, agents: msg.agents, incidents: msg.incidents, org: msg.org,
     ...(msg.type === "init"
-      ? { view: (msg as Extract<StreamMsg, { type: "init" }>).view, org: (msg as Extract<StreamMsg, { type: "init" }>).org, people: (msg as Extract<StreamMsg, { type: "init" }>).people, ledger: msg.ledger }
+      ? { view: (msg as Extract<StreamMsg, { type: "init" }>).view, people: (msg as Extract<StreamMsg, { type: "init" }>).people, ledger: msg.ledger }
       : { ledger: mergeLedger(s.ledger, msg.ledger) }),
     ...(msg.nudges.length ? { nudge: msg.nudges[msg.nudges.length - 1] } : null),
   }));

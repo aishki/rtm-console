@@ -1,12 +1,12 @@
-import Image from "next/image";
+/* eslint-disable @next/next/no-img-element */
+// Brand logos live in public/assets/logos/ (the Carelon / BITS brand set).
+// Rendered with a plain <img> so local SVGs work without next/image's
+// dangerouslyAllowSVG. Files: carelon-global-solutions.svg, carelon-icon-mark.svg,
+// bits-logo.png. Swap those files to rebrand; no code change needed.
 
 const BASE = "/assets/logos";
 
-function Logo({ src, alt, w, h, height }: { src: string; alt: string; w: number; h: number; height: number }) {
-  return <Image src={`${BASE}/${src}`} alt={alt} width={Math.round((w / h) * height)} height={height} className="w-auto shrink-0 object-contain" style={{ height }} />;
-}
-
-// The four-lobed icon at the left of the wordmark is 538px tall in the 647px-tall artwork.
+/** The wordmark's icon is 538px tall within 647px artwork; reused for clear-space padding. */
 const ICON_RATIO = 538 / 647;
 /** Clear space the wordmark needs on every side: the size of its own icon. */
 export const carelonClearSpace = (height: number): number => Math.round(height * ICON_RATIO);
@@ -14,18 +14,37 @@ export const carelonClearSpace = (height: number): number => Math.round(height *
 /** The Carelon Global Solutions wordmark, padded on all four sides by the size of its icon. */
 export function CarelonLogo({ height = 22 }: { height?: number }) {
   return (
-    <div className="flex shrink-0" style={{ padding: carelonClearSpace(height) }}>
-      <Logo src="carelon-global-solutions.png" alt="Carelon Global Solutions" w={2486} h={647} height={height} />
+    <div className="flex items-center shrink-0" style={{ padding: carelonClearSpace(height) }}>
+      <img
+        src={`${BASE}/carelon-global-solutions.svg`}
+        alt="Carelon Global Solutions"
+        className="w-auto shrink-0 object-contain"
+        style={{ height }}
+      />
     </div>
   );
 }
 
 /** The BITS mark, for the "Powered by" credit in the footer. */
 export function BitsLogo({ height = 28 }: { height?: number }) {
-  return <Logo src="bits-logo.png" alt="BITS, Business Intelligence & Transformation Solutions" w={3840} h={2160} height={height} />;
+  return (
+    <img
+      src={`${BASE}/bits-logo.png`}
+      alt="BITS, Business Intelligence & Transformation Solutions"
+      className="w-auto shrink-0 object-contain"
+      style={{ height }}
+    />
+  );
 }
 
 /** The Carelon icon mark, used where the wordmark does not fit and on the nudge. */
 export function CarelonMark({ size = 32, alt = "Carelon Global Solutions" }: { size?: number; alt?: string }) {
-  return <Image src={`${BASE}/carelon-icon-mark.png`} alt={alt} width={size} height={size} className="object-contain" style={{ width: size, height: size }} />;
+  return (
+    <img
+      src={`${BASE}/carelon-icon-mark.svg`}
+      alt={alt}
+      className="shrink-0 object-contain"
+      style={{ width: size, height: size }}
+    />
+  );
 }

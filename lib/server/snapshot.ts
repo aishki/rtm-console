@@ -14,7 +14,7 @@ export function tickMsg(rt: Runtime, view: View, sinceRev: number | null, batch:
   const ledger = scopeLedger(S, view, S.ledger);
   return {
     type: "tick", t: S.t, mode: S.mode, staleFor: S.staleFor, replay: S.replay, queue: S.queue, rules: S.rules,
-    agents: scopeAgents(S, view), incidents: scopeIncidents(S, view, S.incidents),
+    org: scopeTeams(S, view), agents: scopeAgents(S, view), incidents: scopeIncidents(S, view, S.incidents),
     ledger: sinceRev === null ? ledger : ledger.filter(r => r.rev > sinceRev),
     // Call-out toasts go to the leaders whose span they are in; feed notices go to everyone.
     // A replay only announces its own progress.
@@ -30,6 +30,6 @@ export function initMsg(rt: Runtime, view: View): InitMsg {
   const S = rt.engine.S;
   return {
     ...tickMsg(rt, view, null, { toasts: [], nudges: [] }),
-    type: "init", view, org: scopeTeams(S, view), people: VIEW_AS ? peopleDirectory(S) : null,
+    type: "init", view, people: VIEW_AS ? peopleDirectory(S) : null,
   };
 }
