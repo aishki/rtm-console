@@ -74,6 +74,10 @@ export interface TickMsg {
   type: "tick" | "init";
   t: number; mode: "live" | "replay"; staleFor: number; replay: ReplayMeta | null;
   queue: Queue | null; rules: Rule[]; agents: Agent[]; incidents: Incident[];
+  /** The scoped team/org model. Sent on every snapshot (not just init) so clients that
+   *  connected before the roster loaded still receive it — the Gencloud feed resolves the
+   *  roster asynchronously, after clients have connected. */
+  org: Team[];
   /** init: the whole scoped ledger (newest first). tick: only changed or new instances. */
   ledger: Instance[];
   toasts: Omit<ToastEvent, "instance">[];
@@ -81,6 +85,6 @@ export interface TickMsg {
 }
 export interface InitMsg extends TickMsg {
   type: "init";
-  view: View; org: Team[]; people: PeopleDirectory | null;
+  view: View; people: PeopleDirectory | null;
 }
 export type StreamMsg = TickMsg | InitMsg;
