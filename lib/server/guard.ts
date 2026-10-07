@@ -1,7 +1,7 @@
 import type { Perms, View } from "@/lib/types";
 import type { EngineState } from "@/lib/engine/escalation";
 import { PERMS, resolveView } from "@/lib/engine/scope";
-import { type Runtime, runtimeFor } from "./runtime";
+import { type Runtime, floorSource, runtimeFor } from "./runtime";
 import { readSession } from "./session";
 
 export interface Ctx { sid: string; view: View; perms: Perms; rt: Runtime; S: EngineState }
@@ -24,6 +24,13 @@ export async function authorizeFor(flag: Flag): Promise<Ctx | Response> {
   const ctx = await authorize();
   if (ctx instanceof Response) return ctx;
   return ctx.perms[flag] ? ctx : deny(403, "Your role does not allow this action.");
+}
+
+/** Authorize a floor-data import. Imports feed the replay, which is off while the floor is on the live Genesys feed. */
+export async function authorizeImport(): Promise<Ctx | Response> {
+  const ctx = await authorizeFor("replay");
+  if (ctx instanceof Response) return ctx;
+  return floorSource() === "gencloud" ? deny(403, "Importing floor data is turned off on the live Genesys feed.") : ctx;
 }
 
 export async function readJson(req: Request): Promise<Record<string, unknown>> {
