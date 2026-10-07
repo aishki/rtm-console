@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { Roster, Team } from "@/lib/types";
-import { SimFeed, seedFromRoster } from "./SimFeed";
+import type { Instance, Roster, Team } from "@/lib/types";
+import { SimFeed, seedFromRoster, simulateReplies } from "./SimFeed";
 
 const team = (name: string, tl = "", mgr = ""): Team => ({ team: name, tl, mgr, lob: name });
 const people = (teamName: string, n: number) => Array.from({ length: n }, (_, i) => ({ name: `${teamName} Agent ${i + 1}`, team: teamName }));
@@ -38,5 +38,35 @@ describe("simulator seeded from a real roster", () => {
     new SimFeed({ thr: () => 120, strikes: () => 0 }, Math.random, seed).subscribe({ onRoster: r => { roster = r; }, onAgentState() {}, onQueue() {}, onHeartbeat() {} });
     expect(roster!.org.map(t => t.team)).toEqual(["Big"]);
     expect(roster!.agents.map(a => a.name)).toEqual(people("Big", 5).map(p => p.name));
+  });
+});
+
+describe("simulated agent replies", () => {
+  const row = (n: number, t: number, over: Partial<Instance> = {}) =>
+    ({ n, t, agent: "Amara Reyes", isFloor: false, ruleId: "acw", stage: "nudge", status: "open", cmt: null, ...over }) as Instance;
+  const run = (ledger: Instance[], rnd: () => number) => {
+    const sent: [number, string, boolean][] = [];
+    simulateReplies({ t: 1000, ledger }, (n, text, ack) => sent.push([n, text, ack]), rnd);
+    return sent;
+  };
+
+  it("answers only agent nudges that are a little old and still have no comment", () => {
+    const ledger = [
+      row(8, 995), // too fresh
+      row(7, 960),
+      row(6, 960, { cmt: "Already explained." }),
+      row(5, 960, { stage: "lead" }),
+      row(4, 960, { isFloor: true, ruleId: "cq" }),
+      row(3, 900), // too old: the scan stops here
+      row(2, 960),
+    ];
+    const sent = run(ledger, () => 0);
+    expect(sent.map(s => s[0])).toEqual([7]);
+    expect(sent[0][1]).not.toBe("");
+    expect(sent[0][2]).toBe(true);
+  });
+
+  it("stays quiet most of the time", () => {
+    expect(run([row(1, 960)], () => 0.5)).toEqual([]);
   });
 });

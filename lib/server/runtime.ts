@@ -5,7 +5,7 @@ import { defaultRules } from "@/lib/engine/rules";
 import type { FeedSource } from "@/lib/feed/FeedSource";
 import { CsvReplayFeed, REPLAY_SPEED, type ReplayExtras } from "@/lib/feed/CsvReplayFeed";
 import { GencloudFeed } from "@/lib/feed/GencloudFeed";
-import { type SimSeed, SimFeed, seedFromRoster } from "@/lib/feed/SimFeed";
+import { type SimSeed, SimFeed, seedFromRoster, simulateReplies } from "@/lib/feed/SimFeed";
 import { pushBatch } from "./push";
 import { loadRoster, saveRoster } from "./rosterCache";
 import { genesysToken } from "./tokenStore";
@@ -36,7 +36,7 @@ export interface Runtime {
 const WARM_SECONDS = 900;
 const MAX_REPLAYS = 8;
 
-function createRuntime(kind: Runtime["kind"], rules: Rule[], speed: number, deriveAdh: boolean, makeFeed: (engine: Engine) => FeedSource, prepare: (engine: Engine, feed: FeedSource) => void): Runtime {
+function createRuntime(kind: Runtime["kind"], rules: Rule[], speed: number, deriveAdh: boolean, makeFeed: (engine: Engine) => FeedSource, prepare: (engine: Engine, feed: FeedSource) => void, afterTick?: (engine: Engine) => void): Runtime {
   const listeners = new Set<Listener>();
   const lastNudge = new Map<string, NudgeEvent>();
   let batch: Batch = { toasts: [], nudges: [] };
@@ -52,7 +52,7 @@ function createRuntime(kind: Runtime["kind"], rules: Rule[], speed: number, deri
     for (const fn of listeners) fn(out);
   };
   const step = () => {
-    for (let i = 0; i < speed; i++) { feed.tick?.(engine.S.t + 1); engine.tick(); }
+    for (let i = 0; i < speed; i++) { feed.tick?.(engine.S.t + 1); engine.tick(); afterTick?.(engine); }
     publish();
     if (engine.S.replay?.done) clearInterval(timer);
   };
@@ -92,6 +92,7 @@ function createSim(rules: Rule[], seed: SimSeed | undefined): Runtime {
   const rt = createRuntime("live", rules, 1, true,
     engine => new SimFeed({ thr: engine.thr, strikes: (name, id) => engine.S.agents.find(a => a.name === name)?.strikes[id] ?? 0 }, Math.random, seed),
     engine => engine.reset({ t: 8 * 3600 }), // 08:00 shift start
+    engine => simulateReplies(engine.S, engine.comment),
   );
   warm(rt);
   return rt;
@@ -105,6 +106,7 @@ function warm({ engine, feed }: Runtime) {
     const seen = S.seq;
     feed.tick?.(S.t + 1);
     engine.tick();
+    simulateReplies(S, engine.comment);
     // Leaders acknowledged most of the earlier call-outs.
     for (const r of S.ledger) {
       if (r.n <= seen) break;
