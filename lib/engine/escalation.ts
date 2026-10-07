@@ -32,6 +32,9 @@ export interface EngineState {
   rev: number;
 }
 
+/** The name a nudge greets with. Gencloud names read "Last, First Middle - ID". */
+export const firstName = (name: string): string => (name.includes(",") ? name.slice(name.indexOf(",") + 1) : name).trim().split(" ")[0];
+
 /** A capped route stops at its rung; a full ladder climbs with the strike count. */
 export const isFullLadder = (route: Route): boolean => route === "nudge" || route === "lead";
 
@@ -71,7 +74,7 @@ export function fire(S: EngineState, hooks: EngineHooks, r: Rule, agent: Agent |
   S.ledger.unshift(rec);
   if (S.quiet) return rec;
   if (stage === "nudge" && agent) {
-    hooks.nudge?.({ n: rec.n, agent: agent.name, team: agent.team, first: agent.name.split(" ")[0], body: nudgeCopy(r, agent, S.rules) });
+    hooks.nudge?.({ n: rec.n, agent: agent.name, team: agent.team, first: firstName(agent.name), body: nudgeCopy(r, agent, S.rules) });
   } else if (stage === "lead") {
     const crit = r.sev === "crit";
     hooks.toast?.({

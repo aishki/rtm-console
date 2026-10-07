@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AgentState, AgentStateEvent, NudgeEvent, RosterAgent, RuleId, Team, ToastEvent, View } from "@/lib/types";
 import { createEngine } from "./engine";
-import { stageFor } from "./escalation";
+import { firstName, stageFor } from "./escalation";
 import { isBreach, myTargets } from "./rules";
 import { PERMS, canAck, canComment, inScope, resolveView, scopeAgents, scopeIncidents, scopeLedger, scopeTeams } from "./scope";
 
@@ -389,5 +389,12 @@ describe("agent view helpers", () => {
     e.setThr("acw", "-5"); expect(e.thr("acw")).toBe(1);
     e.setThr("acw", "45"); expect(e.thr("acw")).toBe(45);
     e.setThr("acw", "abc"); expect(e.thr("acw")).toBe(45);
+  });
+});
+
+describe("nudge greeting", () => {
+  it("uses the first name, also for Gencloud's \"Last, First - ID\" names", () => {
+    expect(firstName("Amara Reyes")).toBe("Amara");
+    expect(firstName("Reyes, Amara Luz - AB12345")).toBe("Amara");
   });
 });
