@@ -147,6 +147,9 @@ export function liveRuntime(): Runtime {
   return rt;
 }
 
+/** Which data source the floor is on. */
+export const floorSource = (): FloorSource => registry.source;
+
 /**
  * Switch the floor for everyone. Gencloud keeps running behind a simulation, so its ledger
  * and strikes are there on the way back; a simulation starts fresh each time.

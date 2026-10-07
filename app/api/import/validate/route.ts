@@ -1,9 +1,9 @@
-import { authorizeFor } from "@/lib/server/guard";
+import { authorizeImport } from "@/lib/server/guard";
 import { importErrors, isWorkbook, readFloorWorkbook, uploadedFile } from "@/lib/server/upload";
 
 /** Check a filled-in template without starting anything: returns a summary and warnings, or every error. */
 export async function POST(req: Request) {
-  const ctx = await authorizeFor("replay");
+  const ctx = await authorizeImport();
   if (ctx instanceof Response) return ctx;
   const up = await uploadedFile(req);
   if (up instanceof Response) return up;

@@ -1,7 +1,7 @@
 import { type CsvCols, type MappedState, buildEvents, distinctStatuses, guessCols, guessState, parseCSV, splitTable } from "@/lib/csv/parse";
 import { STATE_OPTIONS } from "@/lib/engine/rules";
 import { resolveView } from "@/lib/engine/scope";
-import { authorizeFor, deny } from "@/lib/server/guard";
+import { authorizeFor, authorizeImport, deny } from "@/lib/server/guard";
 import { type Runtime, exitReplay, startReplay } from "@/lib/server/runtime";
 import { writeView } from "@/lib/server/session";
 import { importErrors, isWorkbook, readFloorWorkbook, uploadedFile } from "@/lib/server/upload";
@@ -49,12 +49,12 @@ async function fromWorkbook(sid: string, file: File): Promise<Runtime | Response
 }
 
 /**
- * Start a replay for this session from an uploaded file.
+ * Start a replay for this session from an uploaded file. Refused while the floor is on the live Genesys feed.
  * multipart/form-data: file (.xlsx template, or a .csv status export with optional
  * cols = {agent,status,start,team} column indexes and smap = status -> state).
  */
 export async function POST(req: Request) {
-  const ctx = await authorizeFor("replay");
+  const ctx = await authorizeImport();
   if (ctx instanceof Response) return ctx;
   const up = await uploadedFile(req);
   if (up instanceof Response) return up;
