@@ -44,6 +44,7 @@ npm run dev        # http://localhost:3000
 | `NEXT_PUBLIC_VIEW_AS=1` | Dev/admin flag for the "View as" role selector. **Without it every API route answers 401**, because no SSO exists yet. Required for Gencloud development. |
 | `GENESYS_TOKEN` | Hand-grabbed supervisor bearer token from the browser DevTools Network tab (Authorization header of an api.mypurecloud.com request). Short-lived. Seeds the first start only: a token pasted on `/admin/token` replaces it (see "Refreshing the Genesys token"). |
 | `RTM_ADMIN_SECRET` | Secret for `/admin/token`. While unset, the page refuses every request. |
+| `RTM_SITE_PASSWORD` | Password for the wall in front of the whole console (see "Password wall"). **While unset, nobody can get in.** Quote it in `.env.local`: an unquoted `#` starts a comment. |
 | `GENCLOUD_API_BASE` | Gencloud API base URL, e.g. `https://api.mypurecloud.com`. |
 | `RTM_VIEW_CONFIG_ID` | Saved "CSBDProviderData" view ID (default: `9c9f8fd2-acab-4282-9442-ddba152f9c18`, the 89-queue voice-floor view). |
 | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` | Key pair for desktop alerts over Web Push. Generate with `npx web-push generate-vapid-keys`. Optional: without them, alerts only show while a console tab is open. |
@@ -69,6 +70,15 @@ An Admin sees a **Data** selector in the context bar: **Live Genesys** or **Simu
 - The names come from the running Gencloud floor. Each roster Gencloud delivers is also saved to `.rtm/roster.json`, so the simulation can still use real names when the token has expired. Without either, the sample teams and names are used and the pill reads "Simulation · sample floor". `.rtm/` is gitignored: it holds real people's names.
 - Gencloud keeps running behind a simulation, so its ledger and strikes are there on the way back. A simulation starts fresh every time it is switched on.
 - Desktop alerts follow the floor on screen, so a simulation does raise them. In a production build that means real people can get desktop alerts for invented call-outs while a simulation is on.
+
+### Password wall
+
+Every page and API route sits behind one shared password, `RTM_SITE_PASSWORD`. `/` is the lock screen; a browser that has not unlocked is sent there from any page (and returned to that page afterwards), and API calls answer 401.
+
+- The server checks the password and sets an httpOnly cookie for 12 hours. The cookie holds an HMAC keyed by the password, not the password, so changing the password locks every browser out.
+- Ten wrong guesses from one address lock it out for 15 minutes. The address comes from `X-Forwarded-For`, which a caller can fake, so 30 wrong guesses in total also pause every unlock attempt for 15 minutes. Browsers already unlocked are not affected.
+- Static files the lock screen needs (`/_next/static`, `/assets`, `/sw.js`) stay reachable. Everything else goes through `proxy.ts`.
+- This is a shared-password wall, not sign-in: it says nothing about who someone is. Roles still come from "View as" until SSO replaces both.
 
 ### Refreshing the Genesys token
 
@@ -227,7 +237,7 @@ All state lives in one object per engine (`EngineState` in `lib/engine/escalatio
 
 ## API reference
 
-All routes are under `/api`. Errors are `{ "error": string }`. Every route answers **401** when there is no session and **403** when the role lacks the permission.
+All routes are under `/api`. Errors are `{ "error": string }`. Every route answers **401** until the browser has passed the password wall, and also when there is no session; **403** when the role lacks the permission.
 
 | Route | Who | Request | Response |
 | --- | --- | --- | --- |
@@ -246,6 +256,7 @@ All routes are under `/api`. Errors are `{ "error": string }`. Every route answe
 | `GET /import/template` | `replay` | | `RTM_floor_data_template.xlsx` |
 | `POST /import/validate` | `replay`, not on the live Genesys feed | multipart: `file` (.xlsx) | `{ summary, warnings }`, or 400 `{ error, errors[] }` |
 | `POST /feed` | `feed` | `{ source: "gencloud" \| "sim" }` | `{ feed, realNames }`. Switches the floor for everyone. |
+| `POST /unlock` | anyone (the only route open before unlocking) | `{ password, next? }` | `{ ok, next }` and the unlock cookie. 401 wrong password, 429 after ten wrong guesses, 503 if `RTM_SITE_PASSWORD` is unset. |
 | `POST /admin/token` | holder of `RTM_ADMIN_SECRET` (no session needed) | `{ secret, token }` | `{ ok, who }`. 401 wrong secret, 400 empty or rejected token, 502 Genesys unreachable. Saves the token and reconnects the Gencloud feed. |
 | `POST /replay` | `replay`, not on the live Genesys feed | multipart: `file` (.xlsx template, or .csv with `cols?`, `smap?` JSON strings) | `{ view, replay }`. 400 `{ error, errors[] }`, 413 over 10 MB. |
 | `DELETE /replay` | `replay` | | `{ ok: true }` |
