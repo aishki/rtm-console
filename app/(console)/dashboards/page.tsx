@@ -39,12 +39,13 @@ function BarChart({ title, sub, bars, note, people }: { title: string; sub: stri
   const max = Math.max(1, ...bars.map(b => b.counts.total));
   const pct = (n: number) => `${(n / max) * 100}%`;
   return (
-    <div className="panel">
+    // A column whose bars take the spare height, so side-by-side charts end level with their legends on one line.
+    <div className="panel flex flex-col">
       <div className="panel-head">
         <h2 className="panel-title">{title}</h2>
         <span className="panel-sub">{sub}</span>
       </div>
-      <div className="flex flex-col gap-2.5 px-5 py-3.5">
+      <div className="flex flex-1 flex-col gap-2.5 px-5 py-3.5">
         {bars.map(b => {
           const { who, id } = people ? splitAgent(b.label) : { who: b.label, id: "" };
           return (
@@ -186,7 +187,7 @@ export default function DashboardsPage() {
       <div className="grid grid-cols-[repeat(auto-fit,minmax(170px,1fr))] gap-4">
         {kpis.map(k => <KpiTile key={k.label} kpi={k} />)}
       </div>
-      <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,440px),1fr))] items-start gap-6">
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,440px),1fr))] gap-6">
         <BarChart title="Call-out summary by rule" sub="This shift, by escalation stage" bars={byRule} />
         <BarChart title="Call-out summary by top agents" sub="Instances per agent, this shift" bars={byAgent} people note="Agents at ×3 open an investigation below." />
       </div>

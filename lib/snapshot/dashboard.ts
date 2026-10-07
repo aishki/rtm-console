@@ -132,7 +132,9 @@ h1{margin:6px 0 0;font-size:36px;font-weight:500;line-height:1.15;letter-spacing
 .kpi-label i{width:8px;height:8px;border-radius:50%}
 .kpi-value{font-size:30px;font-weight:600;line-height:1.1;letter-spacing:-.02em}
 .kpi-sub{font-size:12px;color:var(--muted)}
-.charts{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,440px),1fr));align-items:start;gap:24px}
+.charts{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,440px),1fr));gap:24px}
+.charts .panel{display:flex;flex-direction:column}
+.charts .bars{flex:1}
 .bars{display:flex;flex-direction:column;gap:2px;padding:10px 12px}
 .bar{display:grid;grid-template-columns:150px minmax(0,1fr) 36px;align-items:center;gap:12px;width:100%;padding:5px 8px;border:0;border-radius:8px;background:none;color:inherit;font-size:13px;text-align:left}
 .bar.people{grid-template-columns:190px minmax(0,1fr) 36px}
