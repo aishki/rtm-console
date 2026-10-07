@@ -2,7 +2,7 @@
 
 import { create } from "zustand";
 import { alertsFor } from "@/lib/alerts";
-import type { Agent, Incident, Instance, NudgeEvent, PeopleDirectory, Queue, ReplayMeta, Rule, StreamMsg, Team, ToastKind, View } from "@/lib/types";
+import type { Agent, FeedKind, Incident, InitMsg, Instance, NudgeEvent, PeopleDirectory, Queue, ReplayMeta, Rule, StreamMsg, Team, ToastKind, View } from "@/lib/types";
 import { alertWhileHidden, syncAlerts } from "./alerts";
 
 export interface ToastItem { id: number; kind: ToastKind; title: string; body: string }
@@ -17,6 +17,10 @@ interface ConsoleState {
   people: PeopleDirectory | null;
   t: number;
   mode: "live" | "replay";
+  feed: FeedKind;
+  /** Simulator only: the floor carries real team and agent names. */
+  realNames: boolean;
+  canSwitchFeed: boolean;
   staleFor: number;
   replay: ReplayMeta | null;
   queue: Queue | null;
@@ -45,7 +49,7 @@ function whenSeen(fn: () => void): void {
 }
 
 export const useConsole = create<ConsoleState>((set, get) => ({
-  status: "connecting", view: null, org: [], people: null, t: 0, mode: "live", staleFor: 0, replay: null,
+  status: "connecting", view: null, org: [], people: null, t: 0, mode: "live", feed: "gencloud", realNames: false, canSwitchFeed: false, staleFor: 0, replay: null,
   queue: null, rules: [], agents: [], incidents: [], ledger: [], toasts: [], nudge: null,
   toast(kind, title, body) {
     const id = ++toastSeq;
@@ -68,21 +72,22 @@ function mergeLedger(old: Instance[], delta: Instance[]): Instance[] {
 
 function apply(msg: StreamMsg) {
   const { toast } = useConsole.getState();
+  const init = msg.type === "init" ? (msg as InitMsg) : null;
   // A snapshot repeats the agent's unacknowledged nudge; a tick only carries new ones.
-  const nudge = msg.nudges.filter(e => msg.type !== "init" || e.n !== shownNudge).at(-1);
+  const nudge = msg.nudges.filter(e => !init || e.n !== shownNudge).at(-1);
   if (nudge) shownNudge = nudge.n;
   useConsole.setState(s => ({
     status: "ready", t: msg.t, mode: msg.mode, staleFor: msg.staleFor, replay: msg.replay, queue: msg.queue,
     rules: msg.rules, agents: msg.agents, incidents: msg.incidents, org: msg.org,
-    ...(msg.type === "init"
-      ? { view: (msg as Extract<StreamMsg, { type: "init" }>).view, people: (msg as Extract<StreamMsg, { type: "init" }>).people, ledger: msg.ledger }
+    ...(init
+      ? { view: init.view, people: init.people, feed: init.feed, realNames: init.realNames, canSwitchFeed: init.canSwitchFeed, ledger: msg.ledger }
       : { ledger: mergeLedger(s.ledger, msg.ledger) }),
     ...(nudge ? { nudge } : null),
   }));
   for (const t of msg.toasts) toast(t.kind, t.title, t.body);
-  if (msg.type === "init") void syncAlerts().catch(() => {});
+  if (init) void syncAlerts().catch(() => {});
   const role = useConsole.getState().view?.role;
-  if (role && msg.type !== "init") alertWhileHidden(alertsFor(role, msg.nudges, msg.toasts));
+  if (role && !init) alertWhileHidden(alertsFor(role, msg.nudges, msg.toasts));
 }
 
 let source: EventSource | null = null;

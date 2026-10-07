@@ -40,7 +40,7 @@ npm run dev        # http://localhost:3000
 
 | Variable | Meaning |
 | --- | --- |
-| `NEXT_PUBLIC_FEED=sim` | Use the floor simulator. Dev only: it is ignored when `NODE_ENV=production`. Set to a non-"sim" value (e.g., `gencloud`) to use the Gencloud adapter. |
+| `NEXT_PUBLIC_FEED=sim` | Start on the floor simulator. Dev only: it is ignored when `NODE_ENV=production`. Set to a non-"sim" value (e.g., `gencloud`) to start on the Gencloud adapter. In dev an admin can switch between the two while the server runs (see "Switching the data source"). |
 | `NEXT_PUBLIC_VIEW_AS=1` | Dev/admin flag for the "View as" role selector. **Without it every API route answers 401**, because no SSO exists yet. Required for Gencloud development. |
 | `GENESYS_TOKEN` | Hand-grabbed supervisor bearer token from the browser DevTools Network tab (Authorization header of an api.mypurecloud.com request). Short-lived; bootstrap failure keeps the feed silent until restart. |
 | `GENCLOUD_API_BASE` | Gencloud API base URL, e.g. `https://api.mypurecloud.com`. |
@@ -58,6 +58,16 @@ The brand logo PNGs are in `public/assets/logos/`: `carelon-global-solutions.png
 
 - **Dev with `NEXT_PUBLIC_FEED=sim`:** 199 simulated agents in 10 teams, starting at 08:15 with 15 minutes of history, random repeat offenders, and one 44-second feed outage four minutes in.
 - **Dev/prod with `NEXT_PUBLIC_FEED=gencloud` and valid `GENESYS_TOKEN`:** live agents and queues from the watched view (presence/routing state and queue metrics). Bootstrap failure or expired token keeps the feed silent until restart.
+
+### Switching the data source
+
+Outside production builds, an Admin sees a **Data** selector in the context bar: **Live Genesys** or **Simulation**. `NEXT_PUBLIC_FEED` only decides which one the server starts on.
+
+- The switch is for everyone: there is one floor, and every open console follows it without reloading. The feed pill says which one is on screen.
+- **The simulation uses real names.** Its floor keeps the simulator's shape (ten teams of 15 to 25 agents) but takes the ten largest teams of the Gencloud roster and the first agents of each. Team leads, managers and LOBs are not in the Gencloud roster, so the sample ones stay. Everything that happens on that floor (states, call-outs, incidents) is invented.
+- The names come from the running Gencloud floor. Each roster Gencloud delivers is also saved to `.rtm/roster.json`, so the simulation can still use real names when the token has expired. Without either, the sample teams and names are used and the pill reads "Simulation · sample floor". `.rtm/` is gitignored: it holds real people's names.
+- Gencloud keeps running behind a simulation, so its ledger and strikes are there on the way back. A simulation starts fresh every time it is switched on.
+- Desktop alerts follow the floor on screen, so a simulation does raise them.
 
 ## Importing floor data
 
@@ -215,6 +225,7 @@ All routes are under `/api`. Errors are `{ "error": string }`. Every route answe
 | `GET /export/incidents` | `export` | | `RTM_investigation_register.csv` |
 | `GET /import/template` | `replay` | | `RTM_floor_data_template.xlsx` |
 | `POST /import/validate` | `replay` | multipart: `file` (.xlsx) | `{ summary, warnings }`, or 400 `{ error, errors[] }` |
+| `POST /feed` | `feed`, dev builds only | `{ source: "gencloud" \| "sim" }` | `{ feed, realNames }`. Switches the floor for everyone. 403 in a production build. |
 | `POST /replay` | `replay` | multipart: `file` (.xlsx template, or .csv with `cols?`, `smap?` JSON strings) | `{ view, replay }`. 400 `{ error, errors[] }`, 413 over 10 MB. |
 | `DELETE /replay` | `replay` | | `{ ok: true }` |
 | `GET /push` | anyone | | `{ key }`, the public key to subscribe with, or `null` when push is not configured |
@@ -249,13 +260,13 @@ Whatever the console pops up for a person is also raised as a system notificatio
 
 `PERMS` in `lib/engine/scope.ts` is the single source. The UI hides what a role cannot do and the API enforces it.
 
-| Role | Tabs | Scope | Rules edit | Investigations | Exports | Ack all | Incident tiles | Replay |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Admin (WFM) | Console, Dashboards, Rules, Ledger | All teams | yes | yes | yes | yes | yes | yes |
-| Senior Leader | Dashboards | All teams | no | no | no | no | no | no |
-| Manager | Console, Dashboards, Rules, Ledger | Their teams | yes | yes | yes | no | yes | yes |
-| Team Lead / AM | Console, Dashboards, Ledger | Their team | no | no | no | no | no | no |
-| Agent | My View | Self | no | no | no | no | no | no |
+| Role | Tabs | Scope | Rules edit | Investigations | Exports | Ack all | Incident tiles | Replay | Data source |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Admin (WFM) | Console, Dashboards, Rules, Ledger | All teams | yes | yes | yes | yes | yes | yes | yes |
+| Senior Leader | Dashboards | All teams | no | no | no | no | no | no | no |
+| Manager | Console, Dashboards, Rules, Ledger | Their teams | yes | yes | yes | no | yes | yes | no |
+| Team Lead / AM | Console, Dashboards, Ledger | Their team | no | no | no | no | no | no | no |
+| Agent | My View | Self | no | no | no | no | no | no | no |
 
 Queue and floor call-outs are visible to every leader role and never to agents.
 

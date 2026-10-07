@@ -2,7 +2,7 @@
 
 import type { CsvCols, MappedState } from "@/lib/csv/parse";
 import type { ImportSummary } from "@/lib/import/floor";
-import type { Incident, Instance, ReplayMeta, Role, Rule, View } from "@/lib/types";
+import type { FeedKind, FloorSource, Incident, Instance, ReplayMeta, Role, Rule, View } from "@/lib/types";
 import { connect, useConsole } from "./store";
 
 /** A refusal from the API. `details` lists every problem when the server found several. */
@@ -37,6 +37,12 @@ export const api = {
     useConsole.setState({ view, nudge: null });
     await connect();
     return view;
+  },
+  /** Switch the floor's data source for everyone. The open stream follows with a fresh snapshot. */
+  async setFeed(source: FloorSource) {
+    const res = await post<{ feed: FeedKind; realNames: boolean }>("/api/feed", { source });
+    useConsole.setState({ nudge: null });
+    return res;
   },
   ack: (n: number) => post<{ instance: Instance }>(`/api/instances/${n}/ack`),
   ackAll: () => post<{ count: number }>("/api/instances/ack-all"),

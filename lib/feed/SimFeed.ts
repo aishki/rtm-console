@@ -3,7 +3,8 @@ import type { FeedHandlers, FeedSource } from "./FeedSource";
 
 // Dev-only stand-in for the Gencloud feed so the console moves without a live floor:
 // organic state changes, a drifting queue, a few repeat offenders and one feed outage.
-// Not a product feature. It is selected only by NEXT_PUBLIC_FEED=sim outside production.
+// Not a product feature. It only runs outside production: at start with NEXT_PUBLIC_FEED=sim,
+// or when an admin switches the floor's data source to the simulation.
 
 const FIRST = ["Amara", "Joshua", "Bea", "Miguel", "Katrina", "Paolo", "Lara", "Chris", "Ivy", "Dan", "Mika", "Ryan", "Cess", "Leo", "Trish", "Arvin", "Nina", "Jomar", "Ella", "Marc", "Faye", "Ken", "Rhea", "Toby", "Andrea", "Carlo", "Denise", "Enzo", "Gab", "Hazel", "Iris", "Jun", "Kim", "Liza", "Mae", "Noel", "Pia", "Raf", "Sam", "Tess"];
 const LAST = ["Reyes", "Lim", "Santos", "Cruz", "Uy", "Dizon", "Mendoza", "Bautista", "Ramos", "Villanueva", "Torres", "Gomez", "Aquino", "Navarro", "Ocampo", "Salazar", "Castro", "Flores", "Domingo", "Rivera", "Soriano", "Padilla", "Velasco", "Manalo", "Garcia", "Tan", "Lopez", "Chua", "Morales", "Pascual"];
@@ -29,6 +30,38 @@ function makeNames(n: number): string[] {
   return out;
 }
 
+/** Who sits on the simulated floor. `real`: the names were borrowed from the Gencloud roster. */
+export interface SimSeed { org: Team[]; seats: { name: string; team: string }[]; real: boolean }
+
+function sampleSeed(): SimSeed {
+  const seats = ORG_DEFAULT.flatMap(t => Array.from({ length: t.size }, () => t.team));
+  const names = makeNames(seats.length);
+  return { org: ORG_DEFAULT.map(({ team, tl, mgr, lob }) => ({ team, tl, mgr, lob })), seats: seats.map((team, i) => ({ name: names[i], team })), real: false };
+}
+
+/**
+ * A floor of the simulator's usual shape (its ten team slots and their sizes) under real
+ * names: the largest teams of the roster and the first agents of each. Where the roster has
+ * no lead, manager or LOB for a team, the sample one stays. Null when the roster has nobody.
+ */
+export function seedFromRoster(roster: { org: Team[]; agents: { name: string; team: string }[] } | null): SimSeed | null {
+  if (!roster) return null;
+  const byTeam = new Map<string, string[]>(), used = new Set<string>();
+  for (const a of roster.agents) {
+    // The engine tells agents apart by name.
+    if (used.has(a.name)) continue;
+    used.add(a.name);
+    byTeam.set(a.team, [...(byTeam.get(a.team) ?? []), a.name]);
+  }
+  const teams = roster.org.filter(t => byTeam.has(t.team)).sort((a, b) => byTeam.get(b.team)!.length - byTeam.get(a.team)!.length).slice(0, ORG_DEFAULT.length);
+  if (!teams.length) return null;
+  return {
+    org: teams.map((t, i) => ({ team: t.team, tl: t.tl || ORG_DEFAULT[i].tl, mgr: t.mgr || ORG_DEFAULT[i].mgr, lob: t.lob && t.lob !== t.team ? t.lob : ORG_DEFAULT[i].lob })),
+    seats: teams.flatMap((t, i) => byTeam.get(t.team)!.slice(0, ORG_DEFAULT[i].size).map(name => ({ name, team: t.team }))),
+    real: true,
+  };
+}
+
 type Rogue = "acw" | "aux" | "break" | "short" | "off" | "hold";
 const ROGUE_STATE: Partial<Record<Rogue, AgentState>> = { acw: "acw", aux: "auxp", break: "auxb", off: "off" };
 const ROGUE_RULE: Partial<Record<Rogue, RuleId>> = { short: "short", hold: "hold", acw: "acw" };
@@ -50,15 +83,13 @@ export class SimFeed implements FeedSource {
   /** Engine second at which the feed goes silent for a while. */
   outageAt = -1;
 
-  constructor(private readonly probe: SimProbe, private readonly rnd: () => number = Math.random) {}
+  constructor(private readonly probe: SimProbe, private readonly rnd: () => number = Math.random, readonly seed: SimSeed = sampleSeed()) {}
 
   subscribe(handlers: FeedHandlers): () => void {
     this.h = handlers;
-    const org = ORG_DEFAULT.map(({ team, tl, mgr, lob }) => ({ team, tl, mgr, lob }));
-    const seats = ORG_DEFAULT.flatMap(t => Array.from({ length: t.size }, () => t.team));
-    const names = makeNames(seats.length);
-    const roster = names.map((name, i) => ({
-      name, team: seats[i],
+    const { org, seats } = this.seed;
+    const roster = seats.map(({ name, team }, i) => ({
+      name, team,
       state: (i % 12 === 11 ? "off" : this.rnd() < 0.55 ? "oncall" : "avail") as AgentState,
       stTime: Math.floor(this.rnd() * 200), aht: 380 + Math.floor(this.rnd() * 160),
       calls: Math.floor(this.rnd() * 8), adh: 93 + Math.floor(this.rnd() * 7),

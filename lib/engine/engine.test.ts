@@ -338,11 +338,11 @@ describe("scoping", () => {
 
   it("matches the permission table", () => {
     const row = (r: keyof typeof PERMS) => { const p: Partial<(typeof PERMS)[typeof r]> = { ...PERMS[r] }; delete p.desc; return p; };
-    expect(row("admin")).toEqual({ tabs: ["console", "dash", "rules", "ledger"], rulesEdit: true, invAct: true, export: true, ackAll: true, ir: true, replay: true });
-    expect(row("senior")).toEqual({ tabs: ["dash"], rulesEdit: false, invAct: false, export: false, ackAll: false, ir: false, replay: false });
-    expect(row("mgr")).toEqual({ tabs: ["console", "dash", "rules", "ledger"], rulesEdit: true, invAct: true, export: true, ackAll: false, ir: true, replay: true });
-    expect(row("tl")).toEqual({ tabs: ["console", "dash", "ledger"], rulesEdit: false, invAct: false, export: false, ackAll: false, ir: false, replay: false });
-    expect(row("agent")).toEqual({ tabs: ["myview"], rulesEdit: false, invAct: false, export: false, ackAll: false, ir: false, replay: false });
+    expect(row("admin")).toEqual({ tabs: ["console", "dash", "rules", "ledger"], rulesEdit: true, invAct: true, export: true, ackAll: true, ir: true, replay: true, feed: true });
+    expect(row("senior")).toEqual({ tabs: ["dash"], rulesEdit: false, invAct: false, export: false, ackAll: false, ir: false, replay: false, feed: false });
+    expect(row("mgr")).toEqual({ tabs: ["console", "dash", "rules", "ledger"], rulesEdit: true, invAct: true, export: true, ackAll: false, ir: true, replay: true, feed: false });
+    expect(row("tl")).toEqual({ tabs: ["console", "dash", "ledger"], rulesEdit: false, invAct: false, export: false, ackAll: false, ir: false, replay: false, feed: false });
+    expect(row("agent")).toEqual({ tabs: ["myview"], rulesEdit: false, invAct: false, export: false, ackAll: false, ir: false, replay: false, feed: false });
   });
 });
 

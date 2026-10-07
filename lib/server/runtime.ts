@@ -1,15 +1,17 @@
-import type { NudgeEvent, Rule, ToastEvent } from "@/lib/types";
+import type { FloorSource, NudgeEvent, Rule, ToastEvent } from "@/lib/types";
 import type { ReplayEvent } from "@/lib/csv/parse";
 import { type Engine, createEngine } from "@/lib/engine/engine";
 import { defaultRules } from "@/lib/engine/rules";
 import type { FeedSource } from "@/lib/feed/FeedSource";
 import { CsvReplayFeed, REPLAY_SPEED, type ReplayExtras } from "@/lib/feed/CsvReplayFeed";
 import { GencloudFeed } from "@/lib/feed/GencloudFeed";
-import { SimFeed } from "@/lib/feed/SimFeed";
+import { type SimSeed, SimFeed, seedFromRoster } from "@/lib/feed/SimFeed";
 import { pushBatch } from "./push";
+import { loadRoster, saveRoster } from "./rosterCache";
 
 // Server-side home of the rules engine. One live runtime serves the whole floor; a CSV
 // replay gets its own runtime per session so reviewing history never disturbs the live feed.
+// Outside production the floor can be switched between the Gencloud feed and the simulator.
 // State is in memory, so this needs a single long-lived Node process (not serverless).
 
 /** Notifications raised since the last publish. */
@@ -29,16 +31,16 @@ export interface Runtime {
 }
 
 /** The simulator is a dev tool: it never runs in a production build. */
-export const USE_SIM = process.env.NEXT_PUBLIC_FEED === "sim" && process.env.NODE_ENV !== "production";
+export const SIM_ALLOWED = process.env.NODE_ENV !== "production";
 
 const WARM_SECONDS = 900;
 const MAX_REPLAYS = 8;
 
-function createRuntime(kind: Runtime["kind"], rules: Rule[], speed: number, makeFeed: (engine: Engine) => FeedSource, prepare: (engine: Engine, feed: FeedSource) => void): Runtime {
+function createRuntime(kind: Runtime["kind"], rules: Rule[], speed: number, deriveAdh: boolean, makeFeed: (engine: Engine) => FeedSource, prepare: (engine: Engine, feed: FeedSource) => void): Runtime {
   const listeners = new Set<Listener>();
   const lastNudge = new Map<string, NudgeEvent>();
   let batch: Batch = { toasts: [], nudges: [] };
-  const engine = createEngine({ toast: e => batch.toasts.push(e), nudge: e => batch.nudges.push(e) }, { rules, deriveAdh: kind === "replay" || USE_SIM });
+  const engine = createEngine({ toast: e => batch.toasts.push(e), nudge: e => batch.nudges.push(e) }, { rules, deriveAdh });
   const feed = makeFeed(engine);
   prepare(engine, feed);
   const unsubscribe = feed.subscribe(engine.ingest);
@@ -68,16 +70,26 @@ function createRuntime(kind: Runtime["kind"], rules: Rule[], speed: number, make
   };
 }
 
-function createLive(rules: Rule[]): Runtime {
-  if (!USE_SIM) {
-    const now = new Date();
-    const t = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
-    return createRuntime("live", rules, 1, () => new GencloudFeed({
+/** Keeps the real roster on disk, so the simulator can use its names when Gencloud is away. */
+const remembering = (feed: FeedSource): FeedSource => ({
+  kind: feed.kind,
+  subscribe: h => feed.subscribe({ ...h, onRoster(r) { saveRoster(r); h.onRoster(r); } }),
+});
+
+function createGencloud(rules: Rule[]): Runtime {
+  const now = new Date();
+  const t = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
+  return createRuntime("live", rules, 1, false, () => {
+    const feed = new GencloudFeed({
       apiBase: process.env.GENCLOUD_API_BASE, token: process.env.GENESYS_TOKEN, viewConfigId: process.env.RTM_VIEW_CONFIG_ID, clientId: process.env.GENCLOUD_CLIENT_ID, clientSecret: process.env.GENCLOUD_CLIENT_SECRET,
-    }), engine => engine.reset({ t }));
-  }
-  const rt = createRuntime("live", rules, 1,
-    engine => new SimFeed({ thr: engine.thr, strikes: (name, id) => engine.S.agents.find(a => a.name === name)?.strikes[id] ?? 0 }),
+    });
+    return SIM_ALLOWED ? remembering(feed) : feed;
+  }, engine => engine.reset({ t }));
+}
+
+function createSim(rules: Rule[], seed: SimSeed | undefined): Runtime {
+  const rt = createRuntime("live", rules, 1, true,
+    engine => new SimFeed({ thr: engine.thr, strikes: (name, id) => engine.S.agents.find(a => a.name === name)?.strikes[id] ?? 0 }, Math.random, seed),
     engine => engine.reset({ t: 8 * 3600 }), // 08:00 shift start
   );
   warm(rt);
@@ -103,17 +115,55 @@ function warm({ engine, feed }: Runtime) {
   (feed as SimFeed).outageAt = S.t + 240;
 }
 
-interface Registry { rules: Rule[]; live: Runtime | null; replays: Map<string, Runtime> }
+interface Registry {
+  rules: Rule[];
+  /** Which floor everyone is looking at. */
+  source: FloorSource;
+  floors: Partial<Record<FloorSource, Runtime>>;
+  replays: Map<string, Runtime>;
+  watchers: Set<() => void>;
+}
 const g = globalThis as typeof globalThis & { __rtmRegistry?: Registry };
-const registry = (g.__rtmRegistry ??= { rules: defaultRules(), live: null, replays: new Map() });
+const registry: Registry = (g.__rtmRegistry ??= {
+  rules: defaultRules(), source: SIM_ALLOWED && process.env.NEXT_PUBLIC_FEED === "sim" ? "sim" : "gencloud",
+  floors: {}, replays: new Map(), watchers: new Set(),
+});
 
+/** Real names for the simulator: from the running Gencloud floor, else from the roster it last delivered. */
+function realSeed(): SimSeed | undefined {
+  const floor = registry.floors.gencloud?.engine.S;
+  return (floor && seedFromRoster(floor)) ?? seedFromRoster(loadRoster()) ?? undefined;
+}
+
+/** The floor everyone is looking at: the Gencloud feed, or the simulator when it is switched on. */
 export function liveRuntime(): Runtime {
-  if (!registry.live) {
-    const rt = (registry.live = createLive(registry.rules));
-    // Desktop alerts reach people who have no stream open (browser minimized or closed).
-    rt.subscribe(batch => pushBatch(rt.engine.S, batch));
-  }
-  return registry.live;
+  const source = registry.source;
+  const running = registry.floors[source];
+  if (running) return running;
+  const rt = (registry.floors[source] = source === "sim" ? createSim(registry.rules, realSeed()) : createGencloud(registry.rules));
+  // Desktop alerts reach people who have no stream open (browser minimized or closed).
+  // Only the floor on screen alerts: Gencloud keeps running behind a simulation.
+  rt.subscribe(batch => { if (registry.floors[registry.source] === rt) pushBatch(rt.engine.S, batch); });
+  return rt;
+}
+
+/**
+ * Switch the floor for everyone. Gencloud keeps running behind a simulation, so its ledger
+ * and strikes are there on the way back; a simulation starts fresh each time.
+ */
+export function setFloorSource(source: FloorSource): Runtime {
+  if (source === registry.source) return liveRuntime();
+  if (registry.source === "sim") { registry.floors.sim?.stop(); delete registry.floors.sim; }
+  registry.source = source;
+  const rt = liveRuntime();
+  for (const fn of [...registry.watchers]) fn();
+  return rt;
+}
+
+/** Told after the floor's data source was switched. Returns an unsubscribe function. */
+export function onFloorChange(fn: () => void): () => void {
+  registry.watchers.add(fn);
+  return () => { registry.watchers.delete(fn); };
 }
 
 /** The runtime a session is looking at: its own replay when one is running, otherwise the live floor. */
@@ -125,7 +175,7 @@ export function runtimeFor(sid: string): Runtime {
 export function startReplay(sid: string, events: ReplayEvent[], extras: ReplayExtras = {}): Runtime {
   exitReplay(sid);
   if (registry.replays.size >= MAX_REPLAYS) exitReplay(registry.replays.keys().next().value!);
-  const rt = createRuntime("replay", registry.rules, REPLAY_SPEED, () => new CsvReplayFeed(events, extras), (engine, feed) => {
+  const rt = createRuntime("replay", registry.rules, REPLAY_SPEED, true, () => new CsvReplayFeed(events, extras), (engine, feed) => {
     const csv = feed as CsvReplayFeed;
     engine.reset({ t: csv.startT, mode: "replay", replay: csv.meta });
   });
@@ -143,6 +193,6 @@ export function exitReplay(sid: string): boolean {
 
 /** Rule configuration is shared, so a rules change is pushed to every runtime's subscribers. */
 export function publishAll(): void {
-  registry.live?.publish();
+  for (const rt of Object.values(registry.floors)) rt.publish();
   for (const rt of registry.replays.values()) rt.publish();
 }

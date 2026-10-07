@@ -1,6 +1,7 @@
 import type { InitMsg, TickMsg, View } from "@/lib/types";
-import { inScope, peopleDirectory, scopeAgents, scopeIncidents, scopeLedger, scopeTeams } from "@/lib/engine/scope";
-import type { Batch, Runtime } from "./runtime";
+import { PERMS, inScope, peopleDirectory, scopeAgents, scopeIncidents, scopeLedger, scopeTeams } from "@/lib/engine/scope";
+import { SimFeed } from "@/lib/feed/SimFeed";
+import { type Batch, type Runtime, SIM_ALLOWED } from "./runtime";
 import { VIEW_AS } from "./session";
 
 /**
@@ -26,6 +27,9 @@ export function tickMsg(rt: Runtime, view: View, sinceRev: number | null, batch:
   };
 }
 
+/** True for a simulation that carries real team and agent names. */
+export const usesRealNames = (rt: Runtime): boolean => rt.feed instanceof SimFeed && rt.feed.seed.real;
+
 export function initMsg(rt: Runtime, view: View): InitMsg {
   const S = rt.engine.S;
   // A nudge that arrived while the agent's console was closed (they may have come from the desktop alert).
@@ -33,5 +37,6 @@ export function initMsg(rt: Runtime, view: View): InitMsg {
   return {
     ...tickMsg(rt, view, null, { toasts: [], nudges: waiting ? [waiting] : [] }),
     type: "init", view, people: VIEW_AS ? peopleDirectory(S) : null,
+    feed: rt.feed.kind, realNames: usesRealNames(rt), canSwitchFeed: SIM_ALLOWED && PERMS[view.role].feed,
   };
 }

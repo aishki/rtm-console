@@ -1,11 +1,11 @@
 import type { Agent, Incident, Instance, PeopleDirectory, Perms, Role, Team, View } from "@/lib/types";
 
 export const PERMS: Record<Role, Perms> = {
-  admin: { tabs: ["console", "dash", "rules", "ledger"], rulesEdit: true, invAct: true, export: true, ackAll: true, ir: true, replay: true, desc: () => "Full access: rules admin, ledger controls, all teams" },
-  senior: { tabs: ["dash"], rulesEdit: false, invAct: false, export: false, ackAll: false, ir: false, replay: false, desc: () => "Dashboards with team breakdown, read-only, all teams" },
-  mgr: { tabs: ["console", "dash", "rules", "ledger"], rulesEdit: true, invAct: true, export: true, ackAll: false, ir: true, replay: true, desc: w => `Span of ${w}, incident tiles + rules admin` },
-  tl: { tabs: ["console", "dash", "ledger"], rulesEdit: false, invAct: false, export: false, ackAll: false, ir: false, replay: false, desc: w => `Direct reports of ${w} only` },
-  agent: { tabs: ["myview"], rulesEdit: false, invAct: false, export: false, ackAll: false, ir: false, replay: false, desc: w => `What ${w} sees: own targets and pop-ups` },
+  admin: { tabs: ["console", "dash", "rules", "ledger"], rulesEdit: true, invAct: true, export: true, ackAll: true, ir: true, replay: true, feed: true, desc: () => "Full access: rules admin, ledger controls, all teams" },
+  senior: { tabs: ["dash"], rulesEdit: false, invAct: false, export: false, ackAll: false, ir: false, replay: false, feed: false, desc: () => "Dashboards with team breakdown, read-only, all teams" },
+  mgr: { tabs: ["console", "dash", "rules", "ledger"], rulesEdit: true, invAct: true, export: true, ackAll: false, ir: true, replay: true, feed: false, desc: w => `Span of ${w}, incident tiles + rules admin` },
+  tl: { tabs: ["console", "dash", "ledger"], rulesEdit: false, invAct: false, export: false, ackAll: false, ir: false, replay: false, feed: false, desc: w => `Direct reports of ${w} only` },
+  agent: { tabs: ["myview"], rulesEdit: false, invAct: false, export: false, ackAll: false, ir: false, replay: false, feed: false, desc: w => `What ${w} sees: own targets and pop-ups` },
 };
 
 /** The floor a viewer is scoped against. */
