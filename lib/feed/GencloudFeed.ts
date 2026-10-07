@@ -10,6 +10,8 @@ export interface GencloudConfig {
   /** e.g. https://api.mypurecloud.com */
   apiBase?: string;
   token?: string;
+  /** Read on every subscribe, so a resubscribe picks up a token replaced at runtime. Wins over `token`. */
+  getToken?: () => string | undefined;
   viewConfigId?: string;
   clientId?: string;
   clientSecret?: string;
@@ -49,7 +51,7 @@ export class GencloudFeed implements FeedSource {
 
   subscribe(handlers: FeedHandlers): () => void {
     const apiBase = this.config.apiBase ?? process.env.GENCLOUD_API_BASE ?? DEFAULT_API_BASE;
-    const token = this.config.token ?? process.env.GENESYS_TOKEN;
+    const token = this.config.getToken?.() ?? this.config.token ?? process.env.GENESYS_TOKEN;
     const viewConfigId = this.config.viewConfigId ?? process.env.RTM_VIEW_CONFIG_ID ?? DEFAULT_VIEW_CONFIG_ID;
 
     if (!token) {

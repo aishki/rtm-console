@@ -39,6 +39,9 @@ export function ContextBar() {
   const feed = useFeedPill();
   const source = useConsole(s => s.feed);
   const canSwitchFeed = useConsole(s => s.canSwitchFeed);
+  const staleFor = useConsole(s => s.staleFor);
+  // The usual cause of a silent Gencloud feed is an expired token; Admins get a shortcut to replace it.
+  const gencloudDown = ready && !isReplay && source === "gencloud" && staleFor > 0 && view?.role === "admin";
   const switchFeed = async (to: FloorSource) => {
     const res = await attempt(api.setFeed(to));
     if (!res) return;
@@ -96,6 +99,7 @@ export function ContextBar() {
       <div className="inline-flex h-8 items-center gap-2 rounded-pill px-3.5 text-[13px] font-semibold" style={{ background: feed.bg, color: feed.fg }}>
         <span className="h-2 w-2 rounded-full" style={{ background: feed.dot }} />
         <span>{feed.text}</span>
+        {gencloudDown && <a href="/admin/token" className="underline underline-offset-2">Refresh token</a>}
       </div>
       <div className="flex items-baseline gap-2">
         <span className="text-[13px] text-muted">Shift clock</span>

@@ -8,6 +8,7 @@ import { GencloudFeed } from "@/lib/feed/GencloudFeed";
 import { type SimSeed, SimFeed, seedFromRoster } from "@/lib/feed/SimFeed";
 import { pushBatch } from "./push";
 import { loadRoster, saveRoster } from "./rosterCache";
+import { genesysToken } from "./tokenStore";
 
 // Server-side home of the rules engine. One live runtime serves the whole floor; a CSV
 // replay gets its own runtime per session so reviewing history never disturbs the live feed.
@@ -27,6 +28,8 @@ export interface Runtime {
   publish(): void;
   /** The agent's latest nudge while it is still unacknowledged: shown again when they open the console. */
   pendingNudge(agent: string): NudgeEvent | null;
+  /** Drop the feed's connection and open a fresh one. The engine's floor, ledger and strikes are kept. */
+  restartFeed(): void;
   stop(): void;
 }
 
@@ -43,7 +46,7 @@ function createRuntime(kind: Runtime["kind"], rules: Rule[], speed: number, deri
   const engine = createEngine({ toast: e => batch.toasts.push(e), nudge: e => batch.nudges.push(e) }, { rules, deriveAdh });
   const feed = makeFeed(engine);
   prepare(engine, feed);
-  const unsubscribe = feed.subscribe(engine.ingest);
+  let unsubscribe = feed.subscribe(engine.ingest);
 
   const publish = () => {
     const out = batch;
@@ -66,6 +69,7 @@ function createRuntime(kind: Runtime["kind"], rules: Rule[], speed: number, deri
       const e = lastNudge.get(agent);
       return e && engine.S.ledger.some(r => r.n === e.n && r.agent === agent && r.status === "open") ? e : null;
     },
+    restartFeed() { unsubscribe(); unsubscribe = feed.subscribe(engine.ingest); },
     stop() { clearInterval(timer); unsubscribe(); listeners.clear(); },
   };
 }
@@ -81,7 +85,7 @@ function createGencloud(rules: Rule[]): Runtime {
   const t = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
   return createRuntime("live", rules, 1, false, () => {
     const feed = new GencloudFeed({
-      apiBase: process.env.GENCLOUD_API_BASE, token: process.env.GENESYS_TOKEN, viewConfigId: process.env.RTM_VIEW_CONFIG_ID, clientId: process.env.GENCLOUD_CLIENT_ID, clientSecret: process.env.GENCLOUD_CLIENT_SECRET,
+      apiBase: process.env.GENCLOUD_API_BASE, getToken: genesysToken, viewConfigId: process.env.RTM_VIEW_CONFIG_ID, clientId: process.env.GENCLOUD_CLIENT_ID, clientSecret: process.env.GENCLOUD_CLIENT_SECRET,
     });
     return SIM_ALLOWED ? remembering(feed) : feed;
   }, engine => engine.reset({ t }));
@@ -161,6 +165,14 @@ export function setFloorSource(source: FloorSource): Runtime {
   const rt = liveRuntime();
   for (const fn of [...registry.watchers]) fn();
   return rt;
+}
+
+/**
+ * Reconnect the Gencloud feed after its token was replaced. When the floor is on the simulator
+ * and Gencloud is not running, the next switch back starts it with the new token anyway.
+ */
+export function restartGencloud(): void {
+  registry.floors.gencloud?.restartFeed();
 }
 
 /** Told after the floor's data source was switched. Returns an unsubscribe function. */
