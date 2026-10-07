@@ -20,7 +20,7 @@ export function tickMsg(rt: Runtime, view: View, sinceRev: number | null, batch:
     // A replay only announces its own progress.
     toasts: batch.toasts
       .filter(e => (replay ? e.kind === "info" : !e.instance || (leader && inScope(S, view, e.instance))))
-      .map(({ kind, title, body }) => ({ kind, title, body })),
+      .map(({ kind, title, body, instance }) => ({ kind, title, body, n: instance?.n, team: instance && !instance.isFloor ? instance.team : undefined })),
     // An agent only ever sees their own nudges; leaders get a preview for their span.
     nudges: replay || view.role === "senior" ? [] : batch.nudges.filter(n => inScope(S, view, { agent: n.agent, team: n.team, isFloor: false })),
   };
@@ -28,8 +28,10 @@ export function tickMsg(rt: Runtime, view: View, sinceRev: number | null, batch:
 
 export function initMsg(rt: Runtime, view: View): InitMsg {
   const S = rt.engine.S;
+  // A nudge that arrived while the agent's console was closed (they may have come from the desktop alert).
+  const waiting = view.role === "agent" && view.who ? rt.pendingNudge(view.who) : null;
   return {
-    ...tickMsg(rt, view, null, { toasts: [], nudges: [] }),
+    ...tickMsg(rt, view, null, { toasts: [], nudges: waiting ? [waiting] : [] }),
     type: "init", view, people: VIEW_AS ? peopleDirectory(S) : null,
   };
 }

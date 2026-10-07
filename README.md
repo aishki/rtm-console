@@ -45,6 +45,8 @@ npm run dev        # http://localhost:3000
 | `GENESYS_TOKEN` | Hand-grabbed supervisor bearer token from the browser DevTools Network tab (Authorization header of an api.mypurecloud.com request). Short-lived; bootstrap failure keeps the feed silent until restart. |
 | `GENCLOUD_API_BASE` | Gencloud API base URL, e.g. `https://api.mypurecloud.com`. |
 | `RTM_VIEW_CONFIG_ID` | Saved "CSBDProviderData" view ID (default: `9c9f8fd2-acab-4282-9442-ddba152f9c18`, the 89-queue voice-floor view). |
+| `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` | Key pair for desktop alerts over Web Push. Generate with `npx web-push generate-vapid-keys`. Optional: without them, alerts only show while a console tab is open. |
+| `VAPID_SUBJECT` | Contact for the push services, `mailto:` or `https:` (optional). |
 
 `.env*` files are gitignored except `.env.example`.
 
@@ -215,6 +217,9 @@ All routes are under `/api`. Errors are `{ "error": string }`. Every route answe
 | `POST /import/validate` | `replay` | multipart: `file` (.xlsx) | `{ summary, warnings }`, or 400 `{ error, errors[] }` |
 | `POST /replay` | `replay` | multipart: `file` (.xlsx template, or .csv with `cols?`, `smap?` JSON strings) | `{ view, replay }`. 400 `{ error, errors[] }`, 413 over 10 MB. |
 | `DELETE /replay` | `replay` | | `{ ok: true }` |
+| `GET /push` | anyone | | `{ key }`, the public key to subscribe with, or `null` when push is not configured |
+| `POST /push` | anyone | `{ subscription }` (the browser's `PushSubscription`) | `{ ok: true }`. 400 if not a known push service, 503 if not configured. |
+| `DELETE /push` | anyone | `{ endpoint }` | `{ ok: true }` |
 
 Instances outside the caller's span return 404, not 403, so their existence is not revealed.
 
@@ -227,6 +232,18 @@ Instances outside the caller's span return 404, not 403, so their existence is n
 - A dropped connection reconnects by itself and gets a fresh `init`.
 - The client must reconnect after the role, person or replay state changes; `lib/client/api.ts` does this.
 - Toasts for call-outs go only to leaders with that call-out in span. An agent only receives their own nudges, Senior Leader receives none, and none are sent during a replay.
+
+### Desktop alerts
+
+Whatever the console pops up for a person is also raised as a system notification: nudges for the agent, and for leaders the nudge previews and call-out toasts of their span, so they are seen when the console is not on screen. "Enable desktop alerts" in the context bar asks for the browser permission once per browser.
+
+- **Web Push** (`lib/server/push.ts`, `public/sw.js`): the live runtime pushes each nudge and call-out to the subscriptions of the people it is in scope for. This works with the browser minimized, and with it closed where the browser still receives push (Edge on Windows; Chrome while it runs in the background). Pushes expire after 60 seconds so a stale nudge never appears later.
+- **Hidden-tab fallback** (`lib/client/alerts.ts`): an open but hidden tab raises the same notification from the stream, for networks that block the push services. Both use the tag `rtm-<n>`, so each call-out shows once.
+- The alert carries the same wording as the in-page nudge or toast; a leader's alert adds the team on a second line. Windows draws the notification itself, so its layout and colours cannot follow the console's.
+- "Got it" and "Acknowledge" act without opening the console. A nudge has "Got it" (acknowledges) and "Send reason", which brings the console forward with that nudge's pop-up and the cursor in its reason box (Chrome on Windows does not let anyone type inside a notification). A leader's alert has "Acknowledge" and "Open console". Browsers allow two buttons, so "On a case, 2 min" is left out: closing the notification does the same.
+- Allowing desktop alerts never replaces the in-page ones. An agent's unacknowledged nudge is shown again when they open the console, and a toast's 8 seconds only count while the tab is on screen.
+- Needs HTTPS (localhost is exempt). Subscriptions are kept in memory and tied to the "View as" person until the database and SSO exist; see the `TODO`s in `lib/server/push.ts`.
+- Replays never raise desktop alerts.
 
 ### Permissions
 
@@ -274,6 +291,6 @@ The engine is a TypeScript port of the design prototype's `rtm-engine.js`.
 
 ## Tests
 
-`npm test` runs 39 tests. `lib/engine/engine.test.ts` covers strike counting, the 3× rule, capped routes, re-arm logic, feed staleness, scoping, the permission table, acknowledge and comment. `lib/import/floor.test.ts` covers the import validation and runs the downloadable template through the engine end to end.
+`npm test` runs the unit tests. `lib/engine/engine.test.ts` covers strike counting, the 3× rule, capped routes, re-arm logic, feed staleness, scoping, the permission table, acknowledge and comment. `lib/import/floor.test.ts` covers the import validation and runs the downloadable template through the engine end to end.
 
 Tests drive the engine through the same `ingest` handlers a feed uses, one `tick()` per second, so they are also the best reference for how a feed adapter should behave. There are no API route or component tests yet.

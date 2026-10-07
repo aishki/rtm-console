@@ -1,8 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { clearAlert } from "@/lib/client/alerts";
 import { api, attempt } from "@/lib/client/api";
 import { useConsole } from "@/lib/client/store";
+import type { NudgeEvent } from "@/lib/types";
 import { PurpleButton } from "@/components/ui/buttons";
 import { CarelonMark } from "@/components/ui/LogoLockup";
 
@@ -11,7 +13,8 @@ const RECHECK_MS = 6000;
 
 /**
  * The agent's private nudge, bottom-left. Agents see only their own; leaders see a preview
- * of what the associate got. It leaves by itself after 14s, but never while being typed in.
+ * of what the associate got. It leaves by itself after 14s on screen, but never while being
+ * typed in and never while the tab is in the background, where nobody could have read it.
  */
 export function NudgePopup() {
   const nudge = useConsole(s => s.nudge);
@@ -20,16 +23,45 @@ export function NudgePopup() {
   const toast = useConsole(s => s.toast);
   const [draft, setDraft] = useState({ n: -1, text: "" });
   const focused = useRef(false);
-  const close = useCallback(() => { focused.current = false; setNudge(null); }, [setNudge]);
-
+  const reasonBox = useRef<HTMLTextAreaElement>(null);
+  const wantsReason = useRef(false);
   const n = nudge?.n;
+  // Closing here also takes down the desktop alert for the same nudge.
+  const close = useCallback(() => { focused.current = false; if (n !== undefined) clearAlert(n); setNudge(null); }, [n, setNudge]);
+
   useEffect(() => {
     if (n === undefined) return;
-    let timer: ReturnType<typeof setTimeout>;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     const dismiss = () => { if (focused.current) timer = setTimeout(dismiss, RECHECK_MS); else close(); };
-    timer = setTimeout(dismiss, DISMISS_MS);
-    return () => clearTimeout(timer);
+    const restart = () => { clearTimeout(timer); if (document.visibilityState === "visible") timer = setTimeout(dismiss, DISMISS_MS); };
+    restart();
+    document.addEventListener("visibilitychange", restart);
+    return () => { clearTimeout(timer); document.removeEventListener("visibilitychange", restart); };
   }, [n, close]);
+
+  // "Send reason" on a desktop alert lands here: show that nudge with the reason box ready.
+  useEffect(() => {
+    const sw = navigator.serviceWorker;
+    if (!sw) return;
+    const onMessage = (e: MessageEvent) => {
+      if (e.data?.type !== "reason") return;
+      wantsReason.current = true;
+      setNudge(e.data.nudge as NudgeEvent);
+      reasonBox.current?.focus();
+    };
+    sw.addEventListener("message", onMessage);
+    sw.controller?.postMessage({ type: "reason?" });
+    return () => sw.removeEventListener("message", onMessage);
+  }, [setNudge]);
+  useEffect(() => {
+    if (n === undefined || !wantsReason.current) return;
+    wantsReason.current = false;
+    reasonBox.current?.focus();
+  }, [n]);
+
+  // Acknowledged somewhere else, e.g. "Got it" on the desktop alert.
+  const acked = useConsole(s => !!s.nudge && s.ledger.some(r => r.n === s.nudge!.n && r.status === "acked"));
+  useEffect(() => { if (acked) close(); }, [acked, close]);
 
   if (!nudge) return null;
   const isAgent = role === "agent";
@@ -56,6 +88,7 @@ export function NudgePopup() {
         </div>
         <p className="m-0 text-pretty text-sm leading-normal text-strong">{nudge.body}</p>
         <textarea
+          ref={reasonBox}
           value={text}
           onChange={e => setDraft({ n: nudge.n, text: e.target.value })}
           onFocus={() => { focused.current = true; }}

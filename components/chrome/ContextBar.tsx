@@ -2,6 +2,7 @@
 
 import { clock } from "@/lib/engine/format";
 import { ROLES } from "@/lib/engine/rules";
+import { enableAlerts, useAlertState } from "@/lib/client/alerts";
 import { api, attempt } from "@/lib/client/api";
 import { usePerms } from "@/lib/client/hooks";
 import { useConsole } from "@/lib/client/store";
@@ -32,6 +33,12 @@ export function ContextBar() {
   const toast = useConsole(s => s.toast);
   const perms = usePerms();
   const feed = useFeedPill();
+  const alerts = useAlertState();
+  const turnOnAlerts = async () => {
+    const state = await enableAlerts();
+    if (state === "granted") toast("info", "Desktop alerts are on", "Nudges and escalations will pop up on this computer, even with the browser minimized.");
+    else if (state === "denied") toast("warn", "Desktop alerts are blocked", "Allow notifications for this site in the browser's site settings, then reload.");
+  };
 
   const groups = !people || !view ? []
     : view.role === "agent" ? people.agentsByTeam.map(g => ({ label: g.team, items: g.agents }))
@@ -66,6 +73,7 @@ export function ContextBar() {
           Exit replay
         </PurpleButton>
       )}
+      {ready && alerts === "default" && <PurpleButton variant="outline" onClick={() => void turnOnAlerts()}>Enable desktop alerts</PurpleButton>}
       <div className="inline-flex h-8 items-center gap-2 rounded-pill px-3.5 text-[13px] font-semibold" style={{ background: feed.bg, color: feed.fg }}>
         <span className="h-2 w-2 rounded-full" style={{ background: feed.dot }} />
         <span>{feed.text}</span>

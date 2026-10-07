@@ -6,6 +6,7 @@ import type { FeedSource } from "@/lib/feed/FeedSource";
 import { CsvReplayFeed, REPLAY_SPEED, type ReplayExtras } from "@/lib/feed/CsvReplayFeed";
 import { GencloudFeed } from "@/lib/feed/GencloudFeed";
 import { SimFeed } from "@/lib/feed/SimFeed";
+import { pushBatch } from "./push";
 
 // Server-side home of the rules engine. One live runtime serves the whole floor; a CSV
 // replay gets its own runtime per session so reviewing history never disturbs the live feed.
@@ -22,6 +23,8 @@ export interface Runtime {
   subscribe(fn: Listener): () => void;
   /** Push the current state to every subscriber now (call after a mutation). */
   publish(): void;
+  /** The agent's latest nudge while it is still unacknowledged: shown again when they open the console. */
+  pendingNudge(agent: string): NudgeEvent | null;
   stop(): void;
 }
 
@@ -33,6 +36,7 @@ const MAX_REPLAYS = 8;
 
 function createRuntime(kind: Runtime["kind"], rules: Rule[], speed: number, makeFeed: (engine: Engine) => FeedSource, prepare: (engine: Engine, feed: FeedSource) => void): Runtime {
   const listeners = new Set<Listener>();
+  const lastNudge = new Map<string, NudgeEvent>();
   let batch: Batch = { toasts: [], nudges: [] };
   const engine = createEngine({ toast: e => batch.toasts.push(e), nudge: e => batch.nudges.push(e) }, { rules, deriveAdh: kind === "replay" || USE_SIM });
   const feed = makeFeed(engine);
@@ -42,6 +46,7 @@ function createRuntime(kind: Runtime["kind"], rules: Rule[], speed: number, make
   const publish = () => {
     const out = batch;
     batch = { toasts: [], nudges: [] };
+    for (const e of out.nudges) lastNudge.set(e.agent, e);
     for (const fn of listeners) fn(out);
   };
   const step = () => {
@@ -55,6 +60,10 @@ function createRuntime(kind: Runtime["kind"], rules: Rule[], speed: number, make
   return {
     kind, engine, feed, publish,
     subscribe(fn) { listeners.add(fn); return () => { listeners.delete(fn); }; },
+    pendingNudge(agent) {
+      const e = lastNudge.get(agent);
+      return e && engine.S.ledger.some(r => r.n === e.n && r.agent === agent && r.status === "open") ? e : null;
+    },
     stop() { clearInterval(timer); unsubscribe(); listeners.clear(); },
   };
 }
@@ -99,7 +108,12 @@ const g = globalThis as typeof globalThis & { __rtmRegistry?: Registry };
 const registry = (g.__rtmRegistry ??= { rules: defaultRules(), live: null, replays: new Map() });
 
 export function liveRuntime(): Runtime {
-  return (registry.live ??= createLive(registry.rules));
+  if (!registry.live) {
+    const rt = (registry.live = createLive(registry.rules));
+    // Desktop alerts reach people who have no stream open (browser minimized or closed).
+    rt.subscribe(batch => pushBatch(rt.engine.S, batch));
+  }
+  return registry.live;
 }
 
 /** The runtime a session is looking at: its own replay when one is running, otherwise the live floor. */

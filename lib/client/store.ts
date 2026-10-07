@@ -1,7 +1,9 @@
 "use client";
 
 import { create } from "zustand";
+import { alertsFor } from "@/lib/alerts";
 import type { Agent, Incident, Instance, NudgeEvent, PeopleDirectory, Queue, ReplayMeta, Rule, StreamMsg, Team, ToastKind, View } from "@/lib/types";
+import { alertWhileHidden, syncAlerts } from "./alerts";
 
 export interface ToastItem { id: number; kind: ToastKind; title: string; body: string }
 
@@ -32,6 +34,15 @@ interface ConsoleState {
 const TOAST_MS = 8000;
 const MAX_TOASTS = 4;
 let toastSeq = 0;
+/** The nudge last shown, so a reconnect does not bring back one that was already closed. */
+let shownNudge = -1;
+
+/** Run once the tab is on screen: now, or when the person comes back to it. */
+function whenSeen(fn: () => void): void {
+  if (document.visibilityState === "visible") return fn();
+  const check = () => { if (document.visibilityState !== "visible") return; document.removeEventListener("visibilitychange", check); fn(); };
+  document.addEventListener("visibilitychange", check);
+}
 
 export const useConsole = create<ConsoleState>((set, get) => ({
   status: "connecting", view: null, org: [], people: null, t: 0, mode: "live", staleFor: 0, replay: null,
@@ -39,7 +50,8 @@ export const useConsole = create<ConsoleState>((set, get) => ({
   toast(kind, title, body) {
     const id = ++toastSeq;
     set(s => ({ toasts: [...s.toasts, { id, kind, title, body }].slice(-MAX_TOASTS) }));
-    setTimeout(() => set(s => ({ toasts: s.toasts.filter(x => x.id !== id) })), TOAST_MS);
+    // A toast raised behind the desktop alert is still there when the person opens the console.
+    whenSeen(() => setTimeout(() => set(s => ({ toasts: s.toasts.filter(x => x.id !== id) })), TOAST_MS));
     void get;
   },
   setNudge(nudge) { set({ nudge }); },
@@ -56,15 +68,21 @@ function mergeLedger(old: Instance[], delta: Instance[]): Instance[] {
 
 function apply(msg: StreamMsg) {
   const { toast } = useConsole.getState();
+  // A snapshot repeats the agent's unacknowledged nudge; a tick only carries new ones.
+  const nudge = msg.nudges.filter(e => msg.type !== "init" || e.n !== shownNudge).at(-1);
+  if (nudge) shownNudge = nudge.n;
   useConsole.setState(s => ({
     status: "ready", t: msg.t, mode: msg.mode, staleFor: msg.staleFor, replay: msg.replay, queue: msg.queue,
     rules: msg.rules, agents: msg.agents, incidents: msg.incidents, org: msg.org,
     ...(msg.type === "init"
       ? { view: (msg as Extract<StreamMsg, { type: "init" }>).view, people: (msg as Extract<StreamMsg, { type: "init" }>).people, ledger: msg.ledger }
       : { ledger: mergeLedger(s.ledger, msg.ledger) }),
-    ...(msg.nudges.length ? { nudge: msg.nudges[msg.nudges.length - 1] } : null),
+    ...(nudge ? { nudge } : null),
   }));
   for (const t of msg.toasts) toast(t.kind, t.title, t.body);
+  if (msg.type === "init") void syncAlerts().catch(() => {});
+  const role = useConsole.getState().view?.role;
+  if (role && msg.type !== "init") alertWhileHidden(alertsFor(role, msg.nudges, msg.toasts));
 }
 
 let source: EventSource | null = null;

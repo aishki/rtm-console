@@ -51,6 +51,8 @@ export interface Perms {
 
 export interface ToastEvent { kind: ToastKind; title: string; body: string; instance?: Instance }
 export interface NudgeEvent { n: number; agent: string; team: string; first: string; body: string }
+/** A desktop alert (system notification) for instance `n`. `nudge`: the nudge it stands for, which gives it the pop-up's buttons. */
+export interface AlertNote { tag: string; n: number; title: string; body: string; url: string; nudge: NudgeEvent | null }
 
 // ---------- feed ----------
 export interface RosterAgent {
@@ -80,7 +82,8 @@ export interface TickMsg {
   org: Team[];
   /** init: the whole scoped ledger (newest first). tick: only changed or new instances. */
   ledger: Instance[];
-  toasts: Omit<ToastEvent, "instance">[];
+  /** `n` and `team` come from the instance behind a call-out toast; feed notices have neither. */
+  toasts: (Omit<ToastEvent, "instance"> & { n?: number; team?: string })[];
   nudges: NudgeEvent[];
 }
 export interface InitMsg extends TickMsg {
