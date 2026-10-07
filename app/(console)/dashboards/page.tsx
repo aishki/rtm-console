@@ -17,7 +17,10 @@ import { Select } from "@/components/ui/Select";
 
 type Counts = Record<Stage, number> & { total: number };
 interface Bar { label: string; counts: Counts }
-const DISPOSITION_OPTIONS = DISPOSITIONS.map(d => ({ value: d, label: d }));
+/** Picked instead of a disposition: the investigation is dropped and the incident goes back to Open. */
+const REOPEN = "reopen";
+const DISPOSITION_OPTIONS = [...DISPOSITIONS.map(d => ({ value: d, label: d })), { value: REOPEN, label: "None · back to Open" }];
+const NO_DISPOSITION = { value: "", label: "Select disposition" };
 
 /** Call-outs grouped by a key, biggest first. */
 function tally(rows: Instance[], key: (r: Instance) => string, cap?: number): Bar[] {
@@ -71,22 +74,29 @@ function BarChart({ title, sub, bars, note, people }: { title: string; sub: stri
   );
 }
 
-/** Start / disposition + close / closed note, for roles with investigation actions. */
+/**
+ * Start / disposition + close / closed note, for roles with investigation actions. Picking a disposition records it
+ * straight away; "Close investigation" unlocks once one is recorded, and "None" sends the incident back to Open.
+ */
 function IncidentAction({ incident: i, canAct }: { incident: Incident; canAct: boolean }) {
-  const [disposition, setDisposition] = useState(DISPOSITIONS[0]);
   const toast = useConsole(s => s.toast);
   const note = i.status === "Closed" ? `Closed ${clock(i.closedT ?? 0)}` : !canAct ? "Read-only in this view" : "";
+  const pick = (v: string) => void attempt(v === REOPEN ? api.incident(i.inc, "reopen") : api.incident(i.inc, "record", v));
   const close = async () => {
-    const res = await attempt(api.incident(i.inc, "close", disposition));
+    const res = await attempt(api.incident(i.inc, "close"));
     if (res) toast("info", `${res.incident.inc} closed`, `${res.incident.agent} · ${res.incident.rule} · ${res.incident.disposition}`);
   };
+  // w-max: the cell is as wide as its controls, so the select is never squeezed.
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex w-max items-center gap-2">
       {canAct && i.status === "Open" && <PurpleButton compact onClick={() => void attempt(api.incident(i.inc, "start"))}>Start investigation</PurpleButton>}
       {canAct && i.status === "Investigating" && (
         <>
-          <Select value={disposition} onChange={setDisposition} options={DISPOSITION_OPTIONS} aria-label={`Disposition for ${i.inc}`} className="field h-8 px-2 text-[13px]" />
-          <PurpleButton compact onClick={close}>Close</PurpleButton>
+          <Select
+            value={i.disposition} onChange={pick} options={i.disposition ? DISPOSITION_OPTIONS : [NO_DISPOSITION, ...DISPOSITION_OPTIONS]}
+            aria-label={`Disposition for ${i.inc}`} className="field h-8 px-2 text-[13px]"
+          />
+          <PurpleButton compact disabled={!i.disposition} title={i.disposition ? undefined : "Record a disposition first"} onClick={close}>Close investigation</PurpleButton>
         </>
       )}
       {note && <span className="text-[13px] text-muted">{note}</span>}

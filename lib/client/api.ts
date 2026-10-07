@@ -2,7 +2,7 @@
 
 import type { CsvCols, MappedState } from "@/lib/csv/parse";
 import type { ImportSummary } from "@/lib/import/floor";
-import type { FeedKind, FloorSource, Incident, Instance, ReplayMeta, Role, Rule, View } from "@/lib/types";
+import type { FeedKind, FloorSource, Incident, Instance, InvAction, ReplayMeta, Role, Rule, View } from "@/lib/types";
 import { connect, useConsole } from "./store";
 
 /** A refusal from the API. `details` lists every problem when the server found several. */
@@ -47,7 +47,7 @@ export const api = {
   ack: (n: number) => post<{ instance: Instance }>(`/api/instances/${n}/ack`),
   ackAll: () => post<{ count: number }>("/api/instances/ack-all"),
   comment: (n: number, text: string, ack: boolean) => post<{ instance: Instance }>(`/api/instances/${n}/comment`, { text, ack }),
-  incident: (inc: string, action: "start" | "close", disposition?: string) => post<{ incident: Incident }>(`/api/incidents/${encodeURIComponent(inc)}`, { action, disposition }),
+  incident: (inc: string, action: InvAction, disposition?: string) => post<{ incident: Incident }>(`/api/incidents/${encodeURIComponent(inc)}`, { action, disposition }),
   patchRule: (id: Rule["id"], patch: Partial<Pick<Rule, "thr" | "sev" | "route" | "on">>) =>
     call<{ rule: Rule }>("/api/rules", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, ...patch }) }),
   /** Check a filled-in Excel template without starting a replay. */

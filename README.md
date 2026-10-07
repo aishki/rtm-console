@@ -239,7 +239,7 @@ All routes are under `/api`. Errors are `{ "error": string }`. Every route answe
 | `POST /instances/:n/ack` | Console roles in span; an agent for their own | | `{ instance }`. 404 if outside the span. |
 | `POST /instances/ack-all` | `ackAll` | | `{ count }` |
 | `POST /instances/:n/comment` | the agent it belongs to | `{ text, ack? }`, text 1–140 chars | `{ instance }` |
-| `POST /incidents/:inc` | `invAct`, in span | `{ action: "start" }` or `{ action: "close", disposition }` | `{ incident }`. 409 wrong status. |
+| `POST /incidents/:inc` | `invAct`, in span | `{ action: "start" }`, `{ action: "reopen" }` (back to Open), `{ action: "record", disposition }` or `{ action: "close" }` | `{ incident }`. 409 wrong status, or closing with no disposition recorded. |
 | `GET /export/ledger` | `export` | | `RTM_instance_ledger.csv` |
 | `GET /export/incidents` | `export` | | `RTM_investigation_register.csv` |
 | `GET /export/snapshot` | roles with the Dashboards tab | | `RTM_dashboard_snapshot_<date>_<time>.html`: the caller's Dashboards screen as one read-only file with working filters (`lib/snapshot/dashboard.ts`) |

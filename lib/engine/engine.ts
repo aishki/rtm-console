@@ -1,4 +1,4 @@
-import type { Agent, AgentStateEvent, Incident, Instance, Queue, ReplayMeta, Roster, Route, Rule, RuleId, Severity, View } from "@/lib/types";
+import type { Agent, AgentStateEvent, Incident, Instance, InvAction, Queue, ReplayMeta, Roster, Route, Rule, RuleId, Severity, View } from "@/lib/types";
 import type { FeedHandlers } from "@/lib/feed/FeedSource";
 import { DISPOSITIONS, ONCE_PER_SHIFT, ROUTE_IDS, defaultRules, evaluateAgents, ruleApplies, ruleOf, thrOf } from "./rules";
 import { type EngineHooks, type EngineState, fire as fireRule } from "./escalation";
@@ -179,15 +179,18 @@ export function createEngine(hooks: EngineHooks = {}, opts: EngineOptions = {}) 
       if (ack && r.status === "open") markAck(r);
       return r;
     },
-    /** Open -> Investigating -> Closed (with a disposition). */
-    invAction(inc: string, disposition?: string): Incident | null {
+    /**
+     * Open -> Investigating -> Closed. An investigation can go back to Open, which drops its disposition,
+     * and closes only once a disposition is recorded. A step that does not fit the status changes nothing.
+     */
+    invAction(inc: string, action: InvAction, disposition?: string): Incident | null {
       const i = S.incidents.find(x => x.inc === inc);
       if (!i) return null;
-      if (i.status === "Open") i.status = "Investigating";
-      else if (i.status === "Investigating") {
-        i.disposition = disposition && DISPOSITIONS.includes(disposition) ? disposition : DISPOSITIONS[0];
-        i.status = "Closed"; i.closedT = S.t;
-      }
+      if (i.status === "Open") { if (action === "start") i.status = "Investigating"; }
+      else if (i.status !== "Investigating") return i;
+      else if (action === "reopen") { i.status = "Open"; i.disposition = ""; }
+      else if (action === "record") { if (disposition && DISPOSITIONS.includes(disposition)) i.disposition = disposition; }
+      else if (action === "close" && i.disposition) { i.status = "Closed"; i.closedT = S.t; }
       return i;
     },
     setThr(id: RuleId, v: unknown) { const r = rule(id); r.thr = Math.max(1, parseInt(String(v), 10) || r.thr); },
