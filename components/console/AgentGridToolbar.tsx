@@ -69,12 +69,13 @@ export function AgentGridToolbar({ filters: f, onChange, onClear, searchRef, tea
         <MultiSelect value={f.states} onChange={states => onChange({ states })} options={STATE_OPTIONS} anyLabel="Any state" countLabel={n => `${n} states`} aria-label="Filter by state" className={select} />
         <Select value={f.sortBy} onChange={sortBy => onChange({ sortBy })} options={SORT_OPTIONS} aria-label="Sort agents" className={select} />
       </div>
-      <div className="flex flex-wrap items-center gap-x-5 border-b border-pale-purple pb-1.5 pl-[37px] pr-5">
+      {/* Compact chips, so the row stays on one line with the result count and Clear filters showing. */}
+      <div className="flex flex-wrap items-center gap-x-4 border-b border-pale-purple px-5 pb-1.5">
         {QUICK.map(([k, label]) => (
-          <FilterChip key={k} id={`qf-${k}`} label={`${label} (${quickCounts[k]})`} checked={!!f.quick[k]} onChange={on => onChange({ quick: { ...f.quick, [k]: on } })} />
+          <FilterChip key={k} id={`qf-${k}`} label={`${label} (${quickCounts[k]})`} checked={!!f.quick[k]} compact onChange={on => onChange({ quick: { ...f.quick, [k]: on } })} />
         ))}
         <div className="flex-1" />
-        <div className="flex flex-wrap items-center gap-4 py-2">
+        <div className="flex flex-wrap items-center gap-3 py-2">
           <span aria-live="polite" className="text-[13px] text-muted">{resultText}</span>
           {filtering && (
             <button type="button" onClick={onClear} className="inline-flex h-8 items-center gap-1.5 rounded-pill border-0 bg-tint px-3 text-[13px] font-semibold text-purple">

@@ -127,7 +127,7 @@ function AgentGrid() {
       <AgentGridToolbar
         filters={{ ...filters, team: teamFilter }} onChange={patch => setFilters(f => ({ ...f, ...patch }))} onClear={clear} searchRef={searchRef}
         teamGroups={teamGroups} teamCount={teams.length} quickCounts={quickCounts} filtering={filtering}
-        resultText={filtering ? `Showing ${shownCount} of ${agents.length} agents in ${plural(groups.length, "team")}` : `${agents.length} agents · ${plural(teams.length, "team")}`}
+        resultText={filtering ? `${shownCount} of ${agents.length} agents · ${plural(groups.length, "team")}` : `${agents.length} agents · ${plural(teams.length, "team")}`}
         showExpandControls={groups.length > 1} onExpandAll={() => setAll(true)} onCollapseAll={() => setAll(false)}
       />
       <div className="flex flex-col gap-2.5 px-5 pb-5 pt-4">
