@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { clock } from "@/lib/engine/format";
+import { clock, splitAgent } from "@/lib/engine/format";
 import { api, attempt, download } from "@/lib/client/api";
 import { avgResponse, usePerms } from "@/lib/client/hooks";
 import { useConsole } from "@/lib/client/store";
@@ -20,18 +20,26 @@ const STAGE_FILTERS: SelectOption<Stage | "">[] = [
   { value: "ops", label: "Ops escalation" },
 ];
 
+/** Name over the domain ID, as on the dashboards. The floor's own call-outs have no ID. */
+function AgentCell({ name }: { name: string }) {
+  const { who, id } = splitAgent(name);
+  return <span className="flex flex-col gap-0.5"><span className="font-semibold">{who}</span>{id && <span className="num text-[11px] text-muted">{id}</span>}</span>;
+}
+
+// Every column is as wide as its content except Team, which takes what is left and ellipsises, and the
+// comment, which wraps inside a fixed width: the table then fits its panel instead of scrolling sideways.
 const COLUMNS: Column<Instance>[] = [
   { key: "n", header: "#", tdClass: "font-ui text-muted", cell: r => r.n },
   { key: "time", header: "Time", tdClass: "num", cell: r => clock(r.t) },
-  { key: "agent", header: "Agent", tdClass: "whitespace-nowrap font-semibold", cell: r => r.agent },
-  { key: "team", header: "Team", tdClass: "whitespace-nowrap text-muted", cell: r => r.team },
+  { key: "agent", header: "Agent", tdClass: "whitespace-nowrap", cell: r => <AgentCell name={r.agent} /> },
+  { key: "team", header: "Team", thClass: "w-full min-w-[140px]", tdClass: "max-w-0 truncate text-muted", cell: r => <span title={r.team}>{r.team}</span> },
   { key: "rule", header: "Rule", tdClass: "whitespace-nowrap", cell: r => r.rule },
   { key: "val", header: "Value", tdClass: "num whitespace-nowrap", cell: r => r.val },
   { key: "stage", header: "Stage", cell: r => <StatusPill tone={STAGE[r.stage]}>{STAGE[r.stage].label}</StatusPill> },
   { key: "inc", header: "Incident", tdClass: "whitespace-nowrap font-ui font-semibold text-purple", cell: r => r.inc || "—" },
-  { key: "status", header: "Status", cell: r => <span className={`text-xs font-semibold ${r.status === "open" ? "text-warning-text" : "text-success-text"}`}>{r.status === "open" ? "Open" : "Acknowledged"}</span> },
+  { key: "status", header: "Status", cell: r => <span className={`whitespace-nowrap text-xs font-semibold ${r.status === "open" ? "text-warning-text" : "text-success-text"}`}>{r.status === "open" ? "Open" : "Acknowledged"}</span> },
   { key: "resp", header: "Resp (s)", align: "right", tdClass: "num", cell: r => (r.ackT !== null ? r.ackT - r.t : "—") },
-  { key: "cmt", header: "Agent comment", tdClass: "max-w-[260px] text-[13px] text-purple-900", cell: r => (r.cmt ? `“${r.cmt}”` : "—") },
+  { key: "cmt", header: "Agent comment", thClass: "min-w-[220px]", tdClass: "text-[13px] text-purple-900", cell: r => (r.cmt ? `“${r.cmt}”` : "—") },
 ];
 
 /** Fourth tile: the ledger split by escalation stage, as one stacked bar with its legend. */
