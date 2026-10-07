@@ -349,9 +349,9 @@ const SCRIPT = String.raw`
     shownIncidents = table("incidents", [
       ["inc", "Incident #", function (i) { return i.inc; }, text(function (i) { return i.inc; }), "id"],
       ["t", "Opened", function (i) { return i.t; }, function (i) { return clock(i.t); }, "num"],
-      ["agent", "Agent", function (i) { return i.agent; }, text(function (i) { return i.agent; }), "b nw"],
+      ["agent", "Agent", function (i) { return i.agent; }, function (i) { return person(i.agent); }, "b nw"],
       ["team", "Team", function (i) { return i.team; }, text(function (i) { return i.team; }), "m nw"],
-      ["rule", "Trigger rule", function (i) { return i.rule; }, text(function (i) { return i.rule; })],
+      ["rule", "Trigger rule", function (i) { return i.rule; }, text(function (i) { return i.rule; }), "nw"],
       ["instances", "Instances", function (i) { return i.instances; }, function (i) { return "×" + i.instances; }, "num b"],
       ["status", "Status", function (i) { return STATUSES.indexOf(i.status); }, function (i) { var c = INC_TONE[i.status] || ["#F5F5F5", "#5C5C6F"]; return '<span class="pill" style="background:' + c[0] + ";color:" + c[1] + '">' + esc(i.status) + "</span>"; }],
       ["disposition", "Disposition", function (i) { return i.disposition || ""; }, text(function (i) { return i.disposition || "—"; }), "m"],

@@ -139,12 +139,19 @@ export default function DashboardsPage() {
   const incidentColumns: Column<Incident>[] = [
     { key: "inc", header: "Incident #", thClass: "whitespace-nowrap", tdClass: "whitespace-nowrap font-ui font-semibold text-purple", cell: i => i.inc },
     { key: "opened", header: "Opened", tdClass: "num", cell: i => clock(i.t) },
-    { key: "agent", header: "Agent", tdClass: "whitespace-nowrap font-semibold", cell: i => i.agent },
-  { key: "team", header: "Team", tdClass: "font-semibold", cell: t => t.team },
-    { key: "rule", header: "Trigger rule", cell: i => i.rule },
+    // The domain ID sits under the name, so the column stays narrow and "Trigger rule" keeps to one line.
+    {
+      key: "agent", header: "Agent", tdClass: "whitespace-nowrap", cell: i => {
+        const { who, id } = splitAgent(i.agent);
+        return <span className="flex flex-col gap-0.5"><span className="font-semibold">{who}</span>{id && <span className="num text-[11px] text-muted">{id}</span>}</span>;
+      },
+    },
+    // Team takes whatever width is left and ellipsises, so the Action buttons never slide off the panel.
+    { key: "team", header: "Team", thClass: "w-full min-w-[160px]", tdClass: "max-w-0 truncate text-muted", cell: i => <span title={i.team}>{i.team}</span> },
+    { key: "rule", header: "Trigger rule", thClass: "whitespace-nowrap", tdClass: "whitespace-nowrap", cell: i => i.rule },
     { key: "instances", header: "Instances", tdClass: "font-ui font-semibold", cell: i => `×${i.instances}` },
     { key: "status", header: "Status", cell: i => <StatusPill tone={INC[i.status]}>{i.status}</StatusPill> },
-    { key: "disp", header: "Disposition", tdClass: "text-muted", cell: i => i.disposition || "—" },
+    { key: "disp", header: "Disposition", tdClass: "whitespace-nowrap text-muted", cell: i => i.disposition || "—" },
     { key: "action", header: "Action", thClass: "min-w-[300px]", cell: i => <IncidentAction incident={i} canAct={canAct} /> },
   ];
 
