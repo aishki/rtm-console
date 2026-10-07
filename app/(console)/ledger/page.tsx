@@ -34,7 +34,8 @@ const COLUMNS: Column<Instance>[] = [
   { key: "agent", header: "Agent", tdClass: "whitespace-nowrap", cell: r => <AgentCell name={r.agent} /> },
   { key: "team", header: "Team", thClass: "w-full min-w-[140px]", tdClass: "max-w-0 truncate text-muted", cell: r => <span title={r.team}>{r.team}</span> },
   { key: "rule", header: "Rule", tdClass: "whitespace-nowrap", cell: r => r.rule },
-  { key: "val", header: "Value", tdClass: "num whitespace-nowrap", cell: r => r.val },
+  // Brand font like its neighbours: the value is words as often as digits ("21s call").
+  { key: "val", header: "Value", tdClass: "whitespace-nowrap tabular-nums", cell: r => r.val },
   { key: "stage", header: "Stage", cell: r => <StatusPill tone={STAGE[r.stage]}>{STAGE[r.stage].label}</StatusPill> },
   { key: "inc", header: "Incident", tdClass: "whitespace-nowrap font-ui font-semibold text-purple", cell: r => r.inc || "—" },
   { key: "status", header: "Status", cell: r => <span className={`whitespace-nowrap text-xs font-semibold ${r.status === "open" ? "text-warning-text" : "text-success-text"}`}>{r.status === "open" ? "Open" : "Acknowledged"}</span> },
