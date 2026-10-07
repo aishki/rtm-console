@@ -20,9 +20,10 @@ export function IncidentTiles({ incidents, agents, org }: { incidents: Incident[
               key={name}
               className={`flex min-w-0 flex-col gap-1.5 rounded-15 px-4 py-3.5 ${open ? "bg-error-fill shadow-[inset_0_0_0_1px_var(--error)]" : "bg-page opacity-75 shadow-[inset_0_0_0_1px_var(--neutral-300)]"}`}
             >
-              <div className="flex flex-wrap items-baseline gap-2">
-                <span className="text-[15px] font-semibold">{name}</span>
-                <span className="font-ui text-xs font-semibold text-error-text">{list.length} IR{list.length > 1 ? "s" : ""}{open ? "" : " · all closed"}</span>
+              {/* The count stays in the top-right corner, however many lines the name takes. */}
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="min-w-0 text-[15px] font-semibold [overflow-wrap:anywhere]">{name}</span>
+                <span className="shrink-0 whitespace-nowrap font-ui text-xs font-semibold text-error-text">{list.length} IR{list.length > 1 ? "s" : ""}{open ? "" : " · all closed"}</span>
               </div>
               {/* A long team name is cut with an ellipsis (full name on hover); the Team Lead always stays in view. */}
               <span className="flex min-w-0 text-xs text-muted">
