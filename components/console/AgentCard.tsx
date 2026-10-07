@@ -34,8 +34,10 @@ export const AgentCard = memo(function AgentCard({ agent: a, rules, query, showM
         <span className={`num ml-auto text-[13px] font-semibold ${crit ? "text-error-text" : breach ? "text-warning-text" : "text-ink"}`}>{fmt(a.stTime)}</span>
       </div>
       {showMetrics && (
-        <div className="num flex flex-wrap gap-2.5 border-t border-row pt-2 text-[11px] text-muted">
-          {metric("AHT", a.aht + "s")}{metric("Calls", a.calls)}{metric("Short", a.shortCalls)}{metric("Xfr", a.transfers)}{metric("Adh", a.adh.toFixed(0) + "%")}
+        // Two tidy rows in three columns that line up from card to card: handling on the first row, call quality on the second.
+        <div className="num grid grid-cols-[1fr_1fr_52px] gap-x-1.5 gap-y-1 border-t border-row pt-2 text-[11px] text-muted">
+          {metric("AHT", a.aht + "s")}{metric("Calls", a.calls)}{metric("Adh", a.adh.toFixed(0) + "%")}
+          {metric("Short", a.shortCalls)}{metric("Xfr", a.transfers)}
         </div>
       )}
     </div>
