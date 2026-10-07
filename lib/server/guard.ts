@@ -17,7 +17,7 @@ export async function authorize(): Promise<Ctx | Response> {
   return { sid: session.sid, view, perms: PERMS[view.role], rt, S: rt.engine.S };
 }
 
-type Flag = "rulesEdit" | "invAct" | "export" | "ackAll" | "ir" | "replay";
+type Flag = "rulesEdit" | "invAct" | "export" | "ackAll" | "ir" | "replay" | "feed";
 
 /** Authorize and require one PERMS flag. */
 export async function authorizeFor(flag: Flag): Promise<Ctx | Response> {

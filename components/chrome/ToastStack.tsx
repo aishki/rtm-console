@@ -16,7 +16,7 @@ export function Toast({ toast }: { toast: ToastItem }) {
   );
 }
 
-/** Fixed top-right, under the header. At most four toasts, each gone after 8 seconds. */
+/** Fixed top-right, under the header. At most four toasts, each gone after 8 seconds on screen. */
 export function ToastStack() {
   const toasts = useConsole(s => s.toasts);
   return (

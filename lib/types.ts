@@ -9,6 +9,10 @@ export type RuleId =
   | "short" | "adh" | "xfer" | "cq" | "sl" | "aband" | "gnr";
 export type TabId = "console" | "myview" | "dash" | "rules" | "ledger";
 export type ToastKind = "warn" | "crit" | "esc" | "info";
+/** Which adapter feeds a floor: the real Gencloud feed, the simulator, or a replayed export. */
+export type FeedKind = "gencloud" | "sim" | "csv";
+/** What the live floor can be switched between. */
+export type FloorSource = Exclude<FeedKind, "csv">;
 
 export interface Team { team: string; tl: string; mgr: string; lob: string }
 
@@ -46,11 +50,16 @@ export interface ReplayMeta { agents: number; events: number; endT: number; done
 
 export interface Perms {
   tabs: TabId[]; rulesEdit: boolean; invAct: boolean; export: boolean;
-  ackAll: boolean; ir: boolean; replay: boolean; desc: (who: string | null) => string;
+  ackAll: boolean; ir: boolean; replay: boolean;
+  /** Switch the floor between the Gencloud feed and the simulator. */
+  feed: boolean;
+  desc: (who: string | null) => string;
 }
 
 export interface ToastEvent { kind: ToastKind; title: string; body: string; instance?: Instance }
 export interface NudgeEvent { n: number; agent: string; team: string; first: string; body: string }
+/** A desktop alert (system notification) for instance `n`. `nudge`: the nudge it stands for, which gives it the pop-up's buttons. */
+export interface AlertNote { tag: string; n: number; title: string; body: string; url: string; nudge: NudgeEvent | null }
 
 // ---------- feed ----------
 export interface RosterAgent {
@@ -80,11 +89,17 @@ export interface TickMsg {
   org: Team[];
   /** init: the whole scoped ledger (newest first). tick: only changed or new instances. */
   ledger: Instance[];
-  toasts: Omit<ToastEvent, "instance">[];
+  /** `n` and `team` come from the instance behind a call-out toast; feed notices have neither. */
+  toasts: (Omit<ToastEvent, "instance"> & { n?: number; team?: string })[];
   nudges: NudgeEvent[];
 }
 export interface InitMsg extends TickMsg {
   type: "init";
   view: View; people: PeopleDirectory | null;
+  feed: FeedKind;
+  /** Simulator only: the teams and agents carry real names from the Gencloud roster. */
+  realNames: boolean;
+  /** The viewer may switch the floor's data source (never in a production build). */
+  canSwitchFeed: boolean;
 }
 export type StreamMsg = TickMsg | InitMsg;

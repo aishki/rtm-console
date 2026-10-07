@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AgentState, AgentStateEvent, NudgeEvent, RosterAgent, RuleId, Team, ToastEvent, View } from "@/lib/types";
 import { createEngine } from "./engine";
-import { stageFor } from "./escalation";
+import { firstName, stageFor } from "./escalation";
 import { isBreach, myTargets } from "./rules";
 import { PERMS, canAck, canComment, inScope, resolveView, scopeAgents, scopeIncidents, scopeLedger, scopeTeams } from "./scope";
 
@@ -338,11 +338,11 @@ describe("scoping", () => {
 
   it("matches the permission table", () => {
     const row = (r: keyof typeof PERMS) => { const p: Partial<(typeof PERMS)[typeof r]> = { ...PERMS[r] }; delete p.desc; return p; };
-    expect(row("admin")).toEqual({ tabs: ["console", "dash", "rules", "ledger"], rulesEdit: true, invAct: true, export: true, ackAll: true, ir: true, replay: true });
-    expect(row("senior")).toEqual({ tabs: ["dash"], rulesEdit: false, invAct: false, export: false, ackAll: false, ir: false, replay: false });
-    expect(row("mgr")).toEqual({ tabs: ["console", "dash", "rules", "ledger"], rulesEdit: true, invAct: true, export: true, ackAll: false, ir: true, replay: true });
-    expect(row("tl")).toEqual({ tabs: ["console", "dash", "ledger"], rulesEdit: false, invAct: false, export: false, ackAll: false, ir: false, replay: false });
-    expect(row("agent")).toEqual({ tabs: ["myview"], rulesEdit: false, invAct: false, export: false, ackAll: false, ir: false, replay: false });
+    expect(row("admin")).toEqual({ tabs: ["console", "dash", "rules", "ledger"], rulesEdit: true, invAct: true, export: true, ackAll: true, ir: true, replay: true, feed: true });
+    expect(row("senior")).toEqual({ tabs: ["dash"], rulesEdit: false, invAct: false, export: false, ackAll: false, ir: false, replay: false, feed: false });
+    expect(row("mgr")).toEqual({ tabs: ["console", "dash", "rules", "ledger"], rulesEdit: true, invAct: true, export: true, ackAll: false, ir: true, replay: true, feed: false });
+    expect(row("tl")).toEqual({ tabs: ["console", "dash", "ledger"], rulesEdit: false, invAct: false, export: false, ackAll: false, ir: false, replay: false, feed: false });
+    expect(row("agent")).toEqual({ tabs: ["myview"], rulesEdit: false, invAct: false, export: false, ackAll: false, ir: false, replay: false, feed: false });
   });
 });
 
@@ -389,5 +389,12 @@ describe("agent view helpers", () => {
     e.setThr("acw", "-5"); expect(e.thr("acw")).toBe(1);
     e.setThr("acw", "45"); expect(e.thr("acw")).toBe(45);
     e.setThr("acw", "abc"); expect(e.thr("acw")).toBe(45);
+  });
+});
+
+describe("nudge greeting", () => {
+  it("uses the first name, also for Gencloud's \"Last, First - ID\" names", () => {
+    expect(firstName("Amara Reyes")).toBe("Amara");
+    expect(firstName("Reyes, Amara Luz - AB12345")).toBe("Amara");
   });
 });

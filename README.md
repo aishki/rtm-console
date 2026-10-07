@@ -40,11 +40,13 @@ npm run dev        # http://localhost:3000
 
 | Variable | Meaning |
 | --- | --- |
-| `NEXT_PUBLIC_FEED=sim` | Use the floor simulator. Dev only: it is ignored when `NODE_ENV=production`. Set to a non-"sim" value (e.g., `gencloud`) to use the Gencloud adapter. |
+| `NEXT_PUBLIC_FEED=sim` | Start on the floor simulator. Dev only: it is ignored when `NODE_ENV=production`. Set to a non-"sim" value (e.g., `gencloud`) to start on the Gencloud adapter. In dev an admin can switch between the two while the server runs (see "Switching the data source"). |
 | `NEXT_PUBLIC_VIEW_AS=1` | Dev/admin flag for the "View as" role selector. **Without it every API route answers 401**, because no SSO exists yet. Required for Gencloud development. |
 | `GENESYS_TOKEN` | Hand-grabbed supervisor bearer token from the browser DevTools Network tab (Authorization header of an api.mypurecloud.com request). Short-lived; bootstrap failure keeps the feed silent until restart. |
 | `GENCLOUD_API_BASE` | Gencloud API base URL, e.g. `https://api.mypurecloud.com`. |
 | `RTM_VIEW_CONFIG_ID` | Saved "CSBDProviderData" view ID (default: `9c9f8fd2-acab-4282-9442-ddba152f9c18`, the 89-queue voice-floor view). |
+| `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` | Key pair for desktop alerts over Web Push. Generate with `npx web-push generate-vapid-keys`. Optional: without them, alerts only show while a console tab is open. |
+| `VAPID_SUBJECT` | Contact for the push services, `mailto:` or `https:` (optional). |
 
 `.env*` files are gitignored except `.env.example`.
 
@@ -56,6 +58,16 @@ The brand logo PNGs are in `public/assets/logos/`: `carelon-global-solutions.png
 
 - **Dev with `NEXT_PUBLIC_FEED=sim`:** 199 simulated agents in 10 teams, starting at 08:15 with 15 minutes of history, random repeat offenders, and one 44-second feed outage four minutes in.
 - **Dev/prod with `NEXT_PUBLIC_FEED=gencloud` and valid `GENESYS_TOKEN`:** live agents and queues from the watched view (presence/routing state and queue metrics). Bootstrap failure or expired token keeps the feed silent until restart.
+
+### Switching the data source
+
+Outside production builds, an Admin sees a **Data** selector in the context bar: **Live Genesys** or **Simulation**. `NEXT_PUBLIC_FEED` only decides which one the server starts on.
+
+- The switch is for everyone: there is one floor, and every open console follows it without reloading. The feed pill says which one is on screen.
+- **The simulation uses real names.** Its floor keeps the simulator's shape (ten teams of 15 to 25 agents) but takes the ten largest teams of the Gencloud roster and the first agents of each. Team leads, managers and LOBs are not in the Gencloud roster, so the sample ones stay. Everything that happens on that floor (states, call-outs, incidents) is invented.
+- The names come from the running Gencloud floor. Each roster Gencloud delivers is also saved to `.rtm/roster.json`, so the simulation can still use real names when the token has expired. Without either, the sample teams and names are used and the pill reads "Simulation · sample floor". `.rtm/` is gitignored: it holds real people's names.
+- Gencloud keeps running behind a simulation, so its ledger and strikes are there on the way back. A simulation starts fresh every time it is switched on.
+- Desktop alerts follow the floor on screen, so a simulation does raise them.
 
 ## Importing floor data
 
@@ -213,8 +225,12 @@ All routes are under `/api`. Errors are `{ "error": string }`. Every route answe
 | `GET /export/incidents` | `export` | | `RTM_investigation_register.csv` |
 | `GET /import/template` | `replay` | | `RTM_floor_data_template.xlsx` |
 | `POST /import/validate` | `replay` | multipart: `file` (.xlsx) | `{ summary, warnings }`, or 400 `{ error, errors[] }` |
+| `POST /feed` | `feed`, dev builds only | `{ source: "gencloud" \| "sim" }` | `{ feed, realNames }`. Switches the floor for everyone. 403 in a production build. |
 | `POST /replay` | `replay` | multipart: `file` (.xlsx template, or .csv with `cols?`, `smap?` JSON strings) | `{ view, replay }`. 400 `{ error, errors[] }`, 413 over 10 MB. |
 | `DELETE /replay` | `replay` | | `{ ok: true }` |
+| `GET /push` | anyone | | `{ key }`, the public key to subscribe with, or `null` when push is not configured |
+| `POST /push` | anyone | `{ subscription }` (the browser's `PushSubscription`) | `{ ok: true }`. 400 if not a known push service, 503 if not configured. |
+| `DELETE /push` | anyone | `{ endpoint }` | `{ ok: true }` |
 
 Instances outside the caller's span return 404, not 403, so their existence is not revealed.
 
@@ -228,17 +244,29 @@ Instances outside the caller's span return 404, not 403, so their existence is n
 - The client must reconnect after the role, person or replay state changes; `lib/client/api.ts` does this.
 - Toasts for call-outs go only to leaders with that call-out in span. An agent only receives their own nudges, Senior Leader receives none, and none are sent during a replay.
 
+### Desktop alerts
+
+Whatever the console pops up for a person is also raised as a system notification: nudges for the agent, and for leaders the nudge previews and call-out toasts of their span, so they are seen when the console is not on screen. "Enable desktop alerts" in the context bar asks for the browser permission once per browser.
+
+- **Web Push** (`lib/server/push.ts`, `public/sw.js`): the live runtime pushes each nudge and call-out to the subscriptions of the people it is in scope for. This works with the browser minimized, and with it closed where the browser still receives push (Edge on Windows; Chrome while it runs in the background). Pushes expire after 60 seconds so a stale nudge never appears later.
+- **Hidden-tab fallback** (`lib/client/alerts.ts`): an open but hidden tab raises the same notification from the stream, for networks that block the push services. Both use the tag `rtm-<n>`, so each call-out shows once.
+- The alert carries the same wording as the in-page nudge or toast; a leader's alert adds the team on a second line. Windows draws the notification itself, so its layout and colours cannot follow the console's.
+- "Got it" and "Acknowledge" act without opening the console. A nudge has "Got it" (acknowledges) and "Send reason", which brings the console forward with that nudge's pop-up and the cursor in its reason box (Chrome on Windows does not let anyone type inside a notification). A leader's alert has "Acknowledge" and "Open console". Browsers allow two buttons, so "On a case, 2 min" is left out: closing the notification does the same.
+- Allowing desktop alerts never replaces the in-page ones. An agent's unacknowledged nudge is shown again when they open the console, and a toast's 8 seconds only count while the tab is on screen.
+- Needs HTTPS (localhost is exempt). Subscriptions are kept in memory and tied to the "View as" person until the database and SSO exist; see the `TODO`s in `lib/server/push.ts`.
+- Replays never raise desktop alerts.
+
 ### Permissions
 
 `PERMS` in `lib/engine/scope.ts` is the single source. The UI hides what a role cannot do and the API enforces it.
 
-| Role | Tabs | Scope | Rules edit | Investigations | Exports | Ack all | Incident tiles | Replay |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Admin (WFM) | Console, Dashboards, Rules, Ledger | All teams | yes | yes | yes | yes | yes | yes |
-| Senior Leader | Dashboards | All teams | no | no | no | no | no | no |
-| Manager | Console, Dashboards, Rules, Ledger | Their teams | yes | yes | yes | no | yes | yes |
-| Team Lead / AM | Console, Dashboards, Ledger | Their team | no | no | no | no | no | no |
-| Agent | My View | Self | no | no | no | no | no | no |
+| Role | Tabs | Scope | Rules edit | Investigations | Exports | Ack all | Incident tiles | Replay | Data source |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Admin (WFM) | Console, Dashboards, Rules, Ledger | All teams | yes | yes | yes | yes | yes | yes | yes |
+| Senior Leader | Dashboards | All teams | no | no | no | no | no | no | no |
+| Manager | Console, Dashboards, Rules, Ledger | Their teams | yes | yes | yes | no | yes | yes | no |
+| Team Lead / AM | Console, Dashboards, Ledger | Their team | no | no | no | no | no | no | no |
+| Agent | My View | Self | no | no | no | no | no | no | no |
 
 Queue and floor call-outs are visible to every leader role and never to agents.
 
@@ -274,6 +302,6 @@ The engine is a TypeScript port of the design prototype's `rtm-engine.js`.
 
 ## Tests
 
-`npm test` runs 39 tests. `lib/engine/engine.test.ts` covers strike counting, the 3× rule, capped routes, re-arm logic, feed staleness, scoping, the permission table, acknowledge and comment. `lib/import/floor.test.ts` covers the import validation and runs the downloadable template through the engine end to end.
+`npm test` runs the unit tests. `lib/engine/engine.test.ts` covers strike counting, the 3× rule, capped routes, re-arm logic, feed staleness, scoping, the permission table, acknowledge and comment. `lib/import/floor.test.ts` covers the import validation and runs the downloadable template through the engine end to end.
 
 Tests drive the engine through the same `ingest` handlers a feed uses, one `tick()` per second, so they are also the best reference for how a feed adapter should behave. There are no API route or component tests yet.

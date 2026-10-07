@@ -2,27 +2,32 @@
 
 import { clock } from "@/lib/engine/format";
 import { ROLES } from "@/lib/engine/rules";
+import { enableAlerts, useAlertState } from "@/lib/client/alerts";
 import { api, attempt } from "@/lib/client/api";
 import { usePerms } from "@/lib/client/hooks";
 import { useConsole } from "@/lib/client/store";
-import type { Role } from "@/lib/types";
+import type { FloorSource, Role } from "@/lib/types";
 import { PurpleButton } from "@/components/ui/buttons";
 import { Select, type SelectOption } from "@/components/ui/Select";
 
 const ROLE_OPTIONS: SelectOption<Role>[] = ROLES.map(([value, label]) => ({ value, label }));
+const SOURCE_OPTIONS: SelectOption<FloorSource>[] = [{ value: "gencloud", label: "Live Genesys" }, { value: "sim", label: "Simulation" }];
 
 function useFeedPill() {
   const status = useConsole(s => s.status);
   const mode = useConsole(s => s.mode);
   const replay = useConsole(s => s.replay);
   const staleFor = useConsole(s => s.staleFor);
+  const sim = useConsole(s => s.feed === "sim");
+  const realNames = useConsole(s => s.realNames);
   if (status !== "ready") return { bg: "#F5F5F5", fg: "#5C5C6F", dot: "#929299", text: status === "unauthorized" ? "Not signed in" : "Connecting…" };
   if (mode === "replay" && replay) return { bg: "#EBE4FF", fg: "#5009B5", dot: "#5009B5", text: `Data replay · ${replay.agents} agents · ${replay.events} events${replay.done ? " · complete" : ""}` };
-  if (staleFor > 0) return { bg: "#FDF3D7", fg: "#7A5300", dot: "#F2BC35", text: `Gencloud not responding · feed stale ${staleFor}s` };
+  if (staleFor > 0) return { bg: "#FDF3D7", fg: "#7A5300", dot: "#F2BC35", text: sim ? `Simulation · feed stale ${staleFor}s` : `Gencloud not responding · feed stale ${staleFor}s` };
+  if (sim) return { bg: "#EBE4FF", fg: "#5009B5", dot: "#5009B5", text: realNames ? "Simulation · real names, invented activity" : "Simulation · sample floor" };
   return { bg: "#D9F5F5", fg: "#028283", dot: "#00BBBA", text: "Live feed · Gencloud/NICE API" };
 }
 
-/** Under the navbar: the "View as" selectors (dev flag), role description, feed status and shift clock. */
+/** Under the navbar: the "View as" selectors (dev flag), role description, data source switch (dev), feed status and shift clock. */
 export function ContextBar() {
   const view = useConsole(s => s.view);
   const people = useConsole(s => s.people);
@@ -32,6 +37,21 @@ export function ContextBar() {
   const toast = useConsole(s => s.toast);
   const perms = usePerms();
   const feed = useFeedPill();
+  const source = useConsole(s => s.feed);
+  const canSwitchFeed = useConsole(s => s.canSwitchFeed);
+  const switchFeed = async (to: FloorSource) => {
+    const res = await attempt(api.setFeed(to));
+    if (!res) return;
+    if (res.feed !== "sim") toast("info", "Back to the live Genesys feed", "The simulation was cleared.");
+    else if (res.realNames) toast("info", "Simulation is on", "Team and agent names are real. Every state change, call-out and incident is invented.");
+    else toast("info", "Simulation is on", "No Genesys roster was available, so the sample teams and names are in use.");
+  };
+  const alerts = useAlertState();
+  const turnOnAlerts = async () => {
+    const state = await enableAlerts();
+    if (state === "granted") toast("info", "Desktop alerts are on", "Nudges and escalations will pop up on this computer, even with the browser minimized.");
+    else if (state === "denied") toast("warn", "Desktop alerts are blocked", "Allow notifications for this site in the browser's site settings, then reload.");
+  };
 
   const groups = !people || !view ? []
     : view.role === "agent" ? people.agentsByTeam.map(g => ({ label: g.team, items: g.agents }))
@@ -66,6 +86,13 @@ export function ContextBar() {
           Exit replay
         </PurpleButton>
       )}
+      {ready && canSwitchFeed && !isReplay && source !== "csv" && (
+        <label className="flex items-center gap-2.5">
+          <span className="text-[13px] font-semibold text-muted">Data</span>
+          <Select value={source} onChange={to => void switchFeed(to)} options={SOURCE_OPTIONS} className={`${select} border-line`} />
+        </label>
+      )}
+      {ready && alerts === "default" && <PurpleButton variant="outline" onClick={() => void turnOnAlerts()}>Enable desktop alerts</PurpleButton>}
       <div className="inline-flex h-8 items-center gap-2 rounded-pill px-3.5 text-[13px] font-semibold" style={{ background: feed.bg, color: feed.fg }}>
         <span className="h-2 w-2 rounded-full" style={{ background: feed.dot }} />
         <span>{feed.text}</span>
