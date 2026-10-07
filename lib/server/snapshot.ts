@@ -1,7 +1,7 @@
 import type { InitMsg, TickMsg, View } from "@/lib/types";
 import { PERMS, inScope, peopleDirectory, scopeAgents, scopeIncidents, scopeLedger, scopeTeams } from "@/lib/engine/scope";
 import { SimFeed } from "@/lib/feed/SimFeed";
-import { type Batch, type Runtime, SIM_ALLOWED } from "./runtime";
+import type { Batch, Runtime } from "./runtime";
 import { VIEW_AS } from "./session";
 
 /**
@@ -37,6 +37,6 @@ export function initMsg(rt: Runtime, view: View): InitMsg {
   return {
     ...tickMsg(rt, view, null, { toasts: [], nudges: waiting ? [waiting] : [] }),
     type: "init", view, people: VIEW_AS ? peopleDirectory(S) : null,
-    feed: rt.feed.kind, realNames: usesRealNames(rt), canSwitchFeed: SIM_ALLOWED && PERMS[view.role].feed,
+    feed: rt.feed.kind, realNames: usesRealNames(rt), canSwitchFeed: PERMS[view.role].feed,
   };
 }
