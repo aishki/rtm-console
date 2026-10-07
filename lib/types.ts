@@ -99,7 +99,7 @@ export interface InitMsg extends TickMsg {
   feed: FeedKind;
   /** Simulator only: the teams and agents carry real names from the Gencloud roster. */
   realNames: boolean;
-  /** The viewer may switch the floor's data source (never in a production build). */
+  /** The viewer may switch the floor's data source (Admin only). */
   canSwitchFeed: boolean;
 }
 export type StreamMsg = TickMsg | InitMsg;

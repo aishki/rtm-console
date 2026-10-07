@@ -12,7 +12,7 @@ import { genesysToken } from "./tokenStore";
 
 // Server-side home of the rules engine. One live runtime serves the whole floor; a CSV
 // replay gets its own runtime per session so reviewing history never disturbs the live feed.
-// Outside production the floor can be switched between the Gencloud feed and the simulator.
+// An Admin can switch the floor between the Gencloud feed and the simulator.
 // State is in memory, so this needs a single long-lived Node process (not serverless).
 
 /** Notifications raised since the last publish. */
@@ -32,9 +32,6 @@ export interface Runtime {
   restartFeed(): void;
   stop(): void;
 }
-
-/** The simulator is a dev tool: it never runs in a production build. */
-export const SIM_ALLOWED = process.env.NODE_ENV !== "production";
 
 const WARM_SECONDS = 900;
 const MAX_REPLAYS = 8;
@@ -87,7 +84,7 @@ function createGencloud(rules: Rule[]): Runtime {
     const feed = new GencloudFeed({
       apiBase: process.env.GENCLOUD_API_BASE, getToken: genesysToken, viewConfigId: process.env.RTM_VIEW_CONFIG_ID, clientId: process.env.GENCLOUD_CLIENT_ID, clientSecret: process.env.GENCLOUD_CLIENT_SECRET,
     });
-    return SIM_ALLOWED ? remembering(feed) : feed;
+    return remembering(feed);
   }, engine => engine.reset({ t }));
 }
 
@@ -129,7 +126,7 @@ interface Registry {
 }
 const g = globalThis as typeof globalThis & { __rtmRegistry?: Registry };
 const registry: Registry = (g.__rtmRegistry ??= {
-  rules: defaultRules(), source: SIM_ALLOWED && process.env.NEXT_PUBLIC_FEED === "sim" ? "sim" : "gencloud",
+  rules: defaultRules(), source: process.env.NEXT_PUBLIC_FEED === "sim" ? "sim" : "gencloud",
   floors: {}, replays: new Map(), watchers: new Set(),
 });
 

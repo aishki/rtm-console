@@ -1,10 +1,10 @@
 import type { AgentState, AgentStateEvent, Queue, RuleId, Team } from "@/lib/types";
 import type { FeedHandlers, FeedSource } from "./FeedSource";
 
-// Dev-only stand-in for the Gencloud feed so the console moves without a live floor:
-// organic state changes, a drifting queue, a few repeat offenders and one feed outage.
-// Not a product feature. It only runs outside production: at start with NEXT_PUBLIC_FEED=sim,
-// or when an admin switches the floor's data source to the simulation.
+// Stand-in for the Gencloud feed so the console moves without a live floor: organic state
+// changes, a drifting queue, a few repeat offenders and one feed outage. It runs, in dev and
+// production builds alike, at start with NEXT_PUBLIC_FEED=sim or when an admin switches the
+// floor's data source to the simulation.
 
 const FIRST = ["Amara", "Joshua", "Bea", "Miguel", "Katrina", "Paolo", "Lara", "Chris", "Ivy", "Dan", "Mika", "Ryan", "Cess", "Leo", "Trish", "Arvin", "Nina", "Jomar", "Ella", "Marc", "Faye", "Ken", "Rhea", "Toby", "Andrea", "Carlo", "Denise", "Enzo", "Gab", "Hazel", "Iris", "Jun", "Kim", "Liza", "Mae", "Noel", "Pia", "Raf", "Sam", "Tess"];
 const LAST = ["Reyes", "Lim", "Santos", "Cruz", "Uy", "Dizon", "Mendoza", "Bautista", "Ramos", "Villanueva", "Torres", "Gomez", "Aquino", "Navarro", "Ocampo", "Salazar", "Castro", "Flores", "Domingo", "Rivera", "Soriano", "Padilla", "Velasco", "Manalo", "Garcia", "Tan", "Lopez", "Chua", "Morales", "Pascual"];

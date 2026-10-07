@@ -6,7 +6,7 @@ Related: [README](../README.md) (code layout, API reference, backend task list) 
 
 ## Where things stand
 
-- **Built and merged to `main`:** the five screens and layout chrome, the rules engine (server-side), ten permission-checked API routes, the floor simulator (dev only), CSV replay, and the floor data import from an Excel template.
+- **Built and merged to `main`:** the five screens and layout chrome, the rules engine (server-side), ten permission-checked API routes, the floor simulator (dev and production builds), CSV replay, and the floor data import from an Excel template.
 - **Tests:** 65 unit tests (`npm test`) covering the engine, the import, the Gencloud adapter, desktop alerts and the simulator's seeding. Typecheck, lint and production build pass.
 - **Pull requests merged:** #1 floor data import, #2 simulation guide, #3 data architecture document.
 - **Built on `feat/feed-switch` (7 Oct 2026):** desktop alerts, and the switch between the live Gencloud feed and a simulation with real names.

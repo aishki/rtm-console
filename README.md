@@ -14,7 +14,7 @@ This README is the developer handoff. It covers what is built, what is stubbed, 
 | Five screens, layout chrome, CSV replay dialog | Done, checked against the design reference |
 | API routes with server-side permission checks | Done |
 | Floor data import (Excel template or CSV, 60× replay) | Done |
-| Floor simulator | Done, dev only |
+| Floor simulator | Done, dev and production |
 | **Gencloud/NiceIEX feed adapter** | **Implemented (v1).** Live: agent presence/routing and queue metrics. See [Backend work 1](#1-gencloud-feed-adapter) for env and run instructions. |
 | **SSO (role and span from the session)** | **Not wired.** See [Backend work 2](#2-sso) |
 | **Persistence** | **None, all state is in memory.** See [Backend work 3](#3-persistence) |
@@ -40,7 +40,7 @@ npm run dev        # http://localhost:3000
 
 | Variable | Meaning |
 | --- | --- |
-| `NEXT_PUBLIC_FEED=sim` | Start on the floor simulator. Dev only: it is ignored when `NODE_ENV=production`. Set to a non-"sim" value (e.g., `gencloud`) to start on the Gencloud adapter. In dev an admin can switch between the two while the server runs (see "Switching the data source"). |
+| `NEXT_PUBLIC_FEED=sim` | Start on the floor simulator. Set to a non-"sim" value (e.g., `gencloud`) to start on the Gencloud adapter. An admin can switch between the two while the server runs (see "Switching the data source"). |
 | `NEXT_PUBLIC_VIEW_AS=1` | Dev/admin flag for the "View as" role selector. **Without it every API route answers 401**, because no SSO exists yet. Required for Gencloud development. |
 | `GENESYS_TOKEN` | Hand-grabbed supervisor bearer token from the browser DevTools Network tab (Authorization header of an api.mypurecloud.com request). Short-lived. Seeds the first start only: a token pasted on `/admin/token` replaces it (see "Refreshing the Genesys token"). |
 | `RTM_ADMIN_SECRET` | Secret for `/admin/token`. While unset, the page refuses every request. |
@@ -62,13 +62,13 @@ The brand logo PNGs are in `public/assets/logos/`: `carelon-global-solutions.png
 
 ### Switching the data source
 
-Outside production builds, an Admin sees a **Data** selector in the context bar: **Live Genesys** or **Simulation**. `NEXT_PUBLIC_FEED` only decides which one the server starts on.
+An Admin sees a **Data** selector in the context bar: **Live Genesys** or **Simulation**. `NEXT_PUBLIC_FEED` only decides which one the server starts on.
 
 - The switch is for everyone: there is one floor, and every open console follows it without reloading. The feed pill says which one is on screen.
 - **The simulation uses real names.** Its floor keeps the simulator's shape (ten teams of 15 to 25 agents) but takes the ten largest teams of the Gencloud roster and the first agents of each. Team leads, managers and LOBs are not in the Gencloud roster, so the sample ones stay. Everything that happens on that floor (states, call-outs, incidents) is invented.
 - The names come from the running Gencloud floor. Each roster Gencloud delivers is also saved to `.rtm/roster.json`, so the simulation can still use real names when the token has expired. Without either, the sample teams and names are used and the pill reads "Simulation · sample floor". `.rtm/` is gitignored: it holds real people's names.
 - Gencloud keeps running behind a simulation, so its ledger and strikes are there on the way back. A simulation starts fresh every time it is switched on.
-- Desktop alerts follow the floor on screen, so a simulation does raise them.
+- Desktop alerts follow the floor on screen, so a simulation does raise them. In a production build that means real people can get desktop alerts for invented call-outs while a simulation is on.
 
 ### Refreshing the Genesys token
 
@@ -138,7 +138,7 @@ lib/
   engine/engine.test.ts           Unit tests
   feed/FeedSource.ts              The adapter interface
   feed/GencloudFeed.ts            Production adapter (stub)
-  feed/SimFeed.ts                 Dev-only simulator
+  feed/SimFeed.ts                 Floor simulator
   feed/CsvReplayFeed.ts           Historical replay at 60× (CSV or imported workbook)
   import/floor.ts                 Template contract and validation
   import/xlsx.ts                  Reads uploads, builds the template (exceljs)
@@ -245,7 +245,7 @@ All routes are under `/api`. Errors are `{ "error": string }`. Every route answe
 | `GET /export/snapshot` | roles with the Dashboards tab | | `RTM_dashboard_snapshot_<date>_<time>.html`: the caller's Dashboards screen as one read-only file with working filters (`lib/snapshot/dashboard.ts`) |
 | `GET /import/template` | `replay` | | `RTM_floor_data_template.xlsx` |
 | `POST /import/validate` | `replay`, not on the live Genesys feed | multipart: `file` (.xlsx) | `{ summary, warnings }`, or 400 `{ error, errors[] }` |
-| `POST /feed` | `feed`, dev builds only | `{ source: "gencloud" \| "sim" }` | `{ feed, realNames }`. Switches the floor for everyone. 403 in a production build. |
+| `POST /feed` | `feed` | `{ source: "gencloud" \| "sim" }` | `{ feed, realNames }`. Switches the floor for everyone. |
 | `POST /admin/token` | holder of `RTM_ADMIN_SECRET` (no session needed) | `{ secret, token }` | `{ ok, who }`. 401 wrong secret, 400 empty or rejected token, 502 Genesys unreachable. Saves the token and reconnects the Gencloud feed. |
 | `POST /replay` | `replay`, not on the live Genesys feed | multipart: `file` (.xlsx template, or .csv with `cols?`, `smap?` JSON strings) | `{ view, replay }`. 400 `{ error, errors[] }`, 413 over 10 MB. |
 | `DELETE /replay` | `replay` | | `{ ok: true }` |

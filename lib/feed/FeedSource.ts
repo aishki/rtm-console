@@ -11,7 +11,7 @@ export interface FeedHandlers {
 
 /**
  * Where agent states, queue metrics and heartbeats come from. The engine never knows which
- * adapter is behind this: Gencloud in production, the simulator in dev, a CSV during replay.
+ * adapter is behind this: Gencloud or the simulator on the live floor, a CSV during replay.
  */
 export interface FeedSource {
   readonly kind: "gencloud" | "sim" | "csv";
