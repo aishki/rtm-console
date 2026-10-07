@@ -5,12 +5,14 @@ import { STATES, STATE_IDS } from "@/lib/engine/rules";
 import type { AgentState } from "@/lib/types";
 import { FilterChip, FilterClearIcon } from "@/components/ui/FilterChip";
 import { CloseIcon, SearchIcon } from "@/components/ui/primitives";
+import { type MultiOption, MultiSelect } from "@/components/ui/MultiSelect";
 import { Select, type SelectOption } from "@/components/ui/Select";
 
-export type SortBy = "team" | "time" | "strikes" | "name";
+export type SortBy = "state" | "team" | "time" | "strikes" | "name";
 export type QuickKey = "breach" | "strikes" | "hold";
-export interface GridFilters { q: string; team: string; state: AgentState | ""; quick: Partial<Record<QuickKey, boolean>>; sortBy: SortBy }
-export const NO_FILTERS: GridFilters = { q: "", team: "", state: "", quick: {}, sortBy: "team" };
+/** `states` holds the ticked states; empty means any state. */
+export interface GridFilters { q: string; team: string; states: AgentState[]; quick: Partial<Record<QuickKey, boolean>>; sortBy: SortBy }
+export const NO_FILTERS: GridFilters = { q: "", team: "", states: [], quick: {}, sortBy: "state" };
 
 interface Props {
   filters: GridFilters;
@@ -29,8 +31,9 @@ interface Props {
 }
 
 const QUICK: [QuickKey, string][] = [["breach", "Breaching now"], ["strikes", "Has strikes"], ["hold", "On hold"]];
-const STATE_OPTIONS: SelectOption<AgentState | "">[] = [{ value: "", label: "Any state" }, ...STATE_IDS.map(id => ({ value: id, label: STATES[id].label }))];
+const STATE_OPTIONS: MultiOption<AgentState>[] = STATE_IDS.map(id => ({ value: id, label: STATES[id].label, color: STATES[id].color }));
 const SORT_OPTIONS: SelectOption<SortBy>[] = [
+  { value: "state", label: "Sort: status, On Call first" },
   { value: "team", label: "Sort: roster order" },
   { value: "time", label: "Sort: longest in state" },
   { value: "strikes", label: "Sort: most strikes" },
@@ -63,7 +66,7 @@ export function AgentGridToolbar({ filters: f, onChange, onClear, searchRef, tea
         {teamCount > 1 && (
           <Select value={f.team} onChange={team => onChange({ team })} options={[{ value: "", label: `All teams (${teamCount})` }, ...teamGroups]} aria-label="Filter by team" className={`${select} !max-w-[240px]`} />
         )}
-        <Select value={f.state} onChange={state => onChange({ state })} options={STATE_OPTIONS} aria-label="Filter by state" className={select} />
+        <MultiSelect value={f.states} onChange={states => onChange({ states })} options={STATE_OPTIONS} anyLabel="Any state" countLabel={n => `${n} states`} aria-label="Filter by state" className={select} />
         <Select value={f.sortBy} onChange={sortBy => onChange({ sortBy })} options={SORT_OPTIONS} aria-label="Sort agents" className={select} />
       </div>
       <div className="flex flex-wrap items-center gap-x-5 border-b border-pale-purple pb-1.5 pl-[37px] pr-5">
