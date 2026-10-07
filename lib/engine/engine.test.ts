@@ -398,3 +398,24 @@ describe("nudge greeting", () => {
     expect(firstName("Reyes, Amara Luz - AB12345")).toBe("Amara");
   });
 });
+
+describe("roster resent mid-shift", () => {
+  it("keeps strikes and shift counters for known agents, and starts newcomers fresh", () => {
+    const { e, episode, agent } = setup();
+    episode("Amara Reyes", "acw", 120);
+    episode("Amara Reyes", "acw", 120);
+    e.ingest.onAgentState({ agent: "Joshua Lim", state: "avail", callEnded: { transferred: true } });
+    e.ingest.onHeartbeat(); e.tick();
+    const ledger = e.S.ledger.length;
+    e.ingest.onRoster({ org: ORG, agents: [...ROSTER, { name: "Nina Ramos", team: "Team Bravo", state: "avail" }] });
+    expect(agent("Amara Reyes").strikes.acw).toBe(2);
+    expect(agent("Joshua Lim").calls).toBe(1);
+    expect(agent("Joshua Lim").transfers).toBe(1);
+    expect(agent("Nina Ramos").strikes).toEqual({});
+    expect(e.S.ledger.length).toBe(ledger);
+    // The next breach climbs from where the shift left off.
+    episode("Amara Reyes", "acw", 120);
+    expect(agent("Amara Reyes").strikes.acw).toBe(3);
+    expect(e.S.ledger[0].stage).toBe("ops");
+  });
+});

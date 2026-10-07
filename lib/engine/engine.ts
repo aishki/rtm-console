@@ -40,12 +40,18 @@ export function createEngine(hooks: EngineHooks = {}, opts: EngineOptions = {}) 
   const fire = (r: Rule, a: Agent | null, detail?: string) => fireRule(S, { toast, nudge: hooks.nudge }, r, a, detail);
 
   const ingest: FeedHandlers = {
+    /** A roster resent mid-shift (the feed reconnected) keeps each known agent's shift counters and strikes. */
     onRoster(r: Roster) {
+      const prev = new Map(S.agents.map(a => [a.name, a]));
       S.org = r.org.map(t => ({ ...t }));
-      S.agents = r.agents.map((a, i) => ({
-        id: i, name: a.name, team: a.team, state: a.state, stTime: a.stTime ?? 0, aht: a.aht ?? 420,
-        calls: a.calls ?? 0, shortCalls: 0, transfers: 0, onHold: false, holdTime: 0, adh: a.adh ?? 96, strikes: {}, fired: {},
-      }));
+      S.agents = r.agents.map((a, i) => {
+        const p = prev.get(a.name);
+        return {
+          id: i, name: a.name, team: a.team, state: a.state, stTime: a.stTime ?? 0, onHold: false, holdTime: 0,
+          aht: p?.aht ?? a.aht ?? 420, calls: p?.calls ?? a.calls ?? 0, shortCalls: p?.shortCalls ?? 0, transfers: p?.transfers ?? 0,
+          adh: p?.adh ?? a.adh ?? 96, strikes: p?.strikes ?? {}, fired: p?.fired ?? {},
+        };
+      });
       beat = true;
     },
     onAgentState(e) { pending.push(e); beat = true; },
