@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
-import { clock } from "@/lib/engine/format";
+import { clock, splitAgent } from "@/lib/engine/format";
 import { DISPOSITIONS } from "@/lib/engine/rules";
 import { api, attempt, download } from "@/lib/client/api";
 import { avgResponse, usePerms } from "@/lib/client/hooks";
@@ -31,7 +31,8 @@ function tally(rows: Instance[], key: (r: Instance) => string, cap?: number): Ba
   return cap ? out.slice(0, cap) : out;
 }
 
-function BarChart({ title, sub, bars, note }: { title: string; sub: string; bars: Bar[]; note?: string }) {
+/** `people` marks a chart of agents: the domain ID goes under the name, in a wider label column. */
+function BarChart({ title, sub, bars, note, people }: { title: string; sub: string; bars: Bar[]; note?: string; people?: boolean }) {
   const max = Math.max(1, ...bars.map(b => b.counts.total));
   const pct = (n: number) => `${(n / max) * 100}%`;
   return (
@@ -41,9 +42,14 @@ function BarChart({ title, sub, bars, note }: { title: string; sub: string; bars
         <span className="panel-sub">{sub}</span>
       </div>
       <div className="flex flex-col gap-2.5 px-5 py-3.5">
-        {bars.map(b => (
-          <div key={b.label} className="grid grid-cols-[150px_minmax(0,1fr)_36px] items-center gap-3 text-[13px]">
-            <span className="truncate text-strong">{b.label}</span>
+        {bars.map(b => {
+          const { who, id } = people ? splitAgent(b.label) : { who: b.label, id: "" };
+          return (
+          <div key={b.label} className={`grid items-center gap-3 text-[13px] ${people ? "grid-cols-[190px_minmax(0,1fr)_36px]" : "grid-cols-[150px_minmax(0,1fr)_36px]"}`}>
+            <span title={b.label} className="flex min-w-0 flex-col text-strong">
+              <span className="truncate">{who}</span>
+              {id && <span className="num truncate text-[11px] text-muted">{id}</span>}
+            </span>
             <div className="flex h-3.5 overflow-hidden rounded-4 bg-page" role="img" aria-label={`${b.counts.nudge} nudge, ${b.counts.lead} leader, ${b.counts.ops} ops`}>
               <span className="h-full" style={{ width: pct(b.counts.nudge), background: STAGE.nudge.solid }} />
               <span className="h-full" style={{ width: pct(b.counts.lead), background: STAGE.lead.solid }} />
@@ -51,7 +57,8 @@ function BarChart({ title, sub, bars, note }: { title: string; sub: string; bars
             </div>
             <span className="num text-right font-semibold">{b.counts.total}</span>
           </div>
-        ))}
+          );
+        })}
         {bars.length === 0 && <div className="py-6 text-center text-muted">No call-outs yet this shift.</div>}
       </div>
       <div className="flex flex-wrap items-center gap-4 px-5 pb-[18px] pt-1 text-xs text-muted">
@@ -133,7 +140,7 @@ export default function DashboardsPage() {
     { key: "inc", header: "Incident #", thClass: "whitespace-nowrap", tdClass: "whitespace-nowrap font-ui font-semibold text-purple", cell: i => i.inc },
     { key: "opened", header: "Opened", tdClass: "num", cell: i => clock(i.t) },
     { key: "agent", header: "Agent", tdClass: "whitespace-nowrap font-semibold", cell: i => i.agent },
-    { key: "team", header: "Team", tdClass: "whitespace-nowrap text-muted", cell: i => i.team },
+  { key: "team", header: "Team", tdClass: "font-semibold", cell: t => t.team },
     { key: "rule", header: "Trigger rule", cell: i => i.rule },
     { key: "instances", header: "Instances", tdClass: "font-ui font-semibold", cell: i => `×${i.instances}` },
     { key: "status", header: "Status", cell: i => <StatusPill tone={INC[i.status]}>{i.status}</StatusPill> },
@@ -164,7 +171,7 @@ export default function DashboardsPage() {
       </div>
       <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,440px),1fr))] items-start gap-6">
         <BarChart title="Call-out summary by rule" sub="This shift, by escalation stage" bars={byRule} />
-        <BarChart title="Call-out summary by top agents" sub="Instances per agent, this shift" bars={byAgent} note="Agents at ×3 open an investigation below." />
+        <BarChart title="Call-out summary by top agents" sub="Instances per agent, this shift" bars={byAgent} people note="Agents at ×3 open an investigation below." />
       </div>
 
       <div className="panel overflow-hidden">
