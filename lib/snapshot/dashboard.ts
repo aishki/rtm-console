@@ -132,12 +132,17 @@ h1{margin:6px 0 0;font-size:36px;font-weight:500;line-height:1.15;letter-spacing
 .kpi-label i{width:8px;height:8px;border-radius:50%}
 .kpi-value{font-size:30px;font-weight:600;line-height:1.1;letter-spacing:-.02em}
 .kpi-sub{font-size:12px;color:var(--muted)}
-.charts{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,440px),1fr));align-items:start;gap:24px}
+.charts{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,440px),1fr));gap:24px}
+.charts .panel{display:flex;flex-direction:column}
+.charts .bars{flex:1}
 .bars{display:flex;flex-direction:column;gap:2px;padding:10px 12px}
 .bar{display:grid;grid-template-columns:150px minmax(0,1fr) 36px;align-items:center;gap:12px;width:100%;padding:5px 8px;border:0;border-radius:8px;background:none;color:inherit;font-size:13px;text-align:left}
+.bar.people{grid-template-columns:190px minmax(0,1fr) 36px}
 .bar:hover{background:var(--tint)}
 .bar[aria-pressed=true]{background:var(--pale-purple)}
 .bar-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--strong)}
+.who,.dom{display:block;overflow:hidden;text-overflow:ellipsis}
+.dom{font-size:11px;font-weight:400;color:var(--muted)}
 .track{display:flex;height:14px;overflow:hidden;border-radius:4px;background:var(--page)}
 .track span{height:100%}
 .bar-total{text-align:right;font-weight:600}
@@ -169,7 +174,7 @@ tr.on td{background:var(--pale-purple)}
 .t-nudge{color:var(--turquoise-text)}.t-lead{color:var(--warning-text)}.t-ops{color:var(--purple)}.t-ir{color:var(--error-text)}
 .zero{color:var(--subtle)}
 footer{padding:0 32px 32px;text-align:center;font-size:12px;color:var(--muted)}
-@media (max-width:640px){.top{padding:12px 16px}main{padding:20px 16px 32px}h1{font-size:28px}.field{min-width:140px}.bar{grid-template-columns:110px minmax(0,1fr) 32px}}
+@media (max-width:640px){.top{padding:12px 16px}main{padding:20px 16px 32px}h1{font-size:28px}.field{min-width:140px}.bar{grid-template-columns:110px minmax(0,1fr) 32px}.bar.people{grid-template-columns:130px minmax(0,1fr) 32px}}
 @media print{.slicers .btn,.panel-head .btn{display:none}.panel{break-inside:avoid}}
 `;
 
@@ -287,8 +292,8 @@ const SCRIPT = String.raw`
     var max = Math.max.apply(null, [1].concat(bars.map(function (b) { return b.total; })));
     var rows = bars.map(function (b) {
       var track = STAGES.map(function (s) { return '<span style="width:' + (b[s[0]] / max) * 100 + "%;background:" + s[2] + '"></span>'; }).join("");
-      return '<button type="button" class="bar" data-act="' + act + '" data-value="' + esc(b.label) + '" aria-pressed="' + (picked === b.label) + '" title="Filter by ' + esc(b.label) + '">' +
-        '<span class="bar-label">' + esc(b.label) + '</span><span class="track" role="img" aria-label="' + b.nudge + " nudge, " + b.lead + " leader, " + b.ops + ' ops">' + track + '</span><span class="bar-total num">' + b.total + "</span></button>";
+      return '<button type="button" class="bar' + (act === "agent" ? " people" : "") + '" data-act="' + act + '" data-value="' + esc(b.label) + '" aria-pressed="' + (picked === b.label) + '" title="Filter by ' + esc(b.label) + '">' +
+        '<span class="bar-label">' + (act === "agent" ? person(b.label) : esc(b.label)) + '</span><span class="track" role="img" aria-label="' + b.nudge + " nudge, " + b.lead + " leader, " + b.ops + ' ops">' + track + '</span><span class="bar-total num">' + b.total + "</span></button>";
     }).join("");
     var legend = STAGES.map(function (s) { return '<span><i style="background:' + s[2] + '"></i>' + s[1] + "</span>"; }).join("");
     return '<div class="panel-head"><h2 class="panel-title">' + esc(title) + '</h2><span class="panel-sub">' + esc(sub) + "</span></div>" +
@@ -318,6 +323,11 @@ const SCRIPT = String.raw`
     return rows;
   }
   function text(get) { return function (r) { return esc(get(r)); }; }
+  /** "Last, First - AH12345" as the name with the domain ID under it. The last " - " separates them: a surname can hold one too. */
+  function person(n) {
+    var c = n.lastIndexOf(" - ");
+    return c < 0 ? esc(n) : '<span class="who">' + esc(n.slice(0, c)) + '</span><span class="dom num">' + esc(n.slice(c + 3)) + "</span>";
+  }
   function count(get, cls) { return function (r) { var n = get(r); return '<span class="' + (n ? cls || "" : "zero") + '">' + n + "</span>"; }; }
 
   function render() {
@@ -341,9 +351,9 @@ const SCRIPT = String.raw`
     shownIncidents = table("incidents", [
       ["inc", "Incident #", function (i) { return i.inc; }, text(function (i) { return i.inc; }), "id"],
       ["t", "Opened", function (i) { return i.t; }, function (i) { return clock(i.t); }, "num"],
-      ["agent", "Agent", function (i) { return i.agent; }, text(function (i) { return i.agent; }), "b nw"],
+      ["agent", "Agent", function (i) { return i.agent; }, function (i) { return person(i.agent); }, "b nw"],
       ["team", "Team", function (i) { return i.team; }, text(function (i) { return i.team; }), "m nw"],
-      ["rule", "Trigger rule", function (i) { return i.rule; }, text(function (i) { return i.rule; })],
+      ["rule", "Trigger rule", function (i) { return i.rule; }, text(function (i) { return i.rule; }), "nw"],
       ["instances", "Instances", function (i) { return i.instances; }, function (i) { return "×" + i.instances; }, "num b"],
       ["status", "Status", function (i) { return STATUSES.indexOf(i.status); }, function (i) { var c = INC_TONE[i.status] || ["#F5F5F5", "#5C5C6F"]; return '<span class="pill" style="background:' + c[0] + ";color:" + c[1] + '">' + esc(i.status) + "</span>"; }],
       ["disposition", "Disposition", function (i) { return i.disposition || ""; }, text(function (i) { return i.disposition || "—"; }), "m"],

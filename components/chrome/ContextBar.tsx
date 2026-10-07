@@ -1,14 +1,16 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { clock } from "@/lib/engine/format";
 import { ROLES } from "@/lib/engine/rules";
 import { enableAlerts, useAlertState } from "@/lib/client/alerts";
 import { api, attempt } from "@/lib/client/api";
 import { usePerms } from "@/lib/client/hooks";
 import { useConsole } from "@/lib/client/store";
-import type { FloorSource, Role } from "@/lib/types";
+import type { AgentState, FloorSource, Role } from "@/lib/types";
 import { PurpleButton } from "@/components/ui/buttons";
 import { Select, type SelectOption } from "@/components/ui/Select";
+import { PersonSearch } from "./PersonSearch";
 
 const ROLE_OPTIONS: SelectOption<Role>[] = ROLES.map(([value, label]) => ({ value, label }));
 const SOURCE_OPTIONS: SelectOption<FloorSource>[] = [{ value: "gencloud", label: "Live Genesys" }, { value: "sim", label: "Simulation" }];
@@ -63,6 +65,21 @@ export function ContextBar() {
     : [];
   const select = "h-9 rounded-8 border bg-white px-3 text-sm text-ink";
 
+  // Agent states for the person box: everyone's while its list is open, and the chosen agent's own from the live stream.
+  const asAgent = view?.role === "agent";
+  const [picking, setPicking] = useState(false);
+  const [floorStates, setFloorStates] = useState<Record<string, AgentState> | null>(null);
+  const ownState = useConsole(s => (s.view?.role === "agent" ? s.agents.find(a => a.name === s.view?.who)?.state : undefined));
+  useEffect(() => {
+    if (!asAgent || !picking) return;
+    let live = true;
+    const load = () => void api.peopleStates().then(r => { if (live) setFloorStates(r.states); }).catch(() => {});
+    load();
+    const timer = setInterval(load, 5000);
+    return () => { live = false; clearInterval(timer); };
+  }, [asAgent, picking]);
+  const states = !asAgent ? null : view.who && ownState ? { ...floorStates, [view.who]: ownState } : floorStates;
+
   return (
     <div className="flex flex-wrap items-center gap-4 bg-white px-4 py-2.5 shadow-[inset_0_-1px_0_var(--border-hairline)] sm:px-8">
       {people && view && (
@@ -72,9 +89,9 @@ export function ContextBar() {
             <Select value={view.role} onChange={role => void attempt(api.setView(role, null))} options={ROLE_OPTIONS} className={`${select} border-purple`} />
           </label>
           {groups.length > 0 && (
-            <Select
-              value={view.who ?? ""} aria-label="Person" onChange={who => void attempt(api.setView(view.role, who))} className={`${select} border-line`}
-              options={groups.map(g => ({ label: g.label, items: g.items.map(p => ({ value: p, label: p })) }))}
+            <PersonSearch
+              value={view.who ?? ""} aria-label="Person" groups={groups} states={states} onOpenChange={setPicking}
+              onChange={who => void attempt(api.setView(view.role, who))}
             />
           )}
         </>

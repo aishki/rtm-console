@@ -16,11 +16,15 @@ export function Toast({ toast }: { toast: ToastItem }) {
   );
 }
 
-/** Fixed top-right, under the header. At most four toasts, each gone after 8 seconds on screen. */
+/**
+ * Fixed bottom-right on wide screens, clear of the KPI tiles and the top of the Trigger feed; the newest sits nearest the corner.
+ * Below lg the nudge pop-up owns the bottom edge, so the stack stays top-right under the header.
+ * At most four toasts, each gone after 8 seconds on screen.
+ */
 export function ToastStack() {
   const toasts = useConsole(s => s.toasts);
   return (
-    <div className="fixed right-6 top-[188px] z-[60] flex w-[360px] max-w-[calc(100vw-48px)] flex-col gap-2.5 sm:top-[205px] xl:top-[152px]">
+    <div className="fixed right-6 top-[188px] z-[60] flex w-[360px] max-w-[calc(100vw-48px)] flex-col gap-2.5 sm:top-[205px] lg:bottom-6 lg:top-auto">
       {toasts.map(t => <Toast key={t.id} toast={t} />)}
     </div>
   );

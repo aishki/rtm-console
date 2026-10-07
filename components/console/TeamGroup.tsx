@@ -32,17 +32,24 @@ export function TeamGroup({ team, all, shown, rules, open, filtering, query, sho
   const sub = [team.tl && `TL ${team.tl}`, team.mgr && `Mgr ${team.mgr}`, `${filtering ? `${shown.length} of ${all.length}` : all.length} agents`].filter(Boolean).join(" · ");
   return (
     <div className="@container rounded-15 bg-white ring-card">
-      {/* One line at every width: the name trims first, then the sub-line; narrow panels drop the counts and keep the bar. */}
-      <button type="button" onClick={onToggle} aria-expanded={open} className={`flex w-full items-center gap-x-3.5 rounded-15 border-0 px-4 py-3 text-left text-inherit ${open ? "bg-tint" : "bg-white"}`}>
-        <svg width="16" height="8" viewBox="0 0 16 8" fill="none" aria-hidden="true" className="shrink-0 transition-transform duration-200 ease-standard" style={{ transform: `rotate(${open ? 0 : -90}deg)` }}>
+      {/* Fixed columns so every team row lines up. The name sits over its sub-line so both get the whole free
+          width; the breach pill keeps its slot when empty; narrow panels drop the counts and keep the bar. */}
+      <button
+        type="button" onClick={onToggle} aria-expanded={open}
+        className={`grid w-full grid-cols-[16px_minmax(0,1fr)_auto_120px] items-center gap-x-3.5 rounded-15 border-0 px-4 py-2.5 text-left text-inherit @[420px]:grid-cols-[16px_minmax(0,1fr)_92px_120px] @[640px]:grid-cols-[16px_minmax(0,1fr)_92px_252px_120px] ${open ? "bg-tint" : "bg-white"}`}
+      >
+        <svg width="16" height="8" viewBox="0 0 16 8" fill="none" aria-hidden="true" className="transition-transform duration-200 ease-standard" style={{ transform: `rotate(${open ? 0 : -90}deg)` }}>
           <path d="M1 1l7 6 7-6" stroke="#303044" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
-        <span title={team.team} className="min-w-16 truncate text-base font-semibold text-purple">{team.team}</span>
-        <span className="hidden min-w-[68px] shrink-[100] truncate text-xs text-muted @[420px]:inline">{sub}</span>
-        <div className="flex-1" />
-        {breach > 0 && <span className="pill shrink-0 whitespace-nowrap bg-error-tint text-error-text">{breach} breaching</span>}
-        <span className="num hidden shrink-0 whitespace-nowrap text-xs text-muted @[640px]:inline">{mix.map(m => `${m.n} ${m.label}`).join(" · ")}</span>
-        <span aria-hidden="true" className="flex h-2 w-[120px] shrink-0 overflow-hidden rounded-4 bg-row">
+        <span className="flex min-w-0 flex-col gap-0.5">
+          <span title={team.team} className="truncate text-base font-semibold text-purple">{team.team}</span>
+          <span title={sub} className="truncate text-xs text-muted">{sub}</span>
+        </span>
+        <span className="flex justify-end">
+          {breach > 0 && <span className="pill whitespace-nowrap bg-error-tint text-error-text">{breach} breaching</span>}
+        </span>
+        <span className="num hidden truncate text-xs text-muted @[640px]:inline">{mix.map(m => `${m.n} ${m.label}`).join(" · ")}</span>
+        <span aria-hidden="true" className="flex h-2 overflow-hidden rounded-4 bg-row">
           {mix.map(m => <span key={m.label} className="h-full" style={{ width: `${all.length ? (m.n / all.length) * 100 : 0}%`, background: m.color }} />)}
         </span>
       </button>

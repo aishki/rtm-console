@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { clock, fmt } from "@/lib/engine/format";
+import { clock, fmt, splitAgent } from "@/lib/engine/format";
 import { STATES, type Target, myTargets } from "@/lib/engine/rules";
 import { teamOf } from "@/lib/engine/scope";
 import { api, attempt } from "@/lib/client/api";
@@ -58,6 +58,7 @@ const LOG_COLUMNS: Column<Instance>[] = [
 export default function MyViewPage() {
   const who = useConsole(s => s.view?.who);
   const me = useConsole(s => s.agents.find(a => a.name === who));
+  const { who: myName, id: myId } = splitAgent(me?.name ?? "");
   const rules = useConsole(s => s.rules);
   const org = useConsole(s => s.org);
   const ledger = useConsole(s => s.ledger);
@@ -74,8 +75,10 @@ export default function MyViewPage() {
         <div className="panel flex flex-col items-center gap-1.5 px-6 py-7 text-center">
           {me && state && team ? (
             <>
-              <span className="text-[28px] font-medium tracking-[-0.02em] text-purple">{me.name}</span>
-              <span className="text-[13px] text-muted">{me.team} · TL {team.tl} · Mgr {team.mgr}</span>
+              <span className="text-balance text-[28px] font-medium leading-tight tracking-[-0.02em] text-purple">{myName}</span>
+              {myId && <span className="num text-sm font-medium text-muted">{myId}</span>}
+              {/* Team on its own line: a long team name used to push "TL" away from the name it belongs to. */}
+              <span className="flex flex-col text-[13px] text-muted"><span className="[overflow-wrap:anywhere]">{me.team}</span><span>TL {team.tl} · Mgr {team.mgr}</span></span>
               <div className="mt-[18px] inline-flex items-center gap-2 text-base font-medium">
                 <span className="h-3 w-3 rounded-full" style={{ background: state.color }} />{state.label}
                 {me.onHold && <span className="rounded-pill bg-warning-tint px-2 py-px font-ui text-xs font-semibold text-warning-text">Hold</span>}

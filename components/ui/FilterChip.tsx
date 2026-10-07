@@ -1,10 +1,11 @@
-/** BITS FilterChip: a 24×25 filter checkbox with a 15px label. */
-export function FilterChip({ id, label, checked, onChange }: { id: string; label: string; checked: boolean; onChange: (checked: boolean) => void }) {
+/** BITS FilterChip: a 24×25 filter checkbox with a 15px label. `compact` is an 18px box with a 13px label, for rows short on width. */
+export function FilterChip({ id, label, checked, onChange, compact = false }: { id: string; label: string; checked: boolean; onChange: (checked: boolean) => void; compact?: boolean }) {
+  const radius = compact ? "rounded-[7px]" : "rounded-[10.14px]";
   return (
-    <label htmlFor={id} className="inline-flex h-[45px] items-center gap-2.5 whitespace-nowrap rounded-41 py-2.5 pr-[15px] text-[15px] leading-normal tracking-[-0.02em] text-black">
+    <label htmlFor={id} className={`inline-flex items-center whitespace-nowrap leading-normal tracking-[-0.02em] text-black ${compact ? "h-9 gap-2 text-[13px]" : "h-[45px] gap-2.5 rounded-41 py-2.5 pr-[15px] text-[15px]"}`}>
       <span className="relative inline-flex">
         <span
-          className="inline-flex h-[25px] w-6 shrink-0 items-center justify-center rounded-[10.14px] transition-colors duration-[120ms] ease-standard"
+          className={`inline-flex shrink-0 items-center justify-center transition-colors duration-[120ms] ease-standard ${radius} ${compact ? "h-[18px] w-[18px]" : "h-[25px] w-6"}`}
           style={{ background: checked ? "var(--control-selected)" : "var(--control-unselected)" }}
         >
           <svg width="8" height="7" viewBox="0 0 8 7" fill="none" aria-hidden="true">
@@ -12,7 +13,7 @@ export function FilterChip({ id, label, checked, onChange }: { id: string; label
           </svg>
         </span>
         <input type="checkbox" id={id} checked={checked} onChange={e => onChange(e.target.checked)} className="peer absolute inset-0 m-0 cursor-pointer opacity-0" />
-        <span className="pointer-events-none absolute inset-0 rounded-[10.14px] peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-focus" />
+        <span className={`pointer-events-none absolute inset-0 peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-focus ${radius}`} />
       </span>
       {label}
     </label>
