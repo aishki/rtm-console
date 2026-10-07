@@ -233,6 +233,7 @@ All routes are under `/api`. Errors are `{ "error": string }`. Every route answe
 | --- | --- | --- | --- |
 | `GET /session` | anyone | | `{ view, viewAs }` |
 | `POST /session` | anyone, dev flag only | `{ role, who? }` | `{ view }`. 400 unknown role. |
+| `GET /session/states` | anyone, dev flag only | | `{ states }`: every agent's current state by name, for the "View as" person search. Not scoped. |
 | `GET /stream` | anyone | | Server-sent events, see below |
 | `GET /rules` | roles with the Rules tab | | `{ rules, canEdit }` |
 | `PATCH /rules` | `rulesEdit` | `{ id, thr?, sev?, route?, on? }` | `{ rule }`. 404 unknown rule, 400 invalid value. |
