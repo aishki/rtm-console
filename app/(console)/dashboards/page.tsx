@@ -108,6 +108,8 @@ export default function DashboardsPage() {
   const teams = useConsole(s => s.org);
   const agents = useConsole(s => s.agents);
   const toast = useConsole(s => s.toast);
+  // Importing a file starts a replay, which is not offered on the live Genesys feed.
+  const canImport = useConsole(s => s.feed !== "gencloud") && !!perms?.replay;
   const router = useRouter();
   const [csvOpen, setCsvOpen] = useState(false);
   const canAct = !!perms?.invAct;
@@ -154,7 +156,8 @@ export default function DashboardsPage() {
       <div className="flex flex-wrap items-end gap-4">
         <PageTitle eyebrow="Review" title="Shift dashboards" />
         <div className="flex-1" />
-        {perms?.replay && <PurpleButton variant="outline" onClick={() => setCsvOpen(true)}>Import floor data</PurpleButton>}
+        {canImport && <PurpleButton variant="outline" onClick={() => setCsvOpen(true)}>Import floor data</PurpleButton>}
+        <PurpleButton variant="outline" title="Download this dashboard as a read-only HTML file with working filters" onClick={() => download("/api/export/snapshot")}>Save snapshot</PurpleButton>
       </div>
       <div className="grid grid-cols-[repeat(auto-fit,minmax(170px,1fr))] gap-4">
         {kpis.map(k => <KpiTile key={k.label} kpi={k} />)}
@@ -189,7 +192,7 @@ export default function DashboardsPage() {
         </div>
       </div>
 
-      {csvOpen && (
+      {csvOpen && canImport && (
         <CsvImportDialog
           onClose={() => setCsvOpen(false)}
           onStarted={() => {

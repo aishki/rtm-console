@@ -80,9 +80,17 @@ The hand-grabbed token expires after about 8 hours. To replace it without restar
 - The Gencloud feed reconnects with it. The floor, ledger, incidents and strikes are kept: a roster resent mid-shift carries each known agent's strikes and shift counters over.
 - The page is guarded by the secret, not the session, because "View as" lets anyone act as Admin until SSO exists.
 
+## Saving a dashboard snapshot
+
+Everyone with the Dashboards tab has **Dashboards → Save snapshot**. It downloads one HTML file holding the call-outs, incidents and teams of that person's span at that moment. The file opens offline; its filters (manager, team, rule, agent, stage, incident status), sortable tables and clickable bars work, and it has no way to write back to the console. It names its data source, and says so when the activity is simulated or replayed.
+
+The file holds agent names and leaves the console's access control once saved, so treat it like an export.
+
 ## Importing floor data
 
 Admins and Managers can replay a day of their own data instead of the simulator: **Dashboards → Import floor data**.
+
+The button is only there while the floor is on the simulation (or inside a replay). On the live Genesys feed it is hidden, and `POST /replay` and `POST /import/validate` answer 403.
 
 1. **Download template** gives `RTM_floor_data_template.xlsx` (built on request by `lib/import/xlsx.ts`). It has instructions and a sample day, so it runs as downloaded.
 2. Fill it in and upload it. The file is checked first and the dialog lists every problem, or a summary and any warnings.
@@ -234,11 +242,12 @@ All routes are under `/api`. Errors are `{ "error": string }`. Every route answe
 | `POST /incidents/:inc` | `invAct`, in span | `{ action: "start" }` or `{ action: "close", disposition }` | `{ incident }`. 409 wrong status. |
 | `GET /export/ledger` | `export` | | `RTM_instance_ledger.csv` |
 | `GET /export/incidents` | `export` | | `RTM_investigation_register.csv` |
+| `GET /export/snapshot` | roles with the Dashboards tab | | `RTM_dashboard_snapshot_<date>_<time>.html`: the caller's Dashboards screen as one read-only file with working filters (`lib/snapshot/dashboard.ts`) |
 | `GET /import/template` | `replay` | | `RTM_floor_data_template.xlsx` |
-| `POST /import/validate` | `replay` | multipart: `file` (.xlsx) | `{ summary, warnings }`, or 400 `{ error, errors[] }` |
+| `POST /import/validate` | `replay`, not on the live Genesys feed | multipart: `file` (.xlsx) | `{ summary, warnings }`, or 400 `{ error, errors[] }` |
 | `POST /feed` | `feed`, dev builds only | `{ source: "gencloud" \| "sim" }` | `{ feed, realNames }`. Switches the floor for everyone. 403 in a production build. |
 | `POST /admin/token` | holder of `RTM_ADMIN_SECRET` (no session needed) | `{ secret, token }` | `{ ok, who }`. 401 wrong secret, 400 empty or rejected token, 502 Genesys unreachable. Saves the token and reconnects the Gencloud feed. |
-| `POST /replay` | `replay` | multipart: `file` (.xlsx template, or .csv with `cols?`, `smap?` JSON strings) | `{ view, replay }`. 400 `{ error, errors[] }`, 413 over 10 MB. |
+| `POST /replay` | `replay`, not on the live Genesys feed | multipart: `file` (.xlsx template, or .csv with `cols?`, `smap?` JSON strings) | `{ view, replay }`. 400 `{ error, errors[] }`, 413 over 10 MB. |
 | `DELETE /replay` | `replay` | | `{ ok: true }` |
 | `GET /push` | anyone | | `{ key }`, the public key to subscribe with, or `null` when push is not configured |
 | `POST /push` | anyone | `{ subscription }` (the browser's `PushSubscription`) | `{ ok: true }`. 400 if not a known push service, 503 if not configured. |
