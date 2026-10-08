@@ -37,6 +37,9 @@ export interface Instance {
   rev: number;
 }
 
+/** What a leader can do to an investigation: start it, send it back to Open, record a disposition, close it. */
+export type InvAction = "start" | "reopen" | "record" | "close";
+
 export interface Incident {
   inc: string; t: number; agent: string; team: string; rule: string; ruleId: RuleId;
   instances: number; status: "Open" | "Investigating" | "Closed"; disposition: string; closedT: number | null;

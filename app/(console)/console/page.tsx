@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { STATES, isBreach, strikesOf, thrOf } from "@/lib/engine/rules";
+import { STATES, STATE_IDS, isBreach, strikesOf, thrOf } from "@/lib/engine/rules";
 import { teamOf } from "@/lib/engine/scope";
 import { api, attempt } from "@/lib/client/api";
 import { usePerms } from "@/lib/client/hooks";
@@ -65,12 +65,12 @@ function AgentGrid() {
 
   const qn = filters.q.trim().toLowerCase();
   const { quick } = filters;
-  const filtering = !!(qn || filters.team || filters.state || quick.breach || quick.strikes || quick.hold);
+  const filtering = !!(qn || filters.team || filters.states.length || quick.breach || quick.strikes || quick.hold);
   const teamFilter = teams.some(t => t.team === filters.team) ? filters.team : "";
 
   const matches = (a: Agent) => {
     if (teamFilter && a.team !== teamFilter) return false;
-    if (filters.state && a.state !== filters.state) return false;
+    if (filters.states.length && !filters.states.includes(a.state)) return false;
     if (quick.breach && !isBreach(a, rules)) return false;
     if (quick.strikes && !strikesOf(a)) return false;
     if (quick.hold && !a.onHold) return false;
@@ -80,7 +80,9 @@ function AgentGrid() {
     }
     return true;
   };
+  // "state" follows the legend's order, On Call first; agents in the same state keep their roster order.
   const sorters: Partial<Record<GridFilters["sortBy"], (x: Agent, y: Agent) => number>> = {
+    state: (x, y) => STATE_IDS.indexOf(x.state) - STATE_IDS.indexOf(y.state),
     time: (x, y) => y.stTime - x.stTime, strikes: (x, y) => strikesOf(y) - strikesOf(x), name: (x, y) => x.name.localeCompare(y.name),
   };
   const keyOf = (team: string) => (filtering ? "f:" : "") + team;
@@ -126,7 +128,7 @@ function AgentGrid() {
       <AgentGridToolbar
         filters={{ ...filters, team: teamFilter }} onChange={patch => setFilters(f => ({ ...f, ...patch }))} onClear={clear} searchRef={searchRef}
         teamGroups={teamGroups} teamCount={teams.length} quickCounts={quickCounts} filtering={filtering}
-        resultText={filtering ? `Showing ${shownCount} of ${agents.length} agents in ${plural(groups.length, "team")}` : `${agents.length} agents · ${plural(teams.length, "team")}`}
+        resultText={filtering ? `${shownCount} of ${agents.length} agents · ${plural(groups.length, "team")}` : `${agents.length} agents · ${plural(teams.length, "team")}`}
         showExpandControls={groups.length > 1} onExpandAll={() => setAll(true)} onCollapseAll={() => setAll(false)}
       />
       <div className="flex flex-col gap-2.5 px-5 pb-5 pt-4">

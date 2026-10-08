@@ -1,5 +1,5 @@
 import { memo } from "react";
-import { fmt } from "@/lib/engine/format";
+import { fmt, splitAgent } from "@/lib/engine/format";
 import { STATES, isBreach, isCrit, strikesOf } from "@/lib/engine/rules";
 import type { Agent, Rule } from "@/lib/types";
 
@@ -16,6 +16,7 @@ export const AgentCard = memo(function AgentCard({ agent: a, rules, query, showM
   const s = STATES[a.state] ?? STATES.avail;
   const breach = isBreach(a, rules), crit = breach && isCrit(a, rules);
   const strikes = strikesOf(a);
+  const { who, id } = splitAgent(a.name);
   const skin = crit ? "bg-error-fill shadow-[inset_0_0_0_2px_var(--error)]" : breach ? "bg-warning-fill shadow-[inset_0_0_0_2px_var(--warning)]" : "bg-white ring-card";
   const metric = (label: string, value: string | number) => <span className="whitespace-nowrap">{label} <b className="text-ink">{value}</b></span>;
   return (
@@ -23,9 +24,10 @@ export const AgentCard = memo(function AgentCard({ agent: a, rules, query, showM
       {strikes > 0 && (
         <span title="Triggers this shift" className="absolute right-3 top-2.5 rounded-pill bg-pale-purple px-2 py-px font-ui text-xs font-semibold text-purple">×{strikes}</span>
       )}
-      <div className="flex min-w-0 flex-col gap-0.5 pr-9">
-        <span title={a.name} className="truncate text-sm font-semibold"><Name name={a.name} query={query} /></span>
-        <span title={a.team} className="truncate text-xs text-muted">{a.team}</span>
+      {/* No team line: the card always sits under its team's header. The ID gets its own line so a long name never hides it. */}
+      <div className="flex min-w-0 flex-col gap-0.5">
+        <span title={a.name} className="truncate pr-9 text-sm font-semibold"><Name name={who} query={query} /></span>
+        {id && <span className="num truncate text-[11px] text-muted"><Name name={id} query={query} /></span>}
       </div>
       <div className="flex items-center gap-2">
         <span className="h-[9px] w-[9px] shrink-0 rounded-full" style={{ background: s.color }} />
@@ -34,8 +36,10 @@ export const AgentCard = memo(function AgentCard({ agent: a, rules, query, showM
         <span className={`num ml-auto text-[13px] font-semibold ${crit ? "text-error-text" : breach ? "text-warning-text" : "text-ink"}`}>{fmt(a.stTime)}</span>
       </div>
       {showMetrics && (
-        <div className="num flex flex-wrap gap-2.5 border-t border-row pt-2 text-[11px] text-muted">
-          {metric("AHT", a.aht + "s")}{metric("Calls", a.calls)}{metric("Short", a.shortCalls)}{metric("Xfr", a.transfers)}{metric("Adh", a.adh.toFixed(0) + "%")}
+        // Two tidy rows in three columns that line up from card to card: handling on the first row, call quality on the second.
+        <div className="num grid grid-cols-[1fr_1fr_52px] gap-x-1.5 gap-y-1 border-t border-row pt-2 text-[11px] text-muted">
+          {metric("AHT", a.aht + "s")}{metric("Calls", a.calls)}{metric("Adh", a.adh.toFixed(0) + "%")}
+          {metric("Short", a.shortCalls)}{metric("Xfr", a.transfers)}
         </div>
       )}
     </div>

@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
-import { clock } from "@/lib/engine/format";
+import { clock, splitAgent } from "@/lib/engine/format";
 import { DISPOSITIONS } from "@/lib/engine/rules";
 import { api, attempt, download } from "@/lib/client/api";
 import { avgResponse, usePerms } from "@/lib/client/hooks";
@@ -17,7 +17,10 @@ import { Select } from "@/components/ui/Select";
 
 type Counts = Record<Stage, number> & { total: number };
 interface Bar { label: string; counts: Counts }
-const DISPOSITION_OPTIONS = DISPOSITIONS.map(d => ({ value: d, label: d }));
+/** Picked instead of a disposition: the investigation is dropped and the incident goes back to Open. */
+const REOPEN = "reopen";
+const DISPOSITION_OPTIONS = [...DISPOSITIONS.map(d => ({ value: d, label: d })), { value: REOPEN, label: "None · back to Open" }];
+const NO_DISPOSITION = { value: "", label: "Select disposition" };
 
 /** Call-outs grouped by a key, biggest first. */
 function tally(rows: Instance[], key: (r: Instance) => string, cap?: number): Bar[] {
@@ -31,19 +34,26 @@ function tally(rows: Instance[], key: (r: Instance) => string, cap?: number): Ba
   return cap ? out.slice(0, cap) : out;
 }
 
-function BarChart({ title, sub, bars, note }: { title: string; sub: string; bars: Bar[]; note?: string }) {
+/** `people` marks a chart of agents: the domain ID goes under the name, in a wider label column. */
+function BarChart({ title, sub, bars, note, people }: { title: string; sub: string; bars: Bar[]; note?: string; people?: boolean }) {
   const max = Math.max(1, ...bars.map(b => b.counts.total));
   const pct = (n: number) => `${(n / max) * 100}%`;
   return (
-    <div className="panel">
+    // A column whose bars take the spare height, so side-by-side charts end level with their legends on one line.
+    <div className="panel flex flex-col">
       <div className="panel-head">
         <h2 className="panel-title">{title}</h2>
         <span className="panel-sub">{sub}</span>
       </div>
-      <div className="flex flex-col gap-2.5 px-5 py-3.5">
-        {bars.map(b => (
-          <div key={b.label} className="grid grid-cols-[150px_minmax(0,1fr)_36px] items-center gap-3 text-[13px]">
-            <span className="truncate text-strong">{b.label}</span>
+      <div className="flex flex-1 flex-col gap-2.5 px-5 py-3.5">
+        {bars.map(b => {
+          const { who, id } = people ? splitAgent(b.label) : { who: b.label, id: "" };
+          return (
+          <div key={b.label} className={`grid items-center gap-3 text-[13px] ${people ? "grid-cols-[190px_minmax(0,1fr)_36px]" : "grid-cols-[150px_minmax(0,1fr)_36px]"}`}>
+            <span title={b.label} className="flex min-w-0 flex-col text-strong">
+              <span className="truncate">{who}</span>
+              {id && <span className="num truncate text-[11px] text-muted">{id}</span>}
+            </span>
             <div className="flex h-3.5 overflow-hidden rounded-4 bg-page" role="img" aria-label={`${b.counts.nudge} nudge, ${b.counts.lead} leader, ${b.counts.ops} ops`}>
               <span className="h-full" style={{ width: pct(b.counts.nudge), background: STAGE.nudge.solid }} />
               <span className="h-full" style={{ width: pct(b.counts.lead), background: STAGE.lead.solid }} />
@@ -51,7 +61,8 @@ function BarChart({ title, sub, bars, note }: { title: string; sub: string; bars
             </div>
             <span className="num text-right font-semibold">{b.counts.total}</span>
           </div>
-        ))}
+          );
+        })}
         {bars.length === 0 && <div className="py-6 text-center text-muted">No call-outs yet this shift.</div>}
       </div>
       <div className="flex flex-wrap items-center gap-4 px-5 pb-[18px] pt-1 text-xs text-muted">
@@ -64,22 +75,29 @@ function BarChart({ title, sub, bars, note }: { title: string; sub: string; bars
   );
 }
 
-/** Start / disposition + close / closed note, for roles with investigation actions. */
+/**
+ * Start / disposition + close / closed note, for roles with investigation actions. Picking a disposition records it
+ * straight away; "Close investigation" unlocks once one is recorded, and "None" sends the incident back to Open.
+ */
 function IncidentAction({ incident: i, canAct }: { incident: Incident; canAct: boolean }) {
-  const [disposition, setDisposition] = useState(DISPOSITIONS[0]);
   const toast = useConsole(s => s.toast);
   const note = i.status === "Closed" ? `Closed ${clock(i.closedT ?? 0)}` : !canAct ? "Read-only in this view" : "";
+  const pick = (v: string) => void attempt(v === REOPEN ? api.incident(i.inc, "reopen") : api.incident(i.inc, "record", v));
   const close = async () => {
-    const res = await attempt(api.incident(i.inc, "close", disposition));
+    const res = await attempt(api.incident(i.inc, "close"));
     if (res) toast("info", `${res.incident.inc} closed`, `${res.incident.agent} · ${res.incident.rule} · ${res.incident.disposition}`);
   };
+  // w-max: the cell is as wide as its controls, so the select is never squeezed.
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex w-max items-center gap-2">
       {canAct && i.status === "Open" && <PurpleButton compact onClick={() => void attempt(api.incident(i.inc, "start"))}>Start investigation</PurpleButton>}
       {canAct && i.status === "Investigating" && (
         <>
-          <Select value={disposition} onChange={setDisposition} options={DISPOSITION_OPTIONS} aria-label={`Disposition for ${i.inc}`} className="field h-8 px-2 text-[13px]" />
-          <PurpleButton compact onClick={close}>Close</PurpleButton>
+          <Select
+            value={i.disposition} onChange={pick} options={i.disposition ? DISPOSITION_OPTIONS : [NO_DISPOSITION, ...DISPOSITION_OPTIONS]}
+            aria-label={`Disposition for ${i.inc}`} className="field h-8 px-2 text-[13px]"
+          />
+          <PurpleButton compact disabled={!i.disposition} title={i.disposition ? undefined : "Record a disposition first"} onClick={close}>Close investigation</PurpleButton>
         </>
       )}
       {note && <span className="text-[13px] text-muted">{note}</span>}
@@ -132,12 +150,19 @@ export default function DashboardsPage() {
   const incidentColumns: Column<Incident>[] = [
     { key: "inc", header: "Incident #", thClass: "whitespace-nowrap", tdClass: "whitespace-nowrap font-ui font-semibold text-purple", cell: i => i.inc },
     { key: "opened", header: "Opened", tdClass: "num", cell: i => clock(i.t) },
-    { key: "agent", header: "Agent", tdClass: "whitespace-nowrap font-semibold", cell: i => i.agent },
-    { key: "team", header: "Team", tdClass: "whitespace-nowrap text-muted", cell: i => i.team },
-    { key: "rule", header: "Trigger rule", cell: i => i.rule },
+    // The domain ID sits under the name, so the column stays narrow and "Trigger rule" keeps to one line.
+    {
+      key: "agent", header: "Agent", tdClass: "whitespace-nowrap", cell: i => {
+        const { who, id } = splitAgent(i.agent);
+        return <span className="flex flex-col gap-0.5"><span className="font-semibold">{who}</span>{id && <span className="num text-[11px] text-muted">{id}</span>}</span>;
+      },
+    },
+    // Team takes whatever width is left and ellipsises, so the Action buttons never slide off the panel.
+    { key: "team", header: "Team", thClass: "w-full min-w-[160px]", tdClass: "max-w-0 truncate text-muted", cell: i => <span title={i.team}>{i.team}</span> },
+    { key: "rule", header: "Trigger rule", thClass: "whitespace-nowrap", tdClass: "whitespace-nowrap", cell: i => i.rule },
     { key: "instances", header: "Instances", tdClass: "font-ui font-semibold", cell: i => `×${i.instances}` },
     { key: "status", header: "Status", cell: i => <StatusPill tone={INC[i.status]}>{i.status}</StatusPill> },
-    { key: "disp", header: "Disposition", tdClass: "text-muted", cell: i => i.disposition || "—" },
+    { key: "disp", header: "Disposition", tdClass: "whitespace-nowrap text-muted", cell: i => i.disposition || "—" },
     { key: "action", header: "Action", thClass: "min-w-[300px]", cell: i => <IncidentAction incident={i} canAct={canAct} /> },
   ];
 
@@ -162,9 +187,9 @@ export default function DashboardsPage() {
       <div className="grid grid-cols-[repeat(auto-fit,minmax(170px,1fr))] gap-4">
         {kpis.map(k => <KpiTile key={k.label} kpi={k} />)}
       </div>
-      <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,440px),1fr))] items-start gap-6">
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,440px),1fr))] gap-6">
         <BarChart title="Call-out summary by rule" sub="This shift, by escalation stage" bars={byRule} />
-        <BarChart title="Call-out summary by top agents" sub="Instances per agent, this shift" bars={byAgent} note="Agents at ×3 open an investigation below." />
+        <BarChart title="Call-out summary by top agents" sub="Instances per agent, this shift" bars={byAgent} people note="Agents at ×3 open an investigation below." />
       </div>
 
       <div className="panel overflow-hidden">

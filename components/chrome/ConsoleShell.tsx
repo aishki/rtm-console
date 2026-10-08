@@ -11,14 +11,17 @@ import { Navbar } from "./Navbar";
 import { NudgePopup } from "./NudgePopup";
 import { ToastStack } from "./ToastStack";
 
+/** Notes on the left, wrapping as one block; the credit on the right, centred against however many lines the notes take. */
 function Footer() {
   return (
-    <footer className="flex flex-wrap gap-x-8 gap-y-3 border-t border-purple bg-white px-8 py-[18px] text-xs leading-normal text-muted">
-      <span><b className="text-ink">Data source:</b> the rules engine binds to the Gencloud/NiceIEX real-time API.</span>
-      <span><b className="text-ink">Escalation ladder:</b> Nudge, then Leader, then Ops (per-rule routes configurable).</span>
-      <span><b className="text-ink">3× rule:</b> the third instance assigns an incident number and opens an investigation.</span>
-      <span><b className="text-ink">Views:</b> TL sees direct reports · Manager sees their span, incident tiles and rules admin · Admin sees everything · Senior Leader sees dashboards · Agent sees their own pop-ups.</span>
-      <div className="ml-auto flex flex-wrap items-center gap-x-6 gap-y-2">
+    <footer className="flex flex-wrap items-center gap-x-10 gap-y-4 border-t border-purple bg-white px-8 py-[18px] text-xs leading-normal text-muted">
+      <div className="flex min-w-0 flex-[1_1_480px] flex-wrap gap-x-8 gap-y-2">
+        <span><b className="text-ink">Data source:</b> the rules engine binds to the Gencloud/NiceIEX real-time API.</span>
+        <span><b className="text-ink">Escalation ladder:</b> Nudge, then Leader, then Ops (per-rule routes configurable).</span>
+        <span><b className="text-ink">3× rule:</b> the third instance assigns an incident number and opens an investigation.</span>
+        <span><b className="text-ink">Views:</b> TL sees direct reports · Manager sees their span, incident tiles and rules admin · Admin sees everything · Senior Leader sees dashboards · Agent sees their own pop-ups.</span>
+      </div>
+      <div className="ml-auto flex shrink-0 flex-wrap items-center gap-x-6 gap-y-2">
         <span className="inline-flex items-center gap-2">Powered by <BitsLogo height={28} /></span>
         <span>© 2026 CGSPH. All rights reserved.</span>
       </div>

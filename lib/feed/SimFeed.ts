@@ -1,4 +1,4 @@
-import type { AgentState, AgentStateEvent, Queue, RuleId, Team } from "@/lib/types";
+import type { AgentState, AgentStateEvent, Instance, Queue, RuleId, Team } from "@/lib/types";
 import type { FeedHandlers, FeedSource } from "./FeedSource";
 
 // Stand-in for the Gencloud feed so the console moves without a live floor: organic state
@@ -192,5 +192,35 @@ export class SimFeed implements FeedSource {
     if (kind === "short") this.toState(a, "oncall");
     else if (kind === "hold") { this.toState(a, "oncall"); this.setHold(a, true); }
     else this.toState(a, ROGUE_STATE[kind]!);
+  }
+}
+
+/** Reasons simulated agents send back with a nudge, by rule. Invented, like the rest of the simulation. */
+const REPLIES: Partial<Record<RuleId, string[]>> = {
+  acw: ["Finishing notes on a complex claim, back in a minute.", "System was slow saving the case, done now.", "Had to document an escalation before closing the case."],
+  auxp: ["Stepped away for a restroom break, back now.", "Had to take an urgent personal call, sorry.", "Refilling water, heading back to the queue."],
+  ovbrk: ["Lost track of time on break, back on now.", "Long queue at the pantry, apologies.", "Break started late because my last call ran over."],
+  short: ["Caller hung up as soon as I greeted them.", "Line dropped, no audio from the member.", "Wrong number, the member ended the call."],
+  adh: ["My last call ran past my scheduled break.", "Logged in late because of a system issue this morning.", "Coaching session with my TL ran over."],
+  hold: ["Waiting on the provider line to pick up.", "Checking the claim with a senior, member agreed to hold.", "The tool froze while I was pulling up the account."],
+  outb: ["Callback to a provider, they kept me on hold.", "Member needed a walkthrough of the whole claim.", "Following up on an escalated case."],
+  xfer: ["Mostly misrouted calls for another department today.", "Members asking for pharmacy, which I can't handle.", "Several callers needed a Spanish-speaking agent."],
+};
+/** A reply comes between these many seconds after the nudge. */
+const REPLY_FROM = 15, REPLY_UNTIL = 90;
+/** Chance per second inside that window: about a third of nudges get a reason. */
+const REPLY_CHANCE = 0.0055;
+
+/**
+ * Simulator only: now and then an agent answers a recent nudge with a reason, which also acknowledges it,
+ * so the ledger, the trigger feed and the exports have agent comments to show. `ledger` is newest first.
+ */
+export function simulateReplies(S: { t: number; ledger: Instance[] }, comment: (n: number, text: string, ack: boolean) => unknown, rnd: () => number = Math.random): void {
+  for (const r of S.ledger) {
+    const age = S.t - r.t;
+    if (age > REPLY_UNTIL) break;
+    const lines = REPLIES[r.ruleId];
+    if (age < REPLY_FROM || r.isFloor || r.stage !== "nudge" || r.cmt !== null || !lines || rnd() >= REPLY_CHANCE) continue;
+    comment(r.n, lines[Math.floor(rnd() * lines.length)], true);
   }
 }
