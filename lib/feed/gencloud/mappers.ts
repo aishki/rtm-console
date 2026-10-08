@@ -21,18 +21,20 @@ export function buildRoster(
   return { org, agents, idToName };
 }
 
-function avg(xs: (number | null)[]): number {
-  const v = xs.filter((x): x is number => typeof x === "number" && Number.isFinite(x));
-  return v.length ? v.reduce((a, b) => a + b, 0) / v.length : 0;
-}
+const sum = <T,>(xs: T[], f: (x: T) => number): number => xs.reduce((s, x) => s + f(x), 0);
 
+/**
+ * One set of floor numbers from every watched queue, weighted by calls rather than averaged
+ * per queue, so a queue with 7 calls does not count as much as one with 700. Service level is
+ * null when no queue counted a call yet: "no data", not 0%.
+ */
 export function aggregateQueue(obs: QueueObs[], agg: QueueAgg[]): Queue {
-  const offered = agg.reduce((s, a) => s + a.offered, 0);
-  const abandoned = agg.reduce((s, a) => s + a.abandoned, 0);
+  const offered = sum(agg, a => a.offered), abandoned = sum(agg, a => a.abandoned);
+  const answered = sum(agg, a => a.answered), counted = sum(agg, a => a.slCounted);
   return {
-    cq: obs.reduce((s, o) => s + o.waiting, 0),
-    sl: avg(obs.map((o) => o.serviceLevelPct)),
-    asa: avg(agg.map((a) => a.asaSec)),
+    cq: sum(obs, o => o.waiting),
+    sl: counted > 0 ? (sum(agg, a => a.slWithin) / counted) * 100 : null,
+    asa: answered > 0 ? sum(agg, a => a.answerSec) / answered : 0,
     ab: offered > 0 ? (abandoned / offered) * 100 : 0,
   };
 }

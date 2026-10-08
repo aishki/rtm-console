@@ -28,6 +28,16 @@ describe("parseAggregates", () => {
     expect(a.asaSec).toBeCloseTo(20);      // tAnswered.avg 20000ms -> 20s (ASA ruling)
     expect(a.avgHandleSec).toBeCloseTo(300);
   });
+  it("derives averages from sum and count, and reads the interval service level", () => {
+    const [a] = parseAggregates({ results: [{ group:{ queueId:"q1" }, data:[{ metrics:[
+      { metric:"tAnswered", stats:{ count:4, sum:80000 } },
+      { metric:"tHandle", stats:{ count:4, sum:1200000 } },
+      { metric:"oServiceLevel", stats:{ ratio:0.75, numerator:3, denominator:4, target:0.8 } } ]}] }] });
+    expect(a.asaSec).toBeCloseTo(20);
+    expect(a.avgHandleSec).toBeCloseTo(300);
+    expect(a.answerSec).toBeCloseTo(80);
+    expect(a).toMatchObject({ slWithin:3, slCounted:4 });
+  });
   it("tolerates missing metrics", () => {
     const [a] = parseAggregates({ results: [{ group:{ queueId:"q1" }, data:[{ metrics:[] }] }] });
     expect(a).toMatchObject({ queueId:"q1", offered:0, abandoned:0 });

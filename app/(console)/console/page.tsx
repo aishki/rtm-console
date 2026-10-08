@@ -32,9 +32,10 @@ function useKpis(): Kpi[] {
     const noQueue = (label: string): Kpi => ({ label, value: "—", sub: replay ? "No queue data in this import" : "Waiting for queue data", level: "ok", muted: true });
     const q = queue;
     return [
-      q ? { label: "Service level", value: q.sl.toFixed(0) + "%", sub: `Target ≥ ${thr("sl")}%`, level: q.sl < thr("sl") ? "crit" : q.sl < thr("sl") + 5 ? "warn" : "ok" } : noQueue("Service level"),
+      q && q.sl !== null ? { label: "Service level", value: q.sl.toFixed(0) + "%", sub: `Target ≥ ${thr("sl")}%`, level: q.sl < thr("sl") ? "crit" : q.sl < thr("sl") + 5 ? "warn" : "ok" }
+        : q ? { label: "Service level", value: "—", sub: "No calls counted yet today", level: "ok", muted: true } : noQueue("Service level"),
       q ? { label: "Calls in queue", value: Math.round(q.cq), sub: `Alert > ${thr("cq")}`, level: q.cq > thr("cq") ? "crit" : q.cq > thr("cq") - 3 ? "warn" : "ok" } : noQueue("Calls in queue"),
-      q ? { label: "ASA", value: q.asa + "s", sub: "Rolling interval", level: q.asa > 45 ? "warn" : "ok" } : noQueue("ASA"),
+      q ? { label: "ASA", value: Math.round(q.asa) + "s", sub: "Rolling interval", level: q.asa > 45 ? "warn" : "ok" } : noQueue("ASA"),
       q ? { label: "Abandon", value: q.ab.toFixed(1) + "%", sub: `Alert > ${thr("aband")}%`, level: q.ab > thr("aband") ? "crit" : q.ab > thr("aband") - 1.5 ? "warn" : "ok" } : noQueue("Abandon"),
       { label: "Avg AHT", value: avgAht + "s", sub: "Your span", level: avgAht > 560 ? "warn" : "ok" },
       { label: "Adherence", value: avgAdh.toFixed(0) + "%", sub: "Span average", level: avgAdh < thr("adh") ? "crit" : avgAdh < thr("adh") + 3 ? "warn" : "ok" },

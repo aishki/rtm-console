@@ -17,6 +17,11 @@ export interface QueueAgg {
   abandoned: number;
   asaSec: number | null;
   avgHandleSec: number | null;
+  /** Total answer time, seconds: lets the floor ASA be weighted by calls answered. */
+  answerSec: number;
+  /** oServiceLevel: calls answered within the queue's target, out of the calls it counts. */
+  slWithin: number;
+  slCounted: number;
 }
 
 export interface GencloudClientConfig {
@@ -62,14 +67,20 @@ export function parseAggregates(resp: Json): QueueAgg[] {
     const metrics: Json[] = r.data?.[0]?.metrics ?? [];
     const find = (m: string) => metrics.find((x) => x?.metric === m)?.stats;
     const ms2s = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v / 1000 : null);
+    // Genesys sends duration metrics as sum and count; `avg` is often absent, so derive it.
+    const mean = (s: Json) => ms2s(s?.avg) ?? (num(s?.count) > 0 ? ms2s(num(s?.sum) / num(s?.count)) : null);
+    const sl = find("oServiceLevel");
     return {
       queueId: r.group?.queueId,
       offered: num(find("nOffered")?.count),
       answered: num(find("tAnswered")?.count),
       abandoned: num(find("tAbandon")?.count),
-      // ASA ruling: ASA = average answer time (tAnswered.avg), ms -> s.
-      asaSec: ms2s(find("tAnswered")?.avg),
-      avgHandleSec: ms2s(find("tHandle")?.avg),
+      // ASA ruling: ASA = average answer time (tAnswered), ms -> s.
+      asaSec: mean(find("tAnswered")),
+      avgHandleSec: mean(find("tHandle")),
+      answerSec: num(find("tAnswered")?.sum) / 1000,
+      slWithin: num(sl?.numerator),
+      slCounted: num(sl?.denominator),
     };
   });
 }
@@ -143,13 +154,31 @@ export class GencloudClient {
     return out;
   }
 
+  /**
+   * Current presence and routing status of these users. The WebSocket only reports changes,
+   * so without this snapshot an agent who has not changed since the console connected would
+   * sit at the roster's default state.
+   */
+  async getUserStates(userIds: string[]): Promise<{ id: string; presence?: string; routing?: string }[]> {
+    const out: { id: string; presence?: string; routing?: string }[] = [];
+    for (let i = 0; i < userIds.length; i += 100) {
+      const ids = userIds.slice(i, i + 100);
+      const q = ids.map((id) => `id=${encodeURIComponent(id)}`).join("&");
+      const r = await this.request("GET", `/api/v2/users?pageSize=100&expand=presence,routingStatus&${q}`);
+      for (const u of (r?.entities ?? []) as Json[]) {
+        if (u?.id) out.push({ id: u.id, presence: u.presence?.presenceDefinition?.systemPresence, routing: u.routingStatus?.status });
+      }
+    }
+    return out;
+  }
+
   async getObservations(queueIds: string[]): Promise<QueueObs[]> {
     const resp = await this.request("POST", "/api/v2/analytics/queues/observations/query", {
       filter: { type: "or", predicates: queueIds.map((id) => ({ dimension: "queueId", value: id })) },
       // NOTE: there is no service-level observation metric — the API rejects oServiceLevel here
       // (valid: oWaiting/oInteracting/oOnQueueUsers/oUserRoutingStatuses/etc). Including it 400s the
-      // whole query. Real-time service level would have to come from an interval aggregate instead;
-      // serviceLevelPct therefore stays null until that is added.
+      // whole query. Service level comes from the interval aggregate instead (getAggregates), so
+      // serviceLevelPct here stays null.
       metrics: ["oWaiting", "oInteracting", "oOnQueueUsers", "oUserRoutingStatuses"],
     });
     return parseObservations(resp);
@@ -160,7 +189,8 @@ export class GencloudClient {
       interval: `${interval.start}/${interval.end}`,
       groupBy: ["queueId"],
       filter: { type: "or", predicates: queueIds.map((id) => ({ dimension: "queueId", value: id })) },
-      metrics: ["nOffered", "tAnswered", "tAbandon", "tHandle"],
+      // oServiceLevel is valid here (unlike in the observation query): it is the interval SL.
+      metrics: ["nOffered", "tAnswered", "tAbandon", "tHandle", "oServiceLevel"],
     });
     return parseAggregates(resp);
   }

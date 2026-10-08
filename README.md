@@ -191,15 +191,31 @@ Implemented in `lib/feed/GencloudFeed.ts`. It establishes a WebSocket connection
    npm run dev -- -p 3001
    ```
 
-3. **What you see:** Live agents and queues from the watched view. Agent presence/routing state (Avail, On Call, ACW, aux modes, Offline) and queue metrics (calls in queue, service level, ASA, abandon %) update in real time.
+3. **What you see:** Live agents and queues from the watched view. Agent states (Available, On Call, Outbound, Aux Break, Aux Personal, Offline) and queue metrics (calls in queue, service level, ASA, abandon %) update in real time. Each agent's current state is loaded at startup, then kept current by the WebSocket.
+
+#### How Genesys states map
+
+Genesys sends presence (written "On Queue", "Break", "Busy") and routing status separately. `lib/feed/gencloud/state.ts` combines them; the routing status wins:
+
+| Genesys | Console |
+| --- | --- |
+| Presence Offline | Offline |
+| Routing INTERACTING (an ACD call) | On Call |
+| Routing COMMUNICATING (a non-ACD call, such as a callback) | Outbound |
+| Routing IDLE, or presence On Queue | Available |
+| Presence Break or Meal | Aux Break |
+| Routing NOT_RESPONDING, or any other logged-in presence (Available but off queue, Busy, Away, Meeting, Training, Idle) | Aux Personal |
+
+This is the working mapping until WFM agrees the list (data-architecture.md, decision 5). Scheduled Meeting and Training count as Aux Personal, so they can raise Unscheduled Aux.
 
 #### V1 scope and gaps
 
 **Live now:**
-- Agent presence/routing state (triggers ACW, Aux, Offline, Long Call, and related escalation rules)
-- Queue metrics: calls in queue, service level %, ASA seconds, abandon % (trigger queue rules and feed-stale detection)
+- Agent state as above (triggers Aux, Offline, Long Call, Outbound and related escalation rules)
+- Queue metrics, weighted by calls across the watched queues: calls in queue, service level % since midnight (the aggregates' `oServiceLevel`), ASA seconds, abandon %. Service level shows "—" and raises nothing until a call is counted.
 
 **Not yet live (depend on conversation-level topics and WFM adherence API — later tasks):**
+- ACW: it is not visible in presence or routing, so the Extended ACW rule stays quiet on the live feed
 - Call release detection (`callEnded`), so AHT, Short Call, Transfer, and Hold Duration rules remain quiet
 - Shift adherence tracking
 

@@ -37,8 +37,9 @@ const MEMBER_CONCURRENCY = 8;
  * WebSocket load in the background; a slow or failed roster never stops the queue poll.
  *
  * v1 gaps: no onHold / callEnded / adh events yet (they need conversation topics and WFM
- * adherence), so the AHT, short-call, transfer, hold and adherence rules stay quiet. Real-time
- * service level is not an observation metric, so the service-level KPI is not populated here.
+ * adherence), so the AHT, short-call, transfer, hold and adherence rules stay quiet, and ACW is
+ * never reported. Service level is the interval figure since midnight (oServiceLevel in the
+ * aggregates query); there is no real-time service-level observation.
  *
  * Without a token the feed stays silent, so the console shows "Gencloud not responding". A
  * failed poll cycle (including 401) is skipped; missing heartbeats make the engine mark the
@@ -145,6 +146,21 @@ export class GencloudFeed implements FeedSource {
         );
         if (stopped) { teardown(); return; }
         wsTeardown = teardown;
+        // Seed everyone's current state. Subscribed first, so a change that lands meanwhile
+        // wins: the snapshot only fills the half (presence or routing) not reported yet.
+        try {
+          for (const s of await client.getUserStates(Object.keys(idToName))) {
+            if (stopped) return;
+            const name = idToName[s.id];
+            if (!name) continue;
+            const cur = (latest[s.id] ??= {});
+            cur.presence ??= s.presence;
+            cur.routing ??= s.routing;
+            handlers.onAgentState({ agent: name, state: mapGenesysState(cur.presence, cur.routing) });
+          }
+        } catch (e) {
+          console.warn("GencloudFeed: initial state snapshot failed; states fill in as agents change:", errMsg(e));
+        }
       } catch (e) {
         if (isAuthError(e)) console.warn("GencloudFeed: roster/WS load failed with 401 (check GENESYS_TOKEN)");
         else console.warn("GencloudFeed: roster/WS load failed:", errMsg(e));
