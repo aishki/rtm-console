@@ -23,9 +23,9 @@ const POLL_MS = 5000;
 const BOOTSTRAP_MAX_ATTEMPTS = 5;
 const BOOTSTRAP_BASE_DELAY_MS = 2000;
 const BOOTSTRAP_MAX_DELAY_MS = 30000;
-// Queues in this view can have hundreds of members each; fetch rosters concurrently so the
-// agent grid loads in tens of seconds rather than many minutes of sequential paging. Kept low
-// (with the client's 429 retry) so the member burst stays under Genesys's rate limit.
+// Queues in this view can have hundreds of members each; several workers keep requests queued
+// so none waits on another's round trip. The client paces them (BULK_PER_SECOND in
+// gencloud/client.ts), which is what keeps the roster load under Genesys's rate limit.
 const MEMBER_CONCURRENCY = 8;
 
 /**
