@@ -46,7 +46,7 @@ npm run dev        # http://localhost:3000
 | `RTM_ADMIN_SECRET` | Secret for `/admin/token`. While unset, the page refuses every request. |
 | `RTM_SITE_PASSWORD` | Password for the wall in front of the whole console (see "Password wall"). **While unset, nobody can get in.** Quote it in `.env.local`: an unquoted `#` starts a comment. |
 | `GENCLOUD_API_BASE` | Gencloud API base URL, e.g. `https://api.mypurecloud.com`. |
-| `RTM_VIEW_CONFIG_ID` | Saved "CSBDProviderData" view ID (default: `9c9f8fd2-acab-4282-9442-ddba152f9c18`, the 89-queue voice-floor view). |
+| `RTM_VIEW_CONFIG_ID` | Saved "CSBDProviderData" view ID (default: `9c9f8fd2-acab-4282-9442-ddba152f9c18`, the 90-queue voice-floor view). |
 | `RTM_TIME_ZONE` | The floor's time zone, an IANA name (default: `America/New_York`). Sets the shift clock, the start of "today" for the queue numbers, and snapshot file names, whatever the server's own zone. |
 | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` | Key pair for desktop alerts over Web Push. Generate with `npx web-push generate-vapid-keys`. Optional: without them, alerts only show while a console tab is open. |
 | `VAPID_SUBJECT` | Contact for the push services, `mailto:` or `https:` (optional). |
@@ -183,7 +183,8 @@ Implemented in `lib/feed/GencloudFeed.ts`. It establishes a WebSocket connection
    - `NEXT_PUBLIC_VIEW_AS=1` (required for admin access without SSO)
    - `GENESYS_TOKEN`: hand-grabbed supervisor bearer token from the browser DevTools Network tab. Grab it from the Authorization header of any api.mypurecloud.com request. Short-lived (typically 8 hours). On bootstrap failure (e.g., expired token), the feed stays silent; paste a fresh token on `/admin/token`.
    - `GENCLOUD_API_BASE`: e.g., `https://api.mypurecloud.com`
-   - `RTM_VIEW_CONFIG_ID`: saved "CSBDProviderData" view ID (default: `9c9f8fd2-acab-4282-9442-ddba152f9c18` for the 89-queue voice-floor view)
+   - `RTM_VIEW_CONFIG_ID`: saved "CSBDProviderData" view ID (default: `9c9f8fd2-acab-4282-9442-ddba152f9c18` for the 90-queue voice-floor view)
+   - To see every queue the token can read, with its ID, run `node tools/list-queues.mjs`. It writes `.rtm/genesys-queues.csv` (queue ID, name, division, member count, and whether the view watches it; gitignored, since queue names and IDs are internal). To watch more queues, add them to the saved view in Genesys; the console picks them up at its next restart.
 
 2. **Start the dev server:**
    ```bash
