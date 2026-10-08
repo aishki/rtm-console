@@ -82,7 +82,7 @@ Every page and API route sits behind one shared password, `RTM_SITE_PASSWORD`. `
 
 ### Refreshing the Genesys token
 
-The hand-grabbed token expires after about 8 hours. To replace it without restarting the server, open `/admin/token`; an Admin also gets a **Refresh token** link in the feed pill while Gencloud is not responding.
+The hand-grabbed token expires after about 8 hours. To replace it without restarting the server, open `/admin/token`; an Admin also gets a **Refresh token** link in the feed pill while Gencloud is not responding. The pill only reports "not responding" once the feed has been silent for longer than the "Gencloud not responding" rule's threshold (30 seconds by default); shorter gaps are normal between the 5-second polls.
 
 - Paste the admin secret (`RTM_ADMIN_SECRET`) and the new bearer token. A leading `Bearer ` is stripped.
 - The server checks the token against Genesys (`/api/v2/users/me`) and refuses one Genesys rejects.
