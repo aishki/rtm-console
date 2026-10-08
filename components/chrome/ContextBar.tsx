@@ -15,16 +15,27 @@ import { PersonSearch } from "./PersonSearch";
 const ROLE_OPTIONS: SelectOption<Role>[] = ROLES.map(([value, label]) => ({ value, label }));
 const SOURCE_OPTIONS: SelectOption<FloorSource>[] = [{ value: "gencloud", label: "Live Genesys" }, { value: "sim", label: "Simulation" }];
 
+/**
+ * True once the feed has been silent for longer than the "Gencloud not responding" rule's
+ * threshold (30 s by default). Shorter gaps are normal: the queue poll lands every 5 seconds.
+ */
+function useFeedDown(): boolean {
+  const staleFor = useConsole(s => s.staleFor);
+  const limit = useConsole(s => s.rules.find(r => r.id === "gnr")?.thr ?? 30);
+  return staleFor > limit;
+}
+
 function useFeedPill() {
   const status = useConsole(s => s.status);
   const mode = useConsole(s => s.mode);
   const replay = useConsole(s => s.replay);
   const staleFor = useConsole(s => s.staleFor);
+  const down = useFeedDown();
   const sim = useConsole(s => s.feed === "sim");
   const realNames = useConsole(s => s.realNames);
   if (status !== "ready") return { bg: "#F5F5F5", fg: "#5C5C6F", dot: "#929299", text: status === "unauthorized" ? "Not signed in" : "Connecting…" };
   if (mode === "replay" && replay) return { bg: "#EBE4FF", fg: "#5009B5", dot: "#5009B5", text: `Data replay · ${replay.agents} agents · ${replay.events} events${replay.done ? " · complete" : ""}` };
-  if (staleFor > 0) return { bg: "#FDF3D7", fg: "#7A5300", dot: "#F2BC35", text: sim ? `Simulation · feed stale ${staleFor}s` : `Gencloud not responding · feed stale ${staleFor}s` };
+  if (down) return { bg: "#FDF3D7", fg: "#7A5300", dot: "#F2BC35", text: sim ? `Simulation · feed stale ${staleFor}s` : `Gencloud not responding · feed stale ${staleFor}s` };
   if (sim) return { bg: "#EBE4FF", fg: "#5009B5", dot: "#5009B5", text: realNames ? "Simulation · real names, invented activity" : "Simulation · sample floor" };
   return { bg: "#D9F5F5", fg: "#028283", dot: "#00BBBA", text: "Live feed · Gencloud/NICE API" };
 }
@@ -41,9 +52,9 @@ export function ContextBar() {
   const feed = useFeedPill();
   const source = useConsole(s => s.feed);
   const canSwitchFeed = useConsole(s => s.canSwitchFeed);
-  const staleFor = useConsole(s => s.staleFor);
+  const feedDown = useFeedDown();
   // The usual cause of a silent Gencloud feed is an expired token; Admins get a shortcut to replace it.
-  const gencloudDown = ready && !isReplay && source === "gencloud" && staleFor > 0 && view?.role === "admin";
+  const gencloudDown = ready && !isReplay && source === "gencloud" && feedDown && view?.role === "admin";
   const switchFeed = async (to: FloorSource) => {
     const res = await attempt(api.setFeed(to));
     if (!res) return;
