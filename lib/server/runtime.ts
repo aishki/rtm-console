@@ -9,6 +9,7 @@ import { type SimSeed, SimFeed, seedFromRoster, simulateReplies } from "@/lib/fe
 import { pushBatch } from "./push";
 import { loadRoster, saveRoster } from "./rosterCache";
 import { genesysToken } from "./tokenStore";
+import { floorSeconds } from "@/lib/floorTime";
 
 // Server-side home of the rules engine. One live runtime serves the whole floor; a CSV
 // replay gets its own runtime per session so reviewing history never disturbs the live feed.
@@ -78,8 +79,8 @@ const remembering = (feed: FeedSource): FeedSource => ({
 });
 
 function createGencloud(rules: Rule[]): Runtime {
-  const now = new Date();
-  const t = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
+  // The shift clock reads the floor's time (US Eastern), not the server's.
+  const t = floorSeconds(new Date());
   return createRuntime("live", rules, 1, false, () => {
     const feed = new GencloudFeed({
       apiBase: process.env.GENCLOUD_API_BASE, getToken: genesysToken, viewConfigId: process.env.RTM_VIEW_CONFIG_ID, clientId: process.env.GENCLOUD_CLIENT_ID, clientSecret: process.env.GENCLOUD_CLIENT_SECRET,

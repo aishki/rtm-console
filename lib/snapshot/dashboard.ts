@@ -2,6 +2,7 @@ import type { FeedKind, Incident, Instance, Role, View } from "@/lib/types";
 import type { EngineState } from "@/lib/engine/escalation";
 import { ROLE_LABEL } from "@/lib/engine/rules";
 import { PERMS, scopeAgents, scopeIncidents, scopeLedger, scopeTeams } from "@/lib/engine/scope";
+import { wallClock } from "@/lib/floorTime";
 
 // The Dashboards screen saved as one self-contained HTML file: the viewer's scoped data is
 // frozen inside it, and a small script redraws the tiles, charts and tables as the reader
@@ -53,9 +54,11 @@ export function snapshotData(S: EngineState, view: View, feed: FeedKind, now: Da
 
 const pad = (n: number) => String(n).padStart(2, "0");
 
-/** File name for a snapshot taken at `now` (local time), e.g. RTM_dashboard_snapshot_2026-10-07_1432.html. */
-export const snapshotFileName = (now: Date): string =>
-  `RTM_dashboard_snapshot_${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}.html`;
+/** File name for a snapshot taken at `now` (floor time, US Eastern), e.g. RTM_dashboard_snapshot_2026-10-07_1432.html. */
+export const snapshotFileName = (now: Date): string => {
+  const w = wallClock(now);
+  return `RTM_dashboard_snapshot_${w.year}-${pad(w.month)}-${pad(w.day)}_${pad(w.hour)}${pad(w.minute)}.html`;
+};
 
 /** JSON that is safe inside a <script> element: no "<" to close the tag, no raw line separators. */
 const embed = (data: unknown): string =>

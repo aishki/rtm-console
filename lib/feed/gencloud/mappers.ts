@@ -1,5 +1,22 @@
 import type { Team, RosterAgent, Queue } from "@/lib/types";
-import type { QueueObs, QueueAgg } from "./client";
+import type { QueueObs, QueueAgg, QueueMember } from "./client";
+
+/** Members whose account state the member record leaves out, to be checked against the users lookup. */
+export const unknownStateIds = (membersByQueue: Record<string, QueueMember[]>): string[] =>
+  [...new Set(Object.values(membersByQueue).flat().filter(m => m.state === undefined).map(m => m.id))];
+
+/**
+ * Drops deactivated and deleted accounts, which Genesys keeps as queue members. A member
+ * without a state is kept only if the users lookup (`active`, the IDs it returned) has it;
+ * `active` null means the lookup failed, and then they are kept rather than lose real agents.
+ */
+export function activeMembers(
+  membersByQueue: Record<string, QueueMember[]>,
+  active: Set<string> | null,
+): Record<string, QueueMember[]> {
+  const keep = (m: QueueMember) => (m.state === undefined ? active === null || active.has(m.id) : m.state === "active");
+  return Object.fromEntries(Object.entries(membersByQueue).map(([q, ms]) => [q, ms.filter(keep)]));
+}
 
 export function buildRoster(
   queues: { id: string; name: string }[],
