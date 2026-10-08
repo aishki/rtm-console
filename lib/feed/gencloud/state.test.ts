@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { consoleState, mapGenesysState, stateSince } from "./state";
+import { consoleState, elapsedAtConnect, mapGenesysState, stateSince } from "./state";
 
 // Presence values as Genesys sends them ("On Queue", with a space), counted on the live tenant.
 describe("mapGenesysState", () => {
@@ -24,6 +24,18 @@ describe("mapGenesysState", () => {
   it("also accepts the upper-case form", () => {
     expect(mapGenesysState("ON_QUEUE", "IDLE")).toBe("avail");
     expect(mapGenesysState("BREAK", "OFF_QUEUE")).toBe("auxb");
+  });
+});
+
+describe("elapsedAtConnect", () => {
+  const now = Date.parse("2026-10-09T15:00:00Z"), midnight = Date.parse("2026-10-09T04:00:00Z");
+  it("counts a state from before midnight from midnight", () => {
+    expect(elapsedAtConnect("off", Date.parse("2024-10-29T18:26:50Z"), now, midnight)).toBe(11 * 3600);
+    expect(elapsedAtConnect("auxp", Date.parse("2026-10-08T22:00:00Z"), now, midnight)).toBe(11 * 3600);
+  });
+  it("keeps the real time within the day, and a call's real start across midnight", () => {
+    expect(elapsedAtConnect("off", now - 90_000, now, midnight)).toBe(90);
+    expect(elapsedAtConnect("oncall", midnight - 600_000, now, midnight)).toBe(11 * 3600 + 600);
   });
 });
 
