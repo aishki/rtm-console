@@ -22,8 +22,8 @@ export function tickMsg(rt: Runtime, view: View, sinceRev: number | null, batch:
     toasts: batch.toasts
       .filter(e => (replay ? e.kind === "info" : !e.instance || (leader && inScope(S, view, e.instance))))
       .map(({ kind, title, body, instance }) => ({ kind, title, body, n: instance?.n, team: instance && !instance.isFloor ? instance.team : undefined })),
-    // An agent only ever sees their own nudges; leaders get a preview for their span.
-    nudges: replay || view.role === "senior" ? [] : batch.nudges.filter(n => inScope(S, view, { agent: n.agent, team: n.team, isFloor: false })),
+    // A nudge is private: it goes to the agent it is about and to nobody else.
+    nudges: replay || leader ? [] : batch.nudges.filter(n => n.agent === view.who),
   };
 }
 

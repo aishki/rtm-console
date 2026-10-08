@@ -12,8 +12,8 @@ const DISMISS_MS = 14000;
 const RECHECK_MS = 6000;
 
 /**
- * The agent's private nudge, bottom-left. Agents see only their own; leaders see a preview
- * of what the associate got. It leaves by itself after 14s on screen, but never while being
+ * The agent's private nudge, bottom-left. Only the agent it is about sees it; no other view
+ * shows one. It leaves by itself after 14s on screen, but never while being
  * typed in and never while the tab is in the background, where nobody could have read it.
  */
 export function NudgePopup() {
@@ -63,24 +63,21 @@ export function NudgePopup() {
   const acked = useConsole(s => !!s.nudge && s.ledger.some(r => r.n === s.nudge!.n && r.status === "acked"));
   useEffect(() => { if (acked) close(); }, [acked, close]);
 
-  if (!nudge) return null;
-  const isAgent = role === "agent";
+  if (!nudge || role !== "agent") return null;
   const text = draft.n === nudge.n ? draft.text : "";
 
   const gotIt = () => { void attempt(api.ack(nudge.n)); close(); };
   const sendReason = () => {
     const reason = text.trim();
     if (!reason) return gotIt();
-    if (isAgent) {
-      void attempt(api.comment(nudge.n, reason, true)).then(ok => { if (ok) toast("info", "Reason sent to your TL", "Logged on the instance. It shows in the TL feed, the ledger and exports."); });
-    } else toast("info", "Preview only", "Only the associate can attach a reason to their own call-out. Nothing was saved.");
+    void attempt(api.comment(nudge.n, reason, true)).then(ok => { if (ok) toast("info", "Reason sent to your TL", "Logged on the instance. It shows in the TL feed, the ledger and exports."); });
     close();
   };
 
   return (
     <div className="fixed bottom-6 left-6 z-[60] flex w-[360px] max-w-[calc(100vw-48px)] flex-col gap-2">
       {/* Floats over whatever the page has scrolled to, so it carries its own solid backing. */}
-      <span className="self-start rounded-pill bg-[var(--dark-purple)] px-3 py-1 text-xs font-semibold text-white shadow-[0_4px_12px_rgba(35,30,51,0.22)]">{isAgent ? "Your screen · live nudge" : "Associate screen · nudge preview"}</span>
+      <span className="self-start rounded-pill bg-[var(--dark-purple)] px-3 py-1 text-xs font-semibold text-white shadow-[0_4px_12px_rgba(35,30,51,0.22)]">Your screen · live nudge</span>
       <div role="dialog" aria-label="Nudge" className="flex flex-col gap-3 rounded-20 bg-white p-[18px] shadow-[var(--shadow-nudge)]">
         <div className="flex items-center gap-2.5">
           <CarelonMark size={28} alt="" />
