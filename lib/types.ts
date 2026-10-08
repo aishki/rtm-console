@@ -73,9 +73,14 @@ export interface Roster { org: Team[]; agents: RosterAgent[] }
 export interface AgentStateEvent {
   agent: string;
   state: AgentState;
-  /** Set when this transition released a call; drives calls, AHT and the short-call rule. */
-  callEnded?: { transferred?: boolean };
+  /**
+   * Set when this transition released a call; drives calls, AHT and the short-call rule.
+   * `durationSec` is the call's length when the feed knows it; otherwise the time in On Call.
+   */
+  callEnded?: { transferred?: boolean; durationSec?: number };
   onHold?: boolean;
+  /** Seconds the current hold has already run, when the feed knows (hold began before this event). */
+  holdElapsed?: number;
   /** Shift adherence from WFM, when the feed supplies it. */
   adh?: number;
   /**

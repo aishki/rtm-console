@@ -26,6 +26,22 @@ export function splitTopics(userIds: string[], maxTopicsPerChannel: number): str
   return chunks;
 }
 
+/** The queue conversation topic for each queue, in channels of at most `maxTopicsPerChannel`. */
+export function conversationTopics(queueIds: string[], maxTopicsPerChannel: number): string[][] {
+  const chunks: string[][] = [];
+  for (let i = 0; i < queueIds.length; i += maxTopicsPerChannel) {
+    chunks.push(queueIds.slice(i, i + maxTopicsPerChannel).map((id) => `v2.routing.queues.${id}.conversations`));
+  }
+  return chunks;
+}
+
+/** The event body of a queue conversation notification, or null for any other message. */
+export function parseConversation(raw: string): any | null {
+  let msg: any;
+  try { msg = JSON.parse(raw); } catch { return null; }
+  return typeof msg?.topicName === "string" && /^v2\.routing\.queues\.[^.]+\.conversations$/.test(msg.topicName) ? msg.eventBody ?? null : null;
+}
+
 /** Returns null for heartbeats (channel.metadata) and anything unrecognised. */
 export function parseNotification(raw: string): NotificationEvent | null {
   let msg: any;
@@ -64,10 +80,15 @@ export class WsManager {
     return res.json();
   }
 
+  /**
+   * Presence and routing for `userIds`, and, with `conversations`, every call on those queues
+   * (one more channel per 1,000 queues).
+   */
   async subscribe(
     userIds: string[],
     onEvent: (e: NotificationEvent) => void,
     onHeartbeat: () => void,
+    conversations?: { queueIds: string[]; onEvent: (body: any) => void },
   ): Promise<() => void> {
     let closed = false;
     const sockets = new Set<WebSocket>();
@@ -86,7 +107,9 @@ export class WsManager {
           ws.on("message", (data) => {
             const raw = data.toString();
             const ev = parseNotification(raw);
+            const conv = ev || !conversations ? null : parseConversation(raw);
             if (ev) onEvent(ev);
+            else if (conv) conversations?.onEvent(conv);
             else {
               // null covers heartbeats and unrecognised topics; only real heartbeats count
               try { if (JSON.parse(raw)?.topicName === "channel.metadata") onHeartbeat(); } catch { /* ignore */ }
@@ -115,6 +138,7 @@ export class WsManager {
     };
 
     for (const topics of splitTopics(userIds, MAX_TOPICS_PER_CHANNEL)) runChannel(topics);
+    if (conversations) for (const topics of conversationTopics(conversations.queueIds, MAX_TOPICS_PER_CHANNEL)) runChannel(topics);
 
     return () => {
       closed = true;

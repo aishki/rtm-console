@@ -63,7 +63,7 @@ export function createEngine(hooks: EngineHooks = {}, opts: EngineOptions = {}) 
     const a = S.agents.find(x => x.name === e.agent);
     if (!a) return;
     if (e.callEnded) {
-      const dur = a.stTime;
+      const dur = e.callEnded.durationSec !== undefined ? Math.round(e.callEnded.durationSec) : a.stTime;
       a.calls++;
       // A replay has no AHT baseline, so the first call seeds it.
       a.aht = S.mode === "replay" && a.calls === 1 ? dur : Math.round(a.aht * 0.85 + dur * 0.15);
@@ -75,9 +75,11 @@ export function createEngine(hooks: EngineHooks = {}, opts: EngineOptions = {}) 
       a.state = e.state; a.stTime = 0; a.fired = oncePerShift(a.fired);
     }
     if (e.elapsed !== undefined) a.stTime = Math.max(0, Math.round(e.elapsed));
-    if (e.seed) for (const r of S.rules) if (ruleApplies(r, a)) a.fired[r.id] = true;
     if (e.onHold !== undefined && e.onHold !== a.onHold) { a.onHold = e.onHold; a.holdTime = 0; }
+    if (a.onHold && e.holdElapsed !== undefined) a.holdTime = Math.max(0, Math.round(e.holdElapsed));
     if (e.adh !== undefined) a.adh = e.adh;
+    // Last, once state, timers and hold are all set: rules already past at connect raise nothing.
+    if (e.seed) for (const r of S.rules) if (ruleApplies(r, a)) a.fired[r.id] = true;
   }
 
   function advance() {

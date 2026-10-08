@@ -11,8 +11,8 @@ const norm = (s: string | undefined): string => (s ?? "").trim().toUpperCase().r
  * presence. Routing IDLE exists only on queue, so it is Available even before the presence
  * message arrives (the two come separately). Off calls, Break and Meal are Aux Break; On Queue
  * is Available; any other logged-in presence (Available but off queue, Busy, Away, Meeting,
- * Training, Idle) is Aux Personal. ACW is not visible in presence or routing (it needs the
- * conversation topics), so the live feed never reports it.
+ * Training, Idle) is Aux Personal. ACW is not visible in presence or routing; `consoleState`
+ * adds it from the conversation topic.
  */
 /**
  * When the agent entered the state `mapGenesysState` gives, from the snapshot's timestamps:
@@ -28,6 +28,18 @@ export function stateSince(
   const fromRouting = p !== "OFFLINE" && ["INTERACTING", "COMMUNICATING", "IDLE", "NOT_RESPONDING"].includes(r);
   const ms = (s: string | undefined) => { const v = s ? Date.parse(s) : NaN; return Number.isFinite(v) ? v : undefined; };
   return fromRouting ? ms(routingSince) ?? ms(presenceSince) : ms(presenceSince) ?? ms(routingSince);
+}
+
+/**
+ * The console state once the agent's calls are known. Routing stays INTERACTING through
+ * after-call work, so pending ACW with no call connected is ACW, whatever routing says.
+ */
+export function consoleState(
+  presence: string | undefined, routing: string | undefined,
+  calls?: { onCall: boolean; acwSince: number | null },
+): AgentState {
+  const base = mapGenesysState(presence, routing);
+  return calls && calls.acwSince !== null && !calls.onCall && base !== "off" ? "acw" : base;
 }
 
 export function mapGenesysState(presence: string | undefined, routing: string | undefined): AgentState {

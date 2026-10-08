@@ -475,3 +475,33 @@ describe("roster resent mid-shift", () => {
     expect(e.S.ledger[0].stage).toBe("ops");
   });
 });
+
+describe("call data from the feed", () => {
+  it("uses the call length the feed reports for Short call, not the time in On Call", () => {
+    const { e, set, run, of } = setup();
+    set("Amara Reyes", "oncall"); run(1);
+    // Routing moved on before the call event: the agent shows 1 s in the state, the call ran 300 s.
+    set("Amara Reyes", "acw", { callEnded: { durationSec: 300 } }); run(1);
+    expect(of("Amara Reyes", "short")).toHaveLength(0);
+    set("Amara Reyes", "oncall"); run(1);
+    set("Amara Reyes", "acw", { callEnded: { durationSec: e.thr("short") - 2 } }); run(1);
+    expect(of("Amara Reyes", "short")).toHaveLength(1);
+  });
+
+  it("raises nothing for a hold already past the limit when first seen, but fires the next one", () => {
+    const { e, set, run, of } = setup();
+    set("Amara Reyes", "oncall"); run(1);
+    set("Amara Reyes", "oncall", { onHold: true, holdElapsed: e.thr("hold") + 60, seed: true }); run(3);
+    expect(of("Amara Reyes", "hold")).toHaveLength(0);
+    set("Amara Reyes", "oncall", { onHold: false }); run(1);
+    set("Amara Reyes", "oncall", { onHold: true }); run(e.thr("hold") + 1);
+    expect(of("Amara Reyes", "hold")).toHaveLength(1);
+  });
+
+  it("starts the hold timer at the hold's real age", () => {
+    const { set, run, agent } = setup();
+    set("Amara Reyes", "oncall"); run(1);
+    set("Amara Reyes", "oncall", { onHold: true, holdElapsed: 90 }); run(1);
+    expect(agent("Amara Reyes").holdTime).toBe(90);
+  });
+});

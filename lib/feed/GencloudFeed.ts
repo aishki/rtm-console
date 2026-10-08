@@ -1,6 +1,8 @@
+import type { AgentState } from "@/lib/types";
 import type { FeedHandlers, FeedSource } from "./FeedSource";
 import { GencloudClient, type QueueMember } from "./gencloud/client";
-import { mapGenesysState, stateSince } from "./gencloud/state";
+import { consoleState, stateSince } from "./gencloud/state";
+import { CallTracker } from "./gencloud/conversations";
 import { WsManager } from "./gencloud/ws";
 import { buildRoster, aggregateQueue, activeMembers, unknownStateIds } from "./gencloud/mappers";
 import { floorMidnight } from "@/lib/floorTime";
@@ -37,9 +39,10 @@ const MEMBER_CONCURRENCY = 8;
  * wait on loading members for every queue. The roster (agents) and the presence/routing
  * WebSocket load in the background; a slow or failed roster never stops the queue poll.
  *
- * v1 gaps: no onHold / callEnded / adh events yet (they need conversation topics and WFM
- * adherence), so the AHT, short-call, transfer, hold and adherence rules stay quiet, and ACW is
- * never reported. Service level is the interval figure since midnight (oServiceLevel in the
+ * Calls come from the watched queues' conversation topic (gencloud/conversations.ts): call
+ * end and transfer (calls, AHT, Short call, Transfer rate), hold (Long hold) and after-call work
+ * (the ACW state, Extended ACW). AHT is connect to disconnect, so it leaves out ACW. Adherence
+ * needs WFM and stays quiet. Service level is the interval figure since midnight (oServiceLevel in the
  * aggregates query); there is no real-time service-level observation. "Midnight" is the floor's,
  * US Eastern (lib/floorTime.ts). Deactivated accounts are left out of the roster.
  *
@@ -151,6 +154,15 @@ export class GencloudFeed implements FeedSource {
           return;
         }
         const latest: Record<string, { presence?: string; routing?: string }> = {};
+        const calls = new CallTracker();
+        const stateOf = (userId: string) => consoleState(latest[userId]?.presence, latest[userId]?.routing, calls.summary(userId));
+        /** From the calls alone, for an agent whose presence and routing have not arrived yet (around startup). */
+        const callStateOf = (userId: string): AgentState | null => {
+          if (latest[userId]) return stateOf(userId);
+          const c = calls.summary(userId);
+          return c.onCall ? "oncall" : c.acwSince !== null ? "acw" : null;
+        };
+        const secondsSince = (t: number) => Math.max(0, (Date.now() - t) / 1000);
         const teardown = await ws.subscribe(
           Object.keys(idToName),
           (ev) => {
@@ -159,9 +171,32 @@ export class GencloudFeed implements FeedSource {
             const cur = (latest[ev.userId] ??= {});
             if (ev.systemPresence !== undefined) cur.presence = ev.systemPresence;
             if (ev.routingStatus !== undefined) cur.routing = ev.routingStatus;
-            handlers.onAgentState({ agent: name, state: mapGenesysState(cur.presence, cur.routing) });
+            handlers.onAgentState({ agent: name, state: stateOf(ev.userId) });
           },
           handlers.onHeartbeat,
+          {
+            // Call end, transfer, hold and after-call work, from every call on the watched queues.
+            queueIds: queues.map((q) => q.id),
+            onEvent: (body) => {
+              for (const c of calls.update(body)) {
+                const name = idToName[c.userId];
+                if (!name) continue;
+                const state = callStateOf(c.userId);
+                if (!state) continue; // the state snapshot fills this agent in
+                // A call first seen in ACW or on hold may have been there since before the console
+                // connected: carry the real time over, and raise nothing for limits already passed.
+                const acwAtConnect = c.first && state === "acw" && c.acwSince !== null;
+                const holdAtConnect = c.first && c.hold?.on === true;
+                handlers.onAgentState({
+                  agent: name, state,
+                  ...(c.ended && { callEnded: { transferred: c.ended.transferred, durationSec: c.ended.durationSec } }),
+                  ...(c.hold && { onHold: c.hold.on, holdElapsed: c.hold.since !== undefined ? secondsSince(c.hold.since) : undefined }),
+                  ...(acwAtConnect && { elapsed: secondsSince(c.acwSince!) }),
+                  ...((acwAtConnect || holdAtConnect) && { seed: true }),
+                });
+              }
+            },
+          },
         );
         if (stopped) { teardown(); return; }
         wsTeardown = teardown;
@@ -178,8 +213,11 @@ export class GencloudFeed implements FeedSource {
             const cur = (latest[s.id] ??= {});
             cur.presence ??= s.presence;
             cur.routing ??= s.routing;
-            const state = mapGenesysState(cur.presence, cur.routing);
-            const since = changedLive ? undefined : stateSince(s.presence, s.routing, s.presenceSince, s.routingSince);
+            const state = stateOf(s.id);
+            const acwSince = calls.summary(s.id).acwSince;
+            const since = changedLive ? undefined
+              : state === "acw" && acwSince !== null ? acwSince
+              : stateSince(s.presence, s.routing, s.presenceSince, s.routingSince);
             handlers.onAgentState(since === undefined
               ? { agent: name, state }
               : { agent: name, state, elapsed: Math.max(0, (Date.now() - since) / 1000), seed: true });
