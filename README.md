@@ -291,11 +291,11 @@ Instances outside the caller's span return 404, not 403, so their existence is n
 - Then one `type: "tick"` per engine second, plus one immediately after any mutation. Each carries the clock, feed status, queue, rules, all agents in span, all incidents in span, **only the ledger rows that changed** (matched by `n`), and any toasts and nudges for this viewer.
 - A dropped connection reconnects by itself and gets a fresh `init`.
 - The client must reconnect after the role, person or replay state changes; `lib/client/api.ts` does this.
-- Toasts for call-outs go only to leaders with that call-out in span. An agent only receives their own nudges, Senior Leader receives none, and none are sent during a replay.
+- Toasts for call-outs go only to leaders with that call-out in span. A nudge goes only to the agent it is about: leaders never see one, and none are sent during a replay.
 
 ### Desktop alerts
 
-Whatever the console pops up for a person is also raised as a system notification: nudges for the agent, and for leaders the nudge previews and call-out toasts of their span, so they are seen when the console is not on screen. "Enable desktop alerts" in the context bar asks for the browser permission once per browser.
+Whatever the console pops up for a person is also raised as a system notification: nudges for the agent, and for leaders the call-out toasts of their span, so they are seen when the console is not on screen. "Enable desktop alerts" in the context bar asks for the browser permission once per browser.
 
 - **Web Push** (`lib/server/push.ts`, `public/sw.js`): the live runtime pushes each nudge and call-out to the subscriptions of the people it is in scope for. This works with the browser minimized, and with it closed where the browser still receives push (Edge on Windows; Chrome while it runs in the background). Pushes expire after 60 seconds so a stale nudge never appears later.
 - **Hidden-tab fallback** (`lib/client/alerts.ts`): an open but hidden tab raises the same notification from the stream, for networks that block the push services. Both use the tag `rtm-<n>`, so each call-out shows once.
@@ -335,7 +335,7 @@ The engine is a TypeScript port of the design prototype's `rtm-engine.js`.
 - **Senior Leader has no Rules tab.** The design README says "read-only for Senior" but `PERMS` and the feature inventory give Senior dashboards only. This build follows `PERMS`. The read-only rendering of the Rules page exists and works if that changes.
 - **Replay is per session**, not a replacement of the whole floor.
 - **Queue rules run during a replay when the import has queue data.** The prototype always switched them off.
-- **Only the agent can attach a reason.** In a leader's nudge preview, "Send reason" with text saves nothing.
+- **Nudges show only in the agent's own view.** The prototype also previewed them on leaders' screens; here a leader first hears of a call-out when it escalates.
 - **A call ends only when the feed says so** (`callEnded`), not on any transition out of On Call.
 
 ## Frontend notes

@@ -13,9 +13,8 @@ describe("desktop alerts", () => {
     ]);
   });
 
-  it("alerts a leader about the nudge previews and call-out toasts of their span, saying who: no feed notices", () => {
+  it("alerts a leader about the call-out toasts of their span, never about nudges or feed notices", () => {
     expect(alertsFor("tl", [NUDGE], TOASTS)).toEqual([
-      { tag: "rtm-7", n: 7, title: "Amara, quick heads up", body: "ACW is past 120s.\nAmara Reyes · Team Alpha", url: "/console", nudge: NUDGE },
       { tag: "rtm-8", n: 8, title: "Amara Reyes · ACW overage", body: "strike 2\nTeam Alpha", url: "/console", nudge: null },
       { tag: "rtm-9", n: 9, title: "Queue · Queue backlog", body: "now 14", url: "/console", nudge: null },
     ]);

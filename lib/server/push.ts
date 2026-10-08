@@ -60,8 +60,8 @@ export function pushBatch(S: EngineState, batch: Batch): void {
   for (const { sub, view } of subs.values()) {
     const notes = alertsFor(
       view.role,
-      // The same previews the stream sends: an agent's own, a leader's span, none for Senior Leader.
-      view.role === "senior" ? [] : batch.nudges.filter(n => inScope(S, view, { agent: n.agent, team: n.team, isFloor: false })),
+      // The same nudges the stream sends: an agent's own, none for leaders.
+      view.role === "agent" ? batch.nudges.filter(n => n.agent === view.who) : [],
       batch.toasts.flatMap(e => (e.instance && inScope(S, view, e.instance) ? [{ title: e.title, body: e.body, n: e.instance.n, team: e.instance.isFloor ? undefined : e.instance.team }] : [])),
     );
     for (const note of notes) send(sub, note);
