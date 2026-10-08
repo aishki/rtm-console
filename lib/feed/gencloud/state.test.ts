@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { mapGenesysState, stateSince } from "./state";
+import { consoleState, mapGenesysState, stateSince } from "./state";
 
 // Presence values as Genesys sends them ("On Queue", with a space), counted on the live tenant.
 describe("mapGenesysState", () => {
@@ -43,5 +43,19 @@ describe("stateSince", () => {
     expect(stateSince("On Queue", "IDLE", P, undefined)).toBe(Date.parse(P));
     expect(stateSince("Break", "OFF_QUEUE", undefined, R)).toBe(Date.parse(R));
     expect(stateSince("Break", "OFF_QUEUE", undefined, "not a date")).toBeUndefined();
+  });
+});
+
+describe("consoleState", () => {
+  it("is ACW while after-call work is pending and no call is connected, although routing says INTERACTING", () => {
+    expect(consoleState("On Queue", "INTERACTING", { onCall: false, acwSince: 1 })).toBe("acw");
+  });
+  it("is On Call when another call is connected", () => {
+    expect(consoleState("On Queue", "INTERACTING", { onCall: true, acwSince: 1 })).toBe("oncall");
+  });
+  it("leaves Offline and the no-call cases to presence and routing", () => {
+    expect(consoleState("Offline", "OFF_QUEUE", { onCall: false, acwSince: 1 })).toBe("off");
+    expect(consoleState("On Queue", "IDLE", { onCall: false, acwSince: null })).toBe("avail");
+    expect(consoleState("On Queue", "IDLE")).toBe("avail");
   });
 });

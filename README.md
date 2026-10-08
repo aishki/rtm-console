@@ -201,6 +201,7 @@ Genesys sends presence (written "On Queue", "Break", "Busy") and routing status 
 | Genesys | Console |
 | --- | --- |
 | Presence Offline | Offline |
+| After-call work pending on the agent's call, and no other call connected (routing stays INTERACTING through ACW) | ACW |
 | Routing INTERACTING (an ACD call) | On Call |
 | Routing COMMUNICATING (a non-ACD call, such as a callback) | Outbound |
 | Routing IDLE, or presence On Queue | Available |
@@ -217,10 +218,16 @@ This is the working mapping until WFM agrees the list (data-architecture.md, dec
 - The roster is the active members of the watched queues. Genesys keeps deactivated accounts as queue members (1,038 of the 2,743 in the default view), sending a stub user with no account state; the feed checks those against the users lookup, which returns only active users, and leaves the rest out. If that check fails, they are kept.
 - Queue metrics, weighted by calls across the watched queues: calls in queue, service level % since midnight US Eastern (the aggregates' `oServiceLevel`), ASA seconds, abandon %. Service level shows "—" and raises nothing until a call is counted.
 
-**Not yet live (depend on conversation-level topics and WFM adherence API — later tasks):**
-- ACW: it is not visible in presence or routing, so the Extended ACW rule stays quiet on the live feed
-- Call release detection (`callEnded`), so AHT, Short Call, Transfer, and Hold Duration rules remain quiet
-- Shift adherence tracking
+- Calls, from the watched queues' conversation topic (`v2.routing.queues.{id}.conversations`, one more notification channel; `lib/feed/gencloud/conversations.ts`):
+  - **Call end and transfer:** the agent's call going connected -> disconnected, with `disconnectType` (`transfer` counts toward Transfer rate). Its length, connect to disconnect, drives Short call and AHT.
+  - **Hold:** `held` and `startHoldTime` on the call start and stop the Long hold timer.
+  - **After-call work:** `afterCallWork.state` `pending` (from the disconnect) until `complete` or `skipped`. Shown as ACW, which drives Extended ACW.
+  - A call first seen on hold or in ACW (under way when the console connected) carries its real time over and raises nothing for limits already passed.
+
+**Not yet live:**
+- AHT leaves out after-call work (it is talk plus hold). Real handle time needs the per-agent aggregates (`tHandle`).
+- Calls on queues outside the watched view are not seen, so an agent in ACW from such a call still shows On Call.
+- Shift adherence tracking (WFM)
 
 **Org model (v1 simplification):**
 - One team per queue. Team Lead and Manager cells show blank; real org hierarchy is a later mapping task.
