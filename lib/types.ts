@@ -47,7 +47,8 @@ export interface Incident {
 
 export interface View { role: Role; who: string | null }
 
-export interface Queue { cq: number; sl: number; asa: number; ab: number }
+/** Floor queue numbers. `sl` is null when the source has no service level yet (not 0%). */
+export interface Queue { cq: number; sl: number | null; asa: number; ab: number }
 
 export interface ReplayMeta { agents: number; events: number; endT: number; done: boolean }
 

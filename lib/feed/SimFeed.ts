@@ -78,7 +78,7 @@ export class SimFeed implements FeedSource {
   readonly kind = "sim" as const;
   private h: FeedHandlers | null = null;
   private agents: SimAgent[] = [];
-  private queue: Queue = { cq: 3, sl: 92, asa: 18, ab: 2 };
+  private queue: Queue & { sl: number } = { cq: 3, sl: 92, asa: 18, ab: 2 };
   private outage = 0;
   /** Engine second at which the feed goes silent for a while. */
   outageAt = -1;

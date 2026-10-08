@@ -16,19 +16,17 @@ describe("buildRoster", () => {
 });
 
 describe("aggregateQueue", () => {
-  it("aggregates across queues without NaN", () => {
-    const q = aggregateQueue(
-      [{queueId:"q1",waiting:3,interacting:0,onQueueUsers:0,offQueueUsers:0,serviceLevelPct:90},
-       {queueId:"q2",waiting:2,interacting:0,onQueueUsers:0,offQueueUsers:0,serviceLevelPct:70}],
-      [{queueId:"q1",offered:10,answered:9,abandoned:1,asaSec:20,avgHandleSec:300},
-       {queueId:"q2",offered:0,answered:0,abandoned:0,asaSec:null,avgHandleSec:null}]);
+  const obs = (queueId: string, waiting: number) => ({ queueId, waiting, interacting:0, onQueueUsers:0, offQueueUsers:0, serviceLevelPct:null });
+  it("weights service level and ASA by calls, not by queue", () => {
+    const q = aggregateQueue([obs("q1", 3), obs("q2", 2)], [
+      { queueId:"q1", offered:100, answered:90, abandoned:10, asaSec:20, avgHandleSec:300, answerSec:1800, slWithin:80, slCounted:100 },
+      { queueId:"q2", offered:10, answered:10, abandoned:0, asaSec:100, avgHandleSec:300, answerSec:1000, slWithin:1, slCounted:10 }]);
     expect(q.cq).toBe(5);
-    expect(q.sl).toBeCloseTo(80);
-    expect(q.asa).toBeCloseTo(20);
-    expect(q.ab).toBeCloseTo(10);
+    expect(q.sl).toBeCloseTo((81 / 110) * 100);   // not the per-queue mean of 80% and 10%
+    expect(q.asa).toBeCloseTo(2800 / 100);
+    expect(q.ab).toBeCloseTo((10 / 110) * 100);
   });
-  it("empty inputs -> zeros, not NaN", () => {
-    const q = aggregateQueue([], []);
-    expect(q).toEqual({ cq:0, sl:0, asa:0, ab:0 });
+  it("empty inputs: no service level yet (null, not 0%), other numbers zero", () => {
+    expect(aggregateQueue([], [])).toEqual({ cq:0, sl:null, asa:0, ab:0 });
   });
 });

@@ -105,7 +105,8 @@ export function createEngine(hooks: EngineHooks = {}, opts: EngineOptions = {}) 
     const q = S.queue;
     if (q) {
       floorRule("cq", q.cq > thr("cq"), `${Math.round(q.cq)} calls waiting`);
-      floorRule("sl", q.sl < thr("sl"), `SL at ${q.sl.toFixed(0)}%`);
+      // No service level yet is not a breach.
+      if (q.sl !== null) floorRule("sl", q.sl < thr("sl"), `SL at ${q.sl.toFixed(0)}%`);
       floorRule("aband", q.ab > thr("aband"), `abandon at ${q.ab.toFixed(1)}%`);
     }
     // A replay has no live heartbeat to watch.
