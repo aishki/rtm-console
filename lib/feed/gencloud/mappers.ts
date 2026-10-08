@@ -18,6 +18,24 @@ export function activeMembers(
   return Object.fromEntries(Object.entries(membersByQueue).map(([q, ms]) => [q, ms.filter(keep)]));
 }
 
+/**
+ * Drops accounts with no login in `days` days. Genesys keeps them active and on their queues
+ * (70 in the watched view had not logged in for over a year on 9 Oct 2026), so they would sit
+ * on the floor as Offline. A member without a last login is kept.
+ */
+export function recentMembers(
+  membersByQueue: Record<string, QueueMember[]>,
+  now: number,
+  days: number,
+): Record<string, QueueMember[]> {
+  const cutoff = now - days * 86_400_000;
+  const keep = (m: QueueMember) => {
+    const t = m.lastLogin ? Date.parse(m.lastLogin) : NaN;
+    return !Number.isFinite(t) || t >= cutoff;
+  };
+  return Object.fromEntries(Object.entries(membersByQueue).map(([q, ms]) => [q, ms.filter(keep)]));
+}
+
 export function buildRoster(
   queues: { id: string; name: string }[],
   membersByQueue: Record<string, { id: string; name: string }[]>,

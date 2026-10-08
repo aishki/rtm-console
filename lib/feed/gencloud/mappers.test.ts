@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildRoster, aggregateQueue, activeMembers, unknownStateIds } from "./mappers";
+import { buildRoster, aggregateQueue, activeMembers, recentMembers, unknownStateIds } from "./mappers";
 
 describe("buildRoster", () => {
   it("one team per queue, agents deduped to first queue", () => {
@@ -51,5 +51,18 @@ describe("activeMembers", () => {
     const kept = activeMembers(members, null);
     expect(kept.q1.map(m => m.id)).toEqual(["a", "c"]);
     expect(kept.q2.map(m => m.id)).toEqual(["c", "d"]);
+  });
+});
+
+describe("recentMembers", () => {
+  const now = Date.parse("2026-10-09T15:00:00Z");
+  it("drops accounts with no login in the last 30 days, keeping those without a date", () => {
+    const kept = recentMembers({ q1: [
+      { id: "a", name: "A", lastLogin: "2026-10-08T12:00:00Z" },
+      { id: "b", name: "B", lastLogin: "2024-10-29T18:25:46Z" },
+      { id: "c", name: "C", lastLogin: "2026-09-10T16:00:00Z" },
+      { id: "d", name: "D" },
+    ] }, now, 30);
+    expect(kept.q1.map(m => m.id)).toEqual(["a", "c", "d"]);
   });
 });

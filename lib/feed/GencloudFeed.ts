@@ -4,7 +4,7 @@ import { GencloudClient, type QueueMember, type UserState } from "./gencloud/cli
 import { consoleState, elapsedAtConnect, stateSince } from "./gencloud/state";
 import { CallTracker } from "./gencloud/conversations";
 import { WsManager } from "./gencloud/ws";
-import { buildRoster, aggregateQueue, activeMembers, unknownStateIds } from "./gencloud/mappers";
+import { buildRoster, aggregateQueue, activeMembers, recentMembers, unknownStateIds } from "./gencloud/mappers";
 import { floorMidnight } from "@/lib/floorTime";
 
 // Server-only: pulls in the Node `ws` module. Never import this from a client component.
@@ -32,6 +32,8 @@ const BOOTSTRAP_MAX_DELAY_MS = 30000;
 // so none waits on another's round trip. The client paces them (BULK_PER_SECOND in
 // gencloud/client.ts), which is what keeps the roster load under Genesys's rate limit.
 const MEMBER_CONCURRENCY = 8;
+// An account with no login in this many days is left off the floor.
+const LAST_LOGIN_DAYS = 30;
 
 /**
  * Production adapter for Genesys Cloud (Gencloud).
@@ -47,7 +49,8 @@ const MEMBER_CONCURRENCY = 8;
  * hold and ACW on the watched queues), polled once a minute. Adherence comes from NICE IEX,
  * not Genesys, and stays quiet. Service level is the interval figure since midnight (oServiceLevel in the
  * aggregates query); there is no real-time service-level observation. "Midnight" is the floor's,
- * US Eastern (lib/floorTime.ts). Deactivated accounts are left out of the roster.
+ * US Eastern (lib/floorTime.ts). Deactivated accounts, and accounts with no login in 30 days, are
+ * left out of the roster.
  *
  * Without a token the feed stays silent, so the console shows "Gencloud not responding". A
  * failed poll cycle (including 401) is skipped; missing heartbeats make the engine mark the
@@ -164,9 +167,12 @@ export class GencloudFeed implements FeedSource {
         // Deactivated accounts stay queue members; leave them out so they do not sit on the floor as Offline.
         const unknown = unknownStateIds(allMembers);
         let active: Set<string> | null = new Set();
+        const lookedUpLogin = new Map<string, string | undefined>();
         if (unknown.length > 0) {
           try {
-            active = new Set(await client.getActiveUserIds(unknown));
+            const users = await client.getActiveUsers(unknown);
+            active = new Set(users.map((u) => u.id));
+            for (const u of users) lookedUpLogin.set(u.id, u.lastLogin);
           } catch (e) {
             if (isAuthError(e)) throw e;
             active = null;
@@ -174,10 +180,16 @@ export class GencloudFeed implements FeedSource {
           }
           if (stopped) return;
         }
-        const membersByQueue = activeMembers(allMembers, active);
-        const dropped = new Set(Object.values(allMembers).flat().map((m) => m.id)).size
-          - new Set(Object.values(membersByQueue).flat().map((m) => m.id)).size;
+        const people = (byQueue: Record<string, QueueMember[]>) => new Set(Object.values(byQueue).flat().map((m) => m.id)).size;
+        const activeByQueue = activeMembers(allMembers, active);
+        const dropped = people(allMembers) - people(activeByQueue);
         if (dropped > 0) console.info(`GencloudFeed: left ${dropped} deactivated accounts out of the roster`);
+        // Active accounts nobody has logged into for a month: on leave or gone, not on the floor.
+        const withLogin = Object.fromEntries(Object.entries(activeByQueue).map(([q, ms]) =>
+          [q, ms.map((m) => (m.lastLogin === undefined && lookedUpLogin.has(m.id) ? { ...m, lastLogin: lookedUpLogin.get(m.id) } : m))]));
+        const membersByQueue = recentMembers(withLogin, Date.now(), LAST_LOGIN_DAYS);
+        const stale = people(activeByQueue) - people(membersByQueue);
+        if (stale > 0) console.info(`GencloudFeed: left ${stale} accounts with no login in ${LAST_LOGIN_DAYS} days out of the roster`);
         const { org, agents, idToName } = buildRoster(queues, membersByQueue);
         handlers.onRoster({ org, agents });
         if (Object.keys(idToName).length === 0) {

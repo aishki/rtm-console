@@ -28,6 +28,8 @@ export interface QueueMember {
   id: string;
   name: string;
   state?: string;
+  /** ISO time of the account's last login, when Genesys sends it. */
+  lastLogin?: string;
 }
 
 /** A user's presence and routing status, each with the ISO time it took effect. */
@@ -206,25 +208,25 @@ export class GencloudClient {
   async getQueueMembers(queueId: string): Promise<QueueMember[]> {
     const out: QueueMember[] = [];
     for (let page = 1; page <= MAX_MEMBER_PAGES; page++) {
-      const r = await this.bulk(`/api/v2/routing/queues/${encodeURIComponent(queueId)}/members?pageSize=100&pageNumber=${page}`);
+      const r = await this.bulk(`/api/v2/routing/queues/${encodeURIComponent(queueId)}/members?pageSize=100&pageNumber=${page}&expand=dateLastLogin`);
       const ents: Json[] = r?.entities ?? [];
       for (const m of ents) {
         const id = m.id ?? m.user?.id;
         if (!id) continue;
-        out.push({ id, name: m.name ?? m.user?.name ?? id, state: m.user?.state });
+        out.push({ id, name: m.name ?? m.user?.name ?? id, state: m.user?.state, lastLogin: m.user?.dateLastLogin });
       }
       if (ents.length < 100 || (r.pageCount && page >= r.pageCount)) break;
     }
     return out;
   }
 
-  /** The users among `userIds` whose accounts are active: the users lookup returns no others. */
-  async getActiveUserIds(userIds: string[]): Promise<string[]> {
-    const out: string[] = [];
+  /** The users among `userIds` whose accounts are active (the users lookup returns no others), with their last login. */
+  async getActiveUsers(userIds: string[]): Promise<{ id: string; lastLogin?: string }[]> {
+    const out: { id: string; lastLogin?: string }[] = [];
     for (let i = 0; i < userIds.length; i += 100) {
       const q = userIds.slice(i, i + 100).map((id) => `id=${encodeURIComponent(id)}`).join("&");
-      const r = await this.bulk(`/api/v2/users?pageSize=100&${q}`);
-      for (const u of (r?.entities ?? []) as Json[]) if (u?.id) out.push(u.id);
+      const r = await this.bulk(`/api/v2/users?pageSize=100&expand=dateLastLogin&${q}`);
+      for (const u of (r?.entities ?? []) as Json[]) if (u?.id) out.push({ id: u.id, lastLogin: u.dateLastLogin });
     }
     return out;
   }
