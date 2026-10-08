@@ -54,3 +54,6 @@ next-env.d.ts
 
 # real roster (team and agent names) cached for the simulator, never commit
 /.rtm
+
+# design system build output (see tools/design-system)
+/.design-system
