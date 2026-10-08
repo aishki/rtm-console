@@ -39,6 +39,13 @@ export interface UserState {
   routingSince?: string;
 }
 
+/** An agent's handled calls on the watched queues and their total handle time (talk, hold and ACW). */
+export interface AgentHandle {
+  userId: string;
+  handled: number;
+  handleSec: number;
+}
+
 export interface GencloudClientConfig {
   apiBase: string;
   token: string;
@@ -98,6 +105,18 @@ export function parseAggregates(resp: Json): QueueAgg[] {
       slCounted: num(sl?.denominator),
     };
   });
+}
+
+/** tHandle per agent: the count is calls handled, the sum their handle time. Agents with none are left out. */
+export function parseAgentHandle(resp: Json): AgentHandle[] {
+  const out: AgentHandle[] = [];
+  for (const r of (resp?.results ?? []) as Json[]) {
+    const userId = r.group?.userId;
+    const stats = ((r.data?.[0]?.metrics ?? []) as Json[]).find((x) => x?.metric === "tHandle")?.stats;
+    const handled = num(stats?.count);
+    if (userId && handled > 0) out.push({ userId, handled, handleSec: num(stats?.sum) / 1000 });
+  }
+  return out;
 }
 
 /**
@@ -199,23 +218,42 @@ export class GencloudClient {
     return out;
   }
 
+  /** The users among `userIds` whose accounts are active: the users lookup returns no others. */
+  async getActiveUserIds(userIds: string[]): Promise<string[]> {
+    const out: string[] = [];
+    for (let i = 0; i < userIds.length; i += 100) {
+      const q = userIds.slice(i, i + 100).map((id) => `id=${encodeURIComponent(id)}`).join("&");
+      const r = await this.bulk(`/api/v2/users?pageSize=100&${q}`);
+      for (const u of (r?.entities ?? []) as Json[]) if (u?.id) out.push(u.id);
+    }
+    return out;
+  }
+
   /**
-   * Current presence and routing status of these users. The WebSocket only reports changes,
-   * so without this snapshot an agent who has not changed since the console connected would
-   * sit at the roster's default state. Only active users come back.
+   * Current Genesys presence of these users, 50 a request. About 190 bytes an agent, a tenth of
+   * the users lookup with presence and routing expanded.
    */
-  async getUserStates(userIds: string[]): Promise<UserState[]> {
+  async getPresences(userIds: string[]): Promise<UserState[]> {
+    const out: UserState[] = [];
+    for (let i = 0; i < userIds.length; i += 50) {
+      const ids = userIds.slice(i, i + 50).map(encodeURIComponent).join(",");
+      const r = await this.bulk(`/api/v2/users/presences/purecloud/bulk?id=${ids}`);
+      for (const p of (Array.isArray(r) ? r : []) as Json[]) {
+        const id = p?.userId ?? p?.id;
+        if (id) out.push({ id, presence: p.presenceDefinition?.systemPresence, presenceSince: p.modifiedDate });
+      }
+    }
+    return out;
+  }
+
+  /** Current routing status of these users, 100 a request. Genesys has no bulk routing-status read. */
+  async getRoutingStatuses(userIds: string[]): Promise<UserState[]> {
     const out: UserState[] = [];
     for (let i = 0; i < userIds.length; i += 100) {
-      const ids = userIds.slice(i, i + 100);
-      const q = ids.map((id) => `id=${encodeURIComponent(id)}`).join("&");
-      const r = await this.bulk(`/api/v2/users?pageSize=100&expand=presence,routingStatus&${q}`);
+      const q = userIds.slice(i, i + 100).map((id) => `id=${encodeURIComponent(id)}`).join("&");
+      const r = await this.bulk(`/api/v2/users?pageSize=100&expand=routingStatus&${q}`);
       for (const u of (r?.entities ?? []) as Json[]) {
-        if (u?.id) out.push({
-          id: u.id,
-          presence: u.presence?.presenceDefinition?.systemPresence, presenceSince: u.presence?.modifiedDate,
-          routing: u.routingStatus?.status, routingSince: u.routingStatus?.startTime,
-        });
+        if (u?.id) out.push({ id: u.id, routing: u.routingStatus?.status, routingSince: u.routingStatus?.startTime });
       }
     }
     return out;
@@ -242,5 +280,19 @@ export class GencloudClient {
       metrics: ["nOffered", "tAnswered", "tAbandon", "tHandle", "oServiceLevel"],
     });
     return parseAggregates(resp);
+  }
+
+  /**
+   * Handle time per agent on these queues (talk, hold and after-call work). About 330 KB for the
+   * watched view at midday, so it is polled once a minute, not with the queue numbers.
+   */
+  async getAgentHandle(queueIds: string[], interval: { start: string; end: string }): Promise<AgentHandle[]> {
+    const resp = await this.request("POST", "/api/v2/analytics/conversations/aggregates/query", {
+      interval: `${interval.start}/${interval.end}`,
+      groupBy: ["userId"],
+      filter: { type: "or", predicates: queueIds.map((id) => ({ dimension: "queueId", value: id })) },
+      metrics: ["tHandle"],
+    });
+    return parseAgentHandle(resp);
   }
 }

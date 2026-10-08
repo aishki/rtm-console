@@ -214,20 +214,21 @@ This is the working mapping until WFM agrees the list (data-architecture.md, dec
 
 **Live now:**
 - Agent state as above (triggers Aux, Offline, Long Call, Outbound and related escalation rules)
+- The connect snapshot reads everyone's presence in bulk (`/api/v2/users/presences/purecloud/bulk`, 50 a request, about a tenth of the data of the users lookup) and routing status only for agents not Offline (Genesys has no bulk routing read; routing is OFF_QUEUE for anyone logged out).
 - Time in state survives a restart: the connect snapshot gives each agent the time already spent in their state (routing `startTime` for On Call, Outbound and Available; presence `modifiedDate` for Break, Aux and Offline). Rules the agent is already past are marked as fired without call-outs, so a restart does not flood the floor; the next episode fires as usual.
 - The roster is the active members of the watched queues. Genesys keeps deactivated accounts as queue members (1,038 of the 2,743 in the default view), sending a stub user with no account state; the feed checks those against the users lookup, which returns only active users, and leaves the rest out. If that check fails, they are kept.
 - Queue metrics, weighted by calls across the watched queues: calls in queue, service level % since midnight US Eastern (the aggregates' `oServiceLevel`), ASA seconds, abandon %. Service level shows "—" and raises nothing until a call is counted.
 
 - Calls, from the watched queues' conversation topic (`v2.routing.queues.{id}.conversations`, one more notification channel; `lib/feed/gencloud/conversations.ts`):
-  - **Call end and transfer:** the agent's call going connected -> disconnected, with `disconnectType` (`transfer` counts toward Transfer rate). Its length, connect to disconnect, drives Short call and AHT.
+  - **Call end and transfer:** the agent's call going connected -> disconnected, with `disconnectType` (`transfer` counts toward Transfer rate). Its length, connect to disconnect, drives Short call.
   - **Hold:** `held` and `startHoldTime` on the call start and stop the Long hold timer.
   - **After-call work:** `afterCallWork.state` `pending` (from the disconnect) until `complete` or `skipped`. Shown as ACW, which drives Extended ACW.
   - A call first seen on hold or in ACW (under way when the console connected) carries its real time over and raises nothing for limits already passed.
+- AHT is Genesys's handle time per agent since midnight US Eastern: `tHandle` (talk, hold and after-call work) from the conversation aggregates grouped by user, on the watched queues. Polled once a minute (the response is about 330 KB at midday). An agent with no handled call yet today keeps the estimate from the calls the console sees.
 
 **Not yet live:**
-- AHT leaves out after-call work (it is talk plus hold). Real handle time needs the per-agent aggregates (`tHandle`).
 - Calls on queues outside the watched view are not seen, so an agent in ACW from such a call still shows On Call.
-- Shift adherence tracking (WFM)
+- Shift adherence tracking. Adherence comes from NICE IEX, not Genesys workforce management.
 
 **Org model (v1 simplification):**
 - One team per queue. Team Lead and Manager cells show blank; real org hierarchy is a later mapping task.
