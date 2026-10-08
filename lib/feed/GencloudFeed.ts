@@ -1,6 +1,6 @@
 import type { FeedHandlers, FeedSource } from "./FeedSource";
 import { GencloudClient, type QueueMember } from "./gencloud/client";
-import { mapGenesysState } from "./gencloud/state";
+import { mapGenesysState, stateSince } from "./gencloud/state";
 import { WsManager } from "./gencloud/ws";
 import { buildRoster, aggregateQueue, activeMembers, unknownStateIds } from "./gencloud/mappers";
 import { floorMidnight } from "@/lib/floorTime";
@@ -167,15 +167,22 @@ export class GencloudFeed implements FeedSource {
         wsTeardown = teardown;
         // Seed everyone's current state. Subscribed first, so a change that lands meanwhile
         // wins: the snapshot only fills the half (presence or routing) not reported yet.
+        // An agent with no live change yet also gets the time already spent in that state,
+        // from Genesys's own timestamps, so a restart does not set their timer back to 0.
         try {
           for (const s of await client.getUserStates(Object.keys(idToName))) {
             if (stopped) return;
             const name = idToName[s.id];
             if (!name) continue;
+            const changedLive = latest[s.id] !== undefined;
             const cur = (latest[s.id] ??= {});
             cur.presence ??= s.presence;
             cur.routing ??= s.routing;
-            handlers.onAgentState({ agent: name, state: mapGenesysState(cur.presence, cur.routing) });
+            const state = mapGenesysState(cur.presence, cur.routing);
+            const since = changedLive ? undefined : stateSince(s.presence, s.routing, s.presenceSince, s.routingSince);
+            handlers.onAgentState(since === undefined
+              ? { agent: name, state }
+              : { agent: name, state, elapsed: Math.max(0, (Date.now() - since) / 1000), seed: true });
           }
         } catch (e) {
           console.warn("GencloudFeed: initial state snapshot failed; states fill in as agents change:", errMsg(e));

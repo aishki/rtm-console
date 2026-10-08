@@ -178,6 +178,44 @@ describe("capped routes", () => {
   });
 });
 
+describe("time already in state at connect", () => {
+  it("starts the timer at the time the feed reports, not 0", () => {
+    const { set, run, agent } = setup();
+    set("Amara Reyes", "auxb", { elapsed: 300, seed: true });
+    run(1);
+    expect(agent("Amara Reyes").stTime).toBe(300);
+    run(10);
+    expect(agent("Amara Reyes").stTime).toBe(310);
+  });
+
+  it("raises nothing for a rule the agent was already past at connect, but fires the next episode", () => {
+    const { e, set, run, of, episode } = setup();
+    set("Amara Reyes", "auxb", { elapsed: e.thr("ovbrk") + 600, seed: true });
+    run(5);
+    expect(of("Amara Reyes")).toHaveLength(0);
+    set("Amara Reyes", "avail"); run(1);
+    episode("Amara Reyes", "auxb", e.thr("ovbrk"));
+    expect(of("Amara Reyes", "ovbrk")).toHaveLength(1);
+  });
+
+  it("fires as usual when a seeded timer crosses the threshold after connect", () => {
+    const { e, set, run, of } = setup();
+    set("Amara Reyes", "auxp", { elapsed: e.thr("auxp") - 5, seed: true });
+    run(1);
+    expect(of("Amara Reyes")).toHaveLength(0);
+    run(10);
+    expect(of("Amara Reyes", "auxp")).toHaveLength(1);
+  });
+
+  it("sets the timer for an agent whose state did not change (Offline in the roster and in Genesys)", () => {
+    const { set, run, agent, of } = setup();
+    set("Amara Reyes", "off"); run(1);
+    set("Amara Reyes", "off", { elapsed: 4 * 3600, seed: true }); run(1);
+    expect(agent("Amara Reyes").stTime).toBe(4 * 3600);
+    expect(of("Amara Reyes")).toHaveLength(0);
+  });
+});
+
 describe("re-arm logic", () => {
   it("fires a duration rule once per state episode", () => {
     const { set, run, of } = setup();

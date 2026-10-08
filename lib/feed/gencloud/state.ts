@@ -14,6 +14,22 @@ const norm = (s: string | undefined): string => (s ?? "").trim().toUpperCase().r
  * Training, Idle) is Aux Personal. ACW is not visible in presence or routing (it needs the
  * conversation topics), so the live feed never reports it.
  */
+/**
+ * When the agent entered the state `mapGenesysState` gives, from the snapshot's timestamps:
+ * routing's `startTime` for states routing decides (on a call, outbound, idle on queue,
+ * not responding), presence's `modifiedDate` for the rest. Either one stands in for the other
+ * when missing. Epoch ms, or undefined when neither is known.
+ */
+export function stateSince(
+  presence: string | undefined, routing: string | undefined,
+  presenceSince: string | undefined, routingSince: string | undefined,
+): number | undefined {
+  const p = norm(presence), r = norm(routing);
+  const fromRouting = p !== "OFFLINE" && ["INTERACTING", "COMMUNICATING", "IDLE", "NOT_RESPONDING"].includes(r);
+  const ms = (s: string | undefined) => { const v = s ? Date.parse(s) : NaN; return Number.isFinite(v) ? v : undefined; };
+  return fromRouting ? ms(routingSince) ?? ms(presenceSince) : ms(presenceSince) ?? ms(routingSince);
+}
+
 export function mapGenesysState(presence: string | undefined, routing: string | undefined): AgentState {
   const p = norm(presence), r = norm(routing);
   if (p === "OFFLINE") return "off";

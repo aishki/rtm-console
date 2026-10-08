@@ -78,6 +78,16 @@ export interface AgentStateEvent {
   onHold?: boolean;
   /** Shift adherence from WFM, when the feed supplies it. */
   adh?: number;
+  /**
+   * Seconds the agent has already been in `state`, when the feed knows (the Genesys snapshot
+   * at connect). Without it the state timer starts at 0.
+   */
+  elapsed?: number;
+  /**
+   * A state read at connect, not a change seen live: rules the agent is already past are
+   * marked as fired without raising call-outs, so a restart does not flood the floor.
+   */
+  seed?: boolean;
 }
 
 // ---------- stream (server -> client) ----------
