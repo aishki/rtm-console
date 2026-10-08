@@ -1,6 +1,6 @@
 import type { AgentState } from "@/lib/types";
 import type { FeedHandlers, FeedSource } from "./FeedSource";
-import { GencloudClient, type QueueMember } from "./gencloud/client";
+import { GencloudClient, type QueueMember, type UserState } from "./gencloud/client";
 import { consoleState, stateSince } from "./gencloud/state";
 import { CallTracker } from "./gencloud/conversations";
 import { WsManager } from "./gencloud/ws";
@@ -23,6 +23,8 @@ export interface GencloudConfig {
 const DEFAULT_API_BASE = "https://api.mypurecloud.com";
 const DEFAULT_VIEW_CONFIG_ID = "9c9f8fd2-acab-4282-9442-ddba152f9c18";
 const POLL_MS = 5000;
+// Handle time per agent is a large query (about 330 KB at midday) and moves slowly: once a minute.
+const HANDLE_POLL_MS = 60_000;
 const BOOTSTRAP_MAX_ATTEMPTS = 5;
 const BOOTSTRAP_BASE_DELAY_MS = 2000;
 const BOOTSTRAP_MAX_DELAY_MS = 30000;
@@ -41,8 +43,9 @@ const MEMBER_CONCURRENCY = 8;
  *
  * Calls come from the watched queues' conversation topic (gencloud/conversations.ts): call
  * end and transfer (calls, AHT, Short call, Transfer rate), hold (Long hold) and after-call work
- * (the ACW state, Extended ACW). AHT is connect to disconnect, so it leaves out ACW. Adherence
- * needs WFM and stays quiet. Service level is the interval figure since midnight (oServiceLevel in the
+ * (the ACW state, Extended ACW). AHT is Genesys's handle time per agent since midnight (talk,
+ * hold and ACW on the watched queues), polled once a minute. Adherence comes from NICE IEX,
+ * not Genesys, and stays quiet. Service level is the interval figure since midnight (oServiceLevel in the
  * aggregates query); there is no real-time service-level observation. "Midnight" is the floor's,
  * US Eastern (lib/floorTime.ts). Deactivated accounts are left out of the roster.
  *
@@ -70,6 +73,7 @@ export class GencloudFeed implements FeedSource {
     let stopped = false;
     let pollStarted = false;
     let pollTimer: ReturnType<typeof setInterval> | null = null;
+    let handleTimer: ReturnType<typeof setInterval> | null = null;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
     let wsTeardown: (() => void) | null = null;
 
@@ -101,6 +105,33 @@ export class GencloudFeed implements FeedSource {
       pollStarted = true;
       pollTimer = setInterval(() => { void pollOnce(queueIds); }, POLL_MS);
       void pollOnce(queueIds);
+    };
+
+    /** Each agent's AHT for the day, from Genesys's handle time on the watched queues. */
+    const startHandlePoll = (queueIds: string[], idToName: Record<string, string>): void => {
+      const pollHandle = async (): Promise<void> => {
+        try {
+          const now = new Date();
+          const handle = await client.getAgentHandle(queueIds, { start: floorMidnight(now).toISOString(), end: now.toISOString() });
+          if (stopped) return;
+          handlers.onAgentStats?.(handle.flatMap((h) => idToName[h.userId] ? [{ agent: idToName[h.userId], aht: h.handleSec / h.handled }] : []));
+        } catch (e) {
+          console.warn("GencloudFeed: handle time poll failed:", errMsg(e));
+        }
+      };
+      handleTimer = setInterval(() => { void pollHandle(); }, HANDLE_POLL_MS);
+      void pollHandle();
+    };
+
+    /**
+     * Everyone's presence in bulk, then routing status for those not Offline: routing is
+     * OFF_QUEUE for anyone logged out, so it is only read where it can change the state.
+     */
+    const readStates = async (userIds: string[]): Promise<UserState[]> => {
+      const states = await client.getPresences(userIds);
+      const loggedIn = states.filter((s) => s.presence !== undefined && s.presence.toUpperCase() !== "OFFLINE");
+      const routing = new Map((await client.getRoutingStatuses(loggedIn.map((s) => s.id))).map((r) => [r.id, r]));
+      return states.map((s) => ({ ...s, routing: routing.get(s.id)?.routing, routingSince: routing.get(s.id)?.routingSince }));
     };
 
     /** Fetch members for every queue with bounded concurrency; one bad queue is skipped. */
@@ -135,7 +166,7 @@ export class GencloudFeed implements FeedSource {
         let active: Set<string> | null = new Set();
         if (unknown.length > 0) {
           try {
-            active = new Set((await client.getUserStates(unknown)).map((s) => s.id));
+            active = new Set(await client.getActiveUserIds(unknown));
           } catch (e) {
             if (isAuthError(e)) throw e;
             active = null;
@@ -153,6 +184,7 @@ export class GencloudFeed implements FeedSource {
           console.warn("GencloudFeed: roster is empty (no queue members loaded)");
           return;
         }
+        startHandlePoll(queues.map((q) => q.id), idToName);
         const latest: Record<string, { presence?: string; routing?: string }> = {};
         const calls = new CallTracker();
         const stateOf = (userId: string) => consoleState(latest[userId]?.presence, latest[userId]?.routing, calls.summary(userId));
@@ -205,7 +237,7 @@ export class GencloudFeed implements FeedSource {
         // An agent with no live change yet also gets the time already spent in that state,
         // from Genesys's own timestamps, so a restart does not set their timer back to 0.
         try {
-          for (const s of await client.getUserStates(Object.keys(idToName))) {
+          for (const s of await readStates(Object.keys(idToName))) {
             if (stopped) return;
             const name = idToName[s.id];
             if (!name) continue;
@@ -269,6 +301,8 @@ export class GencloudFeed implements FeedSource {
       retryTimer = null;
       if (pollTimer) clearInterval(pollTimer);
       pollTimer = null;
+      if (handleTimer) clearInterval(handleTimer);
+      handleTimer = null;
       wsTeardown?.();
       wsTeardown = null;
     };

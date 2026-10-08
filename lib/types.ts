@@ -19,6 +19,8 @@ export interface Team { team: string; tl: string; mgr: string; lob: string }
 export interface Agent {
   id: number; name: string; team: string; state: AgentState; stTime: number; aht: number;
   calls: number; shortCalls: number; transfers: number; onHold: boolean; holdTime: number; adh: number;
+  /** AHT is the feed's handle time for the day (talk, hold and ACW), not estimated from calls seen. */
+  ahtFromFeed?: boolean;
   strikes: Partial<Record<RuleId, number>>; fired: Partial<Record<RuleId, boolean>>;
 }
 
@@ -70,6 +72,13 @@ export interface RosterAgent {
   name: string; team: string; state: AgentState; stTime?: number; aht?: number; calls?: number; adh?: number;
 }
 export interface Roster { org: Team[]; agents: RosterAgent[] }
+/** An agent's figures for the day from the feed's own reporting. */
+export interface AgentStats {
+  agent: string;
+  /** Average handle time, seconds: talk, hold and after-call work. */
+  aht: number;
+}
+
 export interface AgentStateEvent {
   agent: string;
   state: AgentState;

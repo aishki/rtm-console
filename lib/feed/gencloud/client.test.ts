@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { GencloudClient, parseObservations, parseAggregates } from "./client";
+import { GencloudClient, parseObservations, parseAggregates, parseAgentHandle } from "./client";
 
 describe("parseObservations", () => {
   it("maps observation metrics and service level ratio", () => {
@@ -42,6 +42,43 @@ describe("parseAggregates", () => {
     const [a] = parseAggregates({ results: [{ group:{ queueId:"q1" }, data:[{ metrics:[] }] }] });
     expect(a).toMatchObject({ queueId:"q1", offered:0, abandoned:0 });
     expect(a.asaSec).toBeNull();
+  });
+});
+
+describe("parseAgentHandle", () => {
+  it("reads calls handled and handle time per agent, leaving out agents with none", () => {
+    expect(parseAgentHandle({ results: [
+      { group: { userId: "u1" }, data: [{ metrics: [{ metric: "tHandle", stats: { count: 4, sum: 2_000_000 } }] }] },
+      { group: { userId: "u2" }, data: [{ metrics: [{ metric: "tHandle", stats: { count: 0, sum: 0 } }] }] },
+      { group: { userId: "u3" }, data: [{ metrics: [] }] },
+    ] })).toEqual([{ userId: "u1", handled: 4, handleSec: 2000 }]);
+    expect(parseAgentHandle({})).toEqual([]);
+  });
+});
+
+describe("state reads", () => {
+  const ok = (body: unknown) => new Response(JSON.stringify(body), { status: 200 });
+
+  it("reads presence in bulk, 50 users a request", async () => {
+    const urls: string[] = [];
+    const fetchFn = (async (url: string) => {
+      urls.push(url);
+      const ids = new URL(url).searchParams.get("id")!.split(",");
+      return ok(ids.map((id) => ({ userId: id, presenceDefinition: { systemPresence: "On Queue" }, modifiedDate: "2026-10-09T12:00:00Z" })));
+    }) as unknown as typeof fetch;
+    const client = new GencloudClient({ apiBase: "https://x", token: "t", viewConfigId: "v" }, fetchFn, 1000);
+    const ids = Array.from({ length: 120 }, (_, i) => `u${i}`);
+    const states = await client.getPresences(ids);
+    expect(urls).toHaveLength(3);
+    expect(urls[0]).toContain("/api/v2/users/presences/purecloud/bulk?id=");
+    expect(states).toHaveLength(120);
+    expect(states[0]).toEqual({ id: "u0", presence: "On Queue", presenceSince: "2026-10-09T12:00:00Z" });
+  });
+
+  it("reads routing status with its start time", async () => {
+    const fetchFn = (async () => ok({ entities: [{ id: "u1", routingStatus: { status: "INTERACTING", startTime: "2026-10-09T12:01:00Z" } }] })) as unknown as typeof fetch;
+    const client = new GencloudClient({ apiBase: "https://x", token: "t", viewConfigId: "v" }, fetchFn, 1000);
+    expect(await client.getRoutingStatuses(["u1"])).toEqual([{ id: "u1", routing: "INTERACTING", routingSince: "2026-10-09T12:01:00Z" }]);
   });
 });
 

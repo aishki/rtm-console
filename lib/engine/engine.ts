@@ -1,4 +1,4 @@
-import type { Agent, AgentStateEvent, Incident, Instance, InvAction, Queue, ReplayMeta, Roster, Route, Rule, RuleId, Severity, View } from "@/lib/types";
+import type { Agent, AgentStateEvent, AgentStats, Incident, Instance, InvAction, Queue, ReplayMeta, Roster, Route, Rule, RuleId, Severity, View } from "@/lib/types";
 import type { FeedHandlers } from "@/lib/feed/FeedSource";
 import { DISPOSITIONS, ONCE_PER_SHIFT, ROUTE_IDS, defaultRules, evaluateAgents, ruleApplies, ruleOf, thrOf } from "./rules";
 import { type EngineHooks, type EngineState, fire as fireRule } from "./escalation";
@@ -33,6 +33,7 @@ export function createEngine(hooks: EngineHooks = {}, opts: EngineOptions = {}) 
   let beat = false;
   let pending: AgentStateEvent[] = [];
   let pendingQueue: Queue | null = null;
+  let pendingStats: AgentStats[] = [];
 
   const thr = (id: RuleId) => thrOf(S.rules, id);
   const rule = (id: RuleId) => ruleOf(S.rules, id);
@@ -49,13 +50,14 @@ export function createEngine(hooks: EngineHooks = {}, opts: EngineOptions = {}) 
         return {
           id: i, name: a.name, team: a.team, state: a.state, stTime: a.stTime ?? 0, onHold: false, holdTime: 0,
           aht: p?.aht ?? a.aht ?? 420, calls: p?.calls ?? a.calls ?? 0, shortCalls: p?.shortCalls ?? 0, transfers: p?.transfers ?? 0,
-          adh: p?.adh ?? a.adh ?? 96, strikes: p?.strikes ?? {}, fired: p?.fired ?? {},
+          adh: p?.adh ?? a.adh ?? 96, ahtFromFeed: p?.ahtFromFeed, strikes: p?.strikes ?? {}, fired: p?.fired ?? {},
         };
       });
       beat = true;
     },
     onAgentState(e) { pending.push(e); beat = true; },
     onQueue(q) { pendingQueue = q; beat = true; },
+    onAgentStats(s) { pendingStats.push(...s); beat = true; },
     onHeartbeat() { beat = true; },
   };
 
@@ -65,8 +67,8 @@ export function createEngine(hooks: EngineHooks = {}, opts: EngineOptions = {}) 
     if (e.callEnded) {
       const dur = e.callEnded.durationSec !== undefined ? Math.round(e.callEnded.durationSec) : a.stTime;
       a.calls++;
-      // A replay has no AHT baseline, so the first call seeds it.
-      a.aht = S.mode === "replay" && a.calls === 1 ? dur : Math.round(a.aht * 0.85 + dur * 0.15);
+      // A replay has no AHT baseline, so the first call seeds it. AHT from the feed is the real figure: keep it.
+      if (!a.ahtFromFeed) a.aht = S.mode === "replay" && a.calls === 1 ? dur : Math.round(a.aht * 0.85 + dur * 0.15);
       if (e.callEnded.transferred) a.transfers++;
       if (rule("short").on && dur < thr("short")) { a.shortCalls++; fire(rule("short"), a, `${dur}s call`); }
     }
@@ -89,6 +91,11 @@ export function createEngine(hooks: EngineHooks = {}, opts: EngineOptions = {}) 
     }
     for (const e of pending) applyAgentState(e);
     pending = [];
+    for (const s of pendingStats) {
+      const a = S.agents.find(x => x.name === s.agent);
+      if (a) { a.aht = Math.round(s.aht); a.ahtFromFeed = true; }
+    }
+    pendingStats = [];
     if (pendingQueue) { S.queue = pendingQueue; pendingQueue = null; }
     if (opts.deriveAdh) for (const a of S.agents) {
       a.adh = Math.max(70, Math.min(100, a.adh + (a.state === "auxp" || a.state === "off" ? -0.03 : a.state === "oncall" ? 0.008 : 0)));
@@ -155,7 +162,7 @@ export function createEngine(hooks: EngineHooks = {}, opts: EngineOptions = {}) 
     reset(o: { t: number; mode?: "live" | "replay"; replay?: ReplayMeta | null }) {
       Object.assign(S, { t: o.t, mode: o.mode ?? "live", replay: o.replay ?? null, org: [], agents: [], ledger: [], incidents: [], seq: 0, incSeq: 0, staleFor: 0, queue: null, floorFired: {} });
       S.rev++;
-      pending = []; pendingQueue = null; beat = false;
+      pending = []; pendingQueue = null; pendingStats = []; beat = false;
     },
     /** After a quiet warm-up: arm exactly the rules that are in breach right now. */
     rearm() {

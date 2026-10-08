@@ -498,6 +498,19 @@ describe("call data from the feed", () => {
     expect(of("Amara Reyes", "hold")).toHaveLength(1);
   });
 
+  it("takes AHT from the feed's handle time and stops estimating it from calls", () => {
+    const { e, set, run, agent } = setup();
+    e.ingest.onAgentStats!([{ agent: "Amara Reyes", aht: 512.4 }, { agent: "Nobody Here", aht: 100 }]); run(1);
+    expect(agent("Amara Reyes").aht).toBe(512);
+    set("Amara Reyes", "oncall"); run(1);
+    set("Amara Reyes", "acw", { callEnded: { durationSec: 60 } }); run(1);
+    expect(agent("Amara Reyes")).toMatchObject({ aht: 512, calls: 1 });
+    // An agent the feed has no handle time for keeps the estimate.
+    set("Joshua Lim", "oncall"); run(1);
+    set("Joshua Lim", "acw", { callEnded: { durationSec: 60 } }); run(1);
+    expect(agent("Joshua Lim").aht).toBeLessThan(420);
+  });
+
   it("starts the hold timer at the hold's real age", () => {
     const { set, run, agent } = setup();
     set("Amara Reyes", "oncall"); run(1);
