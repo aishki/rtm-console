@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildRoster, aggregateQueue } from "./mappers";
+import { buildRoster, aggregateQueue, activeMembers, unknownStateIds } from "./mappers";
 
 describe("buildRoster", () => {
   it("one team per queue, agents deduped to first queue", () => {
@@ -28,5 +28,28 @@ describe("aggregateQueue", () => {
   });
   it("empty inputs: no service level yet (null, not 0%), other numbers zero", () => {
     expect(aggregateQueue([], [])).toEqual({ cq:0, sl:null, asa:0, ab:0 });
+  });
+});
+
+describe("activeMembers", () => {
+  const members = {
+    q1: [{ id: "a", name: "A", state: "active" }, { id: "b", name: "B", state: "inactive" }, { id: "c", name: "C" }],
+    q2: [{ id: "c", name: "C" }, { id: "d", name: "D" }, { id: "e", name: "E", state: "deleted" }],
+  };
+
+  it("lists each member without a state once, for the users lookup", () => {
+    expect(unknownStateIds(members)).toEqual(["c", "d"]);
+  });
+
+  it("keeps active accounts and stateless members the lookup returned", () => {
+    const kept = activeMembers(members, new Set(["d"]));
+    expect(kept.q1.map(m => m.id)).toEqual(["a"]);
+    expect(kept.q2.map(m => m.id)).toEqual(["d"]);
+  });
+
+  it("keeps stateless members when the lookup failed, but still drops known inactive ones", () => {
+    const kept = activeMembers(members, null);
+    expect(kept.q1.map(m => m.id)).toEqual(["a", "c"]);
+    expect(kept.q2.map(m => m.id)).toEqual(["c", "d"]);
   });
 });

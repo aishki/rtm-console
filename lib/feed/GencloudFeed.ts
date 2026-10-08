@@ -1,8 +1,9 @@
 import type { FeedHandlers, FeedSource } from "./FeedSource";
-import { GencloudClient } from "./gencloud/client";
+import { GencloudClient, type QueueMember } from "./gencloud/client";
 import { mapGenesysState } from "./gencloud/state";
 import { WsManager } from "./gencloud/ws";
-import { buildRoster, aggregateQueue } from "./gencloud/mappers";
+import { buildRoster, aggregateQueue, activeMembers, unknownStateIds } from "./gencloud/mappers";
+import { floorMidnight } from "@/lib/floorTime";
 
 // Server-only: pulls in the Node `ws` module. Never import this from a client component.
 
@@ -39,7 +40,8 @@ const MEMBER_CONCURRENCY = 8;
  * v1 gaps: no onHold / callEnded / adh events yet (they need conversation topics and WFM
  * adherence), so the AHT, short-call, transfer, hold and adherence rules stay quiet, and ACW is
  * never reported. Service level is the interval figure since midnight (oServiceLevel in the
- * aggregates query); there is no real-time service-level observation.
+ * aggregates query); there is no real-time service-level observation. "Midnight" is the floor's,
+ * US Eastern (lib/floorTime.ts). Deactivated accounts are left out of the roster.
  *
  * Without a token the feed stays silent, so the console shows "Gencloud not responding". A
  * failed poll cycle (including 401) is skipped; missing heartbeats make the engine mark the
@@ -75,11 +77,11 @@ export class GencloudFeed implements FeedSource {
 
     const pollOnce = async (queueIds: string[]): Promise<void> => {
       try {
-        const start = new Date();
-        start.setHours(0, 0, 0, 0);
+        // "Today" is the floor's day: since Eastern midnight, not the server's (lib/floorTime.ts).
+        const now = new Date();
         const [obs, agg] = await Promise.all([
           client.getObservations(queueIds),
-          client.getAggregates(queueIds, { start: start.toISOString(), end: new Date().toISOString() }),
+          client.getAggregates(queueIds, { start: floorMidnight(now).toISOString(), end: now.toISOString() }),
         ]);
         if (stopped) return;
         handlers.onQueue(aggregateQueue(obs, agg));
@@ -99,8 +101,8 @@ export class GencloudFeed implements FeedSource {
     };
 
     /** Fetch members for every queue with bounded concurrency; one bad queue is skipped. */
-    const fetchAllMembers = async (queues: { id: string; name: string }[]): Promise<Record<string, { id: string; name: string }[]>> => {
-      const membersByQueue: Record<string, { id: string; name: string }[]> = {};
+    const fetchAllMembers = async (queues: { id: string; name: string }[]): Promise<Record<string, QueueMember[]>> => {
+      const membersByQueue: Record<string, QueueMember[]> = {};
       let next = 0;
       const worker = async (): Promise<void> => {
         while (!stopped) {
@@ -123,8 +125,25 @@ export class GencloudFeed implements FeedSource {
      *  failure here is logged and never stops the queue poll. */
     const loadRosterAndSubscribe = async (queues: { id: string; name: string }[]): Promise<void> => {
       try {
-        const membersByQueue = await fetchAllMembers(queues);
+        const allMembers = await fetchAllMembers(queues);
         if (stopped) return;
+        // Deactivated accounts stay queue members; leave them out so they do not sit on the floor as Offline.
+        const unknown = unknownStateIds(allMembers);
+        let active: Set<string> | null = new Set();
+        if (unknown.length > 0) {
+          try {
+            active = new Set((await client.getUserStates(unknown)).map((s) => s.id));
+          } catch (e) {
+            if (isAuthError(e)) throw e;
+            active = null;
+            console.warn("GencloudFeed: could not check account states; keeping every queue member:", errMsg(e));
+          }
+          if (stopped) return;
+        }
+        const membersByQueue = activeMembers(allMembers, active);
+        const dropped = new Set(Object.values(allMembers).flat().map((m) => m.id)).size
+          - new Set(Object.values(membersByQueue).flat().map((m) => m.id)).size;
+        if (dropped > 0) console.info(`GencloudFeed: left ${dropped} deactivated accounts out of the roster`);
         const { org, agents, idToName } = buildRoster(queues, membersByQueue);
         handlers.onRoster({ org, agents });
         if (Object.keys(idToName).length === 0) {

@@ -12,7 +12,7 @@ const ROSTER: RosterAgent[] = [
   { name: "Joshua Lim", team: "Team Alpha", state: "avail" },
   { name: "Miguel Cruz", team: "Team Delta", state: "avail" },
 ];
-const NOW = new Date(2026, 9, 7, 14, 5);
+const NOW = new Date("2026-10-07T18:05:00Z"); // 14:05 in New York, the floor's time
 
 /** A floor where Amara ran over ACW three times (an incident) and Miguel once. */
 function floor() {

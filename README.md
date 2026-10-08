@@ -47,6 +47,7 @@ npm run dev        # http://localhost:3000
 | `RTM_SITE_PASSWORD` | Password for the wall in front of the whole console (see "Password wall"). **While unset, nobody can get in.** Quote it in `.env.local`: an unquoted `#` starts a comment. |
 | `GENCLOUD_API_BASE` | Gencloud API base URL, e.g. `https://api.mypurecloud.com`. |
 | `RTM_VIEW_CONFIG_ID` | Saved "CSBDProviderData" view ID (default: `9c9f8fd2-acab-4282-9442-ddba152f9c18`, the 89-queue voice-floor view). |
+| `RTM_TIME_ZONE` | The floor's time zone, an IANA name (default: `America/New_York`). Sets the shift clock, the start of "today" for the queue numbers, and snapshot file names, whatever the server's own zone. |
 | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` | Key pair for desktop alerts over Web Push. Generate with `npx web-push generate-vapid-keys`. Optional: without them, alerts only show while a console tab is open. |
 | `VAPID_SUBJECT` | Contact for the push services, `mailto:` or `https:` (optional). |
 
@@ -212,7 +213,8 @@ This is the working mapping until WFM agrees the list (data-architecture.md, dec
 
 **Live now:**
 - Agent state as above (triggers Aux, Offline, Long Call, Outbound and related escalation rules)
-- Queue metrics, weighted by calls across the watched queues: calls in queue, service level % since midnight (the aggregates' `oServiceLevel`), ASA seconds, abandon %. Service level shows "—" and raises nothing until a call is counted.
+- The roster is the active members of the watched queues. Genesys keeps deactivated accounts as queue members (1,038 of the 2,743 in the default view), sending a stub user with no account state; the feed checks those against the users lookup, which returns only active users, and leaves the rest out. If that check fails, they are kept.
+- Queue metrics, weighted by calls across the watched queues: calls in queue, service level % since midnight US Eastern (the aggregates' `oServiceLevel`), ASA seconds, abandon %. Service level shows "—" and raises nothing until a call is counted.
 
 **Not yet live (depend on conversation-level topics and WFM adherence API — later tasks):**
 - ACW: it is not visible in presence or routing, so the Extended ACW rule stays quiet on the live feed
@@ -327,7 +329,7 @@ The engine is a TypeScript port of the design prototype's `rtm-engine.js`.
 - **Duration rules fire once per state episode** and re-arm when the state changes or the value drops back under the threshold. Offline agents are evaluated only by Prolonged offline.
 - **Strikes** count per agent, per rule, per shift. Full ladders (`nudge`, `lead`): strike 2 reaches the TL, strike 3 and later reach Ops and open or update incident `INC-2026-NNNN`. At most one open incident per agent per rule. Capped routes (`nudgeonly`, `leadonly`) never climb and never open incidents.
 - **Queue and system rules** fire once per breach, re-arm on recovery, and are logged against "Queue" / "Floor".
-- **Time** is seconds since midnight everywhere (`t`, `ackT`, `closedT`).
+- **Time** is seconds since midnight everywhere (`t`, `ackT`, `closedT`). On the live feed that is the floor's clock, US Eastern (`lib/floorTime.ts`, `RTM_TIME_ZONE`), not the server's.
 
 ### Where this build differs from the prototype
 

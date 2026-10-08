@@ -24,6 +24,12 @@ export interface QueueAgg {
   slCounted: number;
 }
 
+export interface QueueMember {
+  id: string;
+  name: string;
+  state?: string;
+}
+
 export interface GencloudClientConfig {
   apiBase: string;
   token: string;
@@ -164,15 +170,20 @@ export class GencloudClient {
     return ids.map((id) => ({ id, name: names.get(id) ?? id }));
   }
 
-  async getQueueMembers(queueId: string): Promise<{ id: string; name: string }[]> {
-    const out: { id: string; name: string }[] = [];
+  /**
+   * A queue's members. `state` is the user's account state ("active", "inactive", "deleted").
+   * Genesys leaves it out, sending a stub user, for deactivated accounts that are still
+   * members: 1,038 of the watched view's 2,743. See `activeMembers` in mappers.ts.
+   */
+  async getQueueMembers(queueId: string): Promise<QueueMember[]> {
+    const out: QueueMember[] = [];
     for (let page = 1; page <= MAX_MEMBER_PAGES; page++) {
       const r = await this.bulk(`/api/v2/routing/queues/${encodeURIComponent(queueId)}/members?pageSize=100&pageNumber=${page}`);
       const ents: Json[] = r?.entities ?? [];
       for (const m of ents) {
         const id = m.id ?? m.user?.id;
         if (!id) continue;
-        out.push({ id, name: m.name ?? m.user?.name ?? id });
+        out.push({ id, name: m.name ?? m.user?.name ?? id, state: m.user?.state });
       }
       if (ents.length < 100 || (r.pageCount && page >= r.pageCount)) break;
     }
@@ -182,7 +193,7 @@ export class GencloudClient {
   /**
    * Current presence and routing status of these users. The WebSocket only reports changes,
    * so without this snapshot an agent who has not changed since the console connected would
-   * sit at the roster's default state.
+   * sit at the roster's default state. Only active users come back.
    */
   async getUserStates(userIds: string[]): Promise<{ id: string; presence?: string; routing?: string }[]> {
     const out: { id: string; presence?: string; routing?: string }[] = [];
