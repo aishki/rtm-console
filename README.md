@@ -191,7 +191,7 @@ Implemented in `lib/feed/GencloudFeed.ts`. It establishes a WebSocket connection
    npm run dev -- -p 3001
    ```
 
-3. **What you see:** Live agents and queues from the watched view. Agent states (Available, On Call, Outbound, Aux Break, Aux Personal, Offline) and queue metrics (calls in queue, service level, ASA, abandon %) update in real time. Each agent's current state is loaded at startup, then kept current by the WebSocket.
+3. **What you see:** Live agents and queues from the watched view. Agent states (Available, On Call, Outbound, Aux Break, Aux Personal, Offline) and queue metrics (calls in queue, service level, ASA, abandon %) update in real time. Each agent's current state is loaded at startup, then kept current by the WebSocket. Queue tiles fill within seconds; the agent grid takes about 2.5 minutes, because the watched view's 90 queues hold 580 pages of members (Genesys caps pages at 100) and those requests are paced to 4 a second, dropping to 1 a second for a minute after any 429. Unpaced, the burst got the token rate-limited, stalled the queue poll and raised a false "Gencloud not responding" at every start.
 
 #### How Genesys states map
 

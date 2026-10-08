@@ -85,11 +85,37 @@ export function parseAggregates(resp: Json): QueueAgg[] {
   });
 }
 
+/**
+ * Bulk requests (queue names, members, the state snapshot) per second. Genesys rate-limits per
+ * token, and an unpaced roster load (90 queues, 8 at a time) drew 84 429s in 90 s, with
+ * Retry-After up to 43 s, which also starved the 5-second queue poll and tripped the
+ * "Gencloud not responding" rule at every start. Four a second loads the 580 member pages of the
+ * watched view in about 2.5 minutes with no 429s; after any 429 (the supervisor whose token
+ * this is shares the budget) bulk requests drop to one a second for a minute, so the poll gets
+ * through.
+ */
+const BULK_PER_SECOND = 4;
+const BULK_PER_SECOND_LIMITED = 1;
+const LIMITED_FOR_MS = 60_000;
+
 export class GencloudClient {
+  private nextBulkAt = 0;
+  private limitedUntil = 0;
+
   constructor(
     private readonly cfg: GencloudClientConfig,
     private readonly fetchFn: typeof fetch = (...a) => fetch(...a),
+    private readonly bulkPerSecond = BULK_PER_SECOND,
   ) {}
+
+  /** A one-off GET, spaced to `bulkPerSecond` across all callers. The queue poll is not paced. */
+  private async bulk(path: string): Promise<Json> {
+    const now = Date.now(), at = Math.max(now, this.nextBulkAt);
+    const rate = now < this.limitedUntil ? Math.min(this.bulkPerSecond, BULK_PER_SECOND_LIMITED) : this.bulkPerSecond;
+    this.nextBulkAt = at + 1000 / rate;
+    if (at > now) await new Promise((r) => setTimeout(r, at - now));
+    return this.request("GET", path);
+  }
 
   private async request(method: "GET" | "POST", path: string, body?: unknown, attempt = 0): Promise<Json> {
     const res = await this.fetchFn(`${this.cfg.apiBase}${path}`, {
@@ -103,6 +129,8 @@ export class GencloudClient {
     if (res.status === 401) throw new Error("HTTP 401");
     // Rate limited: wait (honouring Retry-After) and retry, bounded. Genesys returns 429 under
     // bursty load such as fetching members for many large queues at once.
+    // Any 429, poll or bulk, means the token's budget is tight: slow the bulk requests down.
+    if (res.status === 429) this.limitedUntil = Date.now() + LIMITED_FOR_MS;
     if (res.status === 429 && attempt < MAX_RATE_LIMIT_RETRIES) {
       const retryAfter = Number(res.headers.get("retry-after"));
       const waitMs = Number.isFinite(retryAfter) && retryAfter > 0
@@ -126,7 +154,7 @@ export class GencloudClient {
       const batch = ids.slice(i, i + 100);
       try {
         const q = batch.map((id) => `id=${encodeURIComponent(id)}`).join("&");
-        const r = await this.request("GET", `/api/v2/routing/queues/divisionviews?pageSize=100&${q}`);
+        const r = await this.bulk(`/api/v2/routing/queues/divisionviews?pageSize=100&${q}`);
         for (const e of (r?.entities ?? []) as Json[]) names.set(e.id, e.name);
       } catch (e) {
         if (e instanceof Error && /401/.test(e.message)) throw e;
@@ -139,10 +167,7 @@ export class GencloudClient {
   async getQueueMembers(queueId: string): Promise<{ id: string; name: string }[]> {
     const out: { id: string; name: string }[] = [];
     for (let page = 1; page <= MAX_MEMBER_PAGES; page++) {
-      const r = await this.request(
-        "GET",
-        `/api/v2/routing/queues/${encodeURIComponent(queueId)}/members?pageSize=100&pageNumber=${page}`,
-      );
+      const r = await this.bulk(`/api/v2/routing/queues/${encodeURIComponent(queueId)}/members?pageSize=100&pageNumber=${page}`);
       const ents: Json[] = r?.entities ?? [];
       for (const m of ents) {
         const id = m.id ?? m.user?.id;
@@ -164,7 +189,7 @@ export class GencloudClient {
     for (let i = 0; i < userIds.length; i += 100) {
       const ids = userIds.slice(i, i + 100);
       const q = ids.map((id) => `id=${encodeURIComponent(id)}`).join("&");
-      const r = await this.request("GET", `/api/v2/users?pageSize=100&expand=presence,routingStatus&${q}`);
+      const r = await this.bulk(`/api/v2/users?pageSize=100&expand=presence,routingStatus&${q}`);
       for (const u of (r?.entities ?? []) as Json[]) {
         if (u?.id) out.push({ id: u.id, presence: u.presence?.presenceDefinition?.systemPresence, routing: u.routingStatus?.status });
       }
