@@ -213,6 +213,7 @@ This is the working mapping until WFM agrees the list (data-architecture.md, dec
 
 **Live now:**
 - Agent state as above (triggers Aux, Offline, Long Call, Outbound and related escalation rules)
+- Time in state survives a restart: the connect snapshot gives each agent the time already spent in their state (routing `startTime` for On Call, Outbound and Available; presence `modifiedDate` for Break, Aux and Offline). Rules the agent is already past are marked as fired without call-outs, so a restart does not flood the floor; the next episode fires as usual.
 - The roster is the active members of the watched queues. Genesys keeps deactivated accounts as queue members (1,038 of the 2,743 in the default view), sending a stub user with no account state; the feed checks those against the users lookup, which returns only active users, and leaves the rest out. If that check fails, they are kept.
 - Queue metrics, weighted by calls across the watched queues: calls in queue, service level % since midnight US Eastern (the aggregates' `oServiceLevel`), ASA seconds, abandon %. Service level shows "—" and raises nothing until a call is counted.
 

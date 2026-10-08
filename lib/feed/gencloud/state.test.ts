@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { mapGenesysState } from "./state";
+import { mapGenesysState, stateSince } from "./state";
 
 // Presence values as Genesys sends them ("On Queue", with a space), counted on the live tenant.
 describe("mapGenesysState", () => {
@@ -24,5 +24,24 @@ describe("mapGenesysState", () => {
   it("also accepts the upper-case form", () => {
     expect(mapGenesysState("ON_QUEUE", "IDLE")).toBe("avail");
     expect(mapGenesysState("BREAK", "OFF_QUEUE")).toBe("auxb");
+  });
+});
+
+describe("stateSince", () => {
+  const P = "2026-10-08T12:00:00.000Z", R = "2026-10-08T13:30:00.000Z";
+  it("uses routing's start for states routing decides", () => {
+    expect(stateSince("On Queue", "INTERACTING", P, R)).toBe(Date.parse(R));
+    expect(stateSince("On Queue", "IDLE", P, R)).toBe(Date.parse(R));
+    expect(stateSince("Busy", "COMMUNICATING", P, R)).toBe(Date.parse(R));
+  });
+  it("uses presence's change for Break, Aux and Offline", () => {
+    expect(stateSince("Break", "OFF_QUEUE", P, R)).toBe(Date.parse(P));
+    expect(stateSince("Away", "OFF_QUEUE", P, R)).toBe(Date.parse(P));
+    expect(stateSince("Offline", "IDLE", P, R)).toBe(Date.parse(P));
+  });
+  it("falls back to the other timestamp, and gives undefined with neither", () => {
+    expect(stateSince("On Queue", "IDLE", P, undefined)).toBe(Date.parse(P));
+    expect(stateSince("Break", "OFF_QUEUE", undefined, R)).toBe(Date.parse(R));
+    expect(stateSince("Break", "OFF_QUEUE", undefined, "not a date")).toBeUndefined();
   });
 });

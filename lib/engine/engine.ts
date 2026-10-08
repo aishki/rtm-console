@@ -74,6 +74,8 @@ export function createEngine(hooks: EngineHooks = {}, opts: EngineOptions = {}) 
       if (a.state === "oncall") { a.onHold = false; a.holdTime = 0; }
       a.state = e.state; a.stTime = 0; a.fired = oncePerShift(a.fired);
     }
+    if (e.elapsed !== undefined) a.stTime = Math.max(0, Math.round(e.elapsed));
+    if (e.seed) for (const r of S.rules) if (ruleApplies(r, a)) a.fired[r.id] = true;
     if (e.onHold !== undefined && e.onHold !== a.onHold) { a.onHold = e.onHold; a.holdTime = 0; }
     if (e.adh !== undefined) a.adh = e.adh;
   }

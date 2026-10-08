@@ -30,6 +30,15 @@ export interface QueueMember {
   state?: string;
 }
 
+/** A user's presence and routing status, each with the ISO time it took effect. */
+export interface UserState {
+  id: string;
+  presence?: string;
+  presenceSince?: string;
+  routing?: string;
+  routingSince?: string;
+}
+
 export interface GencloudClientConfig {
   apiBase: string;
   token: string;
@@ -195,14 +204,18 @@ export class GencloudClient {
    * so without this snapshot an agent who has not changed since the console connected would
    * sit at the roster's default state. Only active users come back.
    */
-  async getUserStates(userIds: string[]): Promise<{ id: string; presence?: string; routing?: string }[]> {
-    const out: { id: string; presence?: string; routing?: string }[] = [];
+  async getUserStates(userIds: string[]): Promise<UserState[]> {
+    const out: UserState[] = [];
     for (let i = 0; i < userIds.length; i += 100) {
       const ids = userIds.slice(i, i + 100);
       const q = ids.map((id) => `id=${encodeURIComponent(id)}`).join("&");
       const r = await this.bulk(`/api/v2/users?pageSize=100&expand=presence,routingStatus&${q}`);
       for (const u of (r?.entities ?? []) as Json[]) {
-        if (u?.id) out.push({ id: u.id, presence: u.presence?.presenceDefinition?.systemPresence, routing: u.routingStatus?.status });
+        if (u?.id) out.push({
+          id: u.id,
+          presence: u.presence?.presenceDefinition?.systemPresence, presenceSince: u.presence?.modifiedDate,
+          routing: u.routingStatus?.status, routingSince: u.routingStatus?.startTime,
+        });
       }
     }
     return out;
