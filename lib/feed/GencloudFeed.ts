@@ -1,7 +1,7 @@
 import type { AgentState } from "@/lib/types";
 import type { FeedHandlers, FeedSource } from "./FeedSource";
 import { GencloudClient, type QueueMember, type UserState } from "./gencloud/client";
-import { consoleState, stateSince } from "./gencloud/state";
+import { consoleState, elapsedAtConnect, stateSince } from "./gencloud/state";
 import { CallTracker } from "./gencloud/conversations";
 import { WsManager } from "./gencloud/ws";
 import { buildRoster, aggregateQueue, activeMembers, unknownStateIds } from "./gencloud/mappers";
@@ -252,7 +252,7 @@ export class GencloudFeed implements FeedSource {
               : stateSince(s.presence, s.routing, s.presenceSince, s.routingSince);
             handlers.onAgentState(since === undefined
               ? { agent: name, state }
-              : { agent: name, state, elapsed: Math.max(0, (Date.now() - since) / 1000), seed: true });
+              : { agent: name, state, elapsed: elapsedAtConnect(state, since, Date.now(), floorMidnight(new Date()).getTime()), seed: true });
           }
         } catch (e) {
           console.warn("GencloudFeed: initial state snapshot failed; states fill in as agents change:", errMsg(e));

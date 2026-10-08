@@ -31,6 +31,16 @@ export function stateSince(
 }
 
 /**
+ * Seconds already spent in `state` at connect, from `since` (epoch ms). Only a call keeps its
+ * real start; any other state counts from the floor's midnight at most. Genesys keeps an account
+ * that has not logged in since 2024 at Offline since 2024, and the timer should say offline today.
+ */
+export function elapsedAtConnect(state: AgentState, since: number, now: number, floorMidnight: number): number {
+  const from = state === "oncall" || state === "outb" ? since : Math.max(since, floorMidnight);
+  return Math.max(0, (now - from) / 1000);
+}
+
+/**
  * The console state once the agent's calls are known. Routing stays INTERACTING through
  * after-call work, so pending ACW with no call connected is ACW, whatever routing says.
  */
