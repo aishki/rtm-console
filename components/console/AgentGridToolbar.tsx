@@ -50,7 +50,7 @@ export function AgentGridToolbar({ filters: f, onChange, onClear, searchRef, que
         <div className="relative flex min-w-[220px] flex-[1_1_280px] items-center">
           <span className="pointer-events-none absolute left-3.5 flex"><SearchIcon /></span>
           <input
-            ref={searchRef} type="search" value={f.q} aria-label="Search agents" placeholder="Search agent, team or Team Lead"
+            ref={searchRef} type="search" value={f.q} aria-label="Search agents" placeholder="Search agent, queue or Team Lead"
             onChange={e => onChange({ q: e.target.value })}
             onKeyDown={e => { if (e.key === "Escape") { onChange({ q: "" }); e.currentTarget.blur(); } }}
             className={`h-10 w-full rounded-20 border bg-white px-11 text-sm text-ink [&::-webkit-search-cancel-button]:hidden ${f.q ? "border-purple" : "border-line"}`}
