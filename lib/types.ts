@@ -63,11 +63,22 @@ export interface QueueCounts {
 
 export interface ReplayMeta { agents: number; events: number; endT: number; done: boolean }
 
+/** What an admin gets back after uploading the queue-to-LOB mapping. */
+export interface QueueMapResult {
+  queues: number;
+  towers: string[];
+  unmappedWatched: string[];
+  skipped: { row: number; reason: string }[];
+  duplicates: { queue: string; kept: string; dropped: string }[];
+}
+
 export interface Perms {
   tabs: TabId[]; rulesEdit: boolean; invAct: boolean; export: boolean;
   ackAll: boolean; ir: boolean; replay: boolean;
   /** Switch the floor between the Gencloud feed and the simulator. */
   feed: boolean;
+  /** Upload the WFM queue-to-LOB mapping. */
+  mapping: boolean;
   desc: (who: string | null) => string;
 }
 
