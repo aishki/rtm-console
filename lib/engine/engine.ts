@@ -1,6 +1,6 @@
 import type { Agent, AgentStateEvent, AgentStats, Incident, Instance, InvAction, Queue, QueueCounts, ReplayMeta, Roster, Route, Rule, RuleId, Severity, View } from "@/lib/types";
 import type { FeedHandlers } from "@/lib/feed/FeedSource";
-import { DISPOSITIONS, ONCE_PER_SHIFT, ROUTE_IDS, defaultRules, evaluateAgents, ruleApplies, ruleOf, thrOf } from "./rules";
+import { DISPOSITIONS, ONCE_PER_SHIFT, canClose, ROUTE_IDS, defaultRules, evaluateAgents, ruleApplies, ruleOf, thrOf } from "./rules";
 import { type EngineHooks, type EngineState, fire as fireRule } from "./escalation";
 import { scopeLedger } from "./scope";
 
@@ -209,7 +209,7 @@ export function createEngine(hooks: EngineHooks = {}, opts: EngineOptions = {}) 
       else if (i.status !== "Investigating") return i;
       else if (action === "reopen") { i.status = "Open"; i.disposition = ""; }
       else if (action === "record") { if (disposition && DISPOSITIONS.includes(disposition)) i.disposition = disposition; }
-      else if (action === "close" && i.disposition) { i.status = "Closed"; i.closedT = S.t; }
+      else if (action === "close" && canClose(i.disposition)) { i.status = "Closed"; i.closedT = S.t; }
       return i;
     },
     setThr(id: RuleId, v: unknown) { const r = rule(id); r.thr = Math.max(1, parseInt(String(v), 10) || r.thr); },

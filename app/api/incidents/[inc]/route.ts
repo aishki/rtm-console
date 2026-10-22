@@ -1,10 +1,10 @@
 import { authorizeFor, deny, readJson } from "@/lib/server/guard";
-import { DISPOSITIONS } from "@/lib/engine/rules";
+import { DISPOSITIONS, PENDING_DISPOSITION, canClose } from "@/lib/engine/rules";
 import { scopeIncidents } from "@/lib/engine/scope";
 
 /**
  * Move an investigation along: { action: "start" }, { action: "reopen" } (back to Open),
- * { action: "record", disposition } or { action: "close" } (needs a recorded disposition).
+ * { action: "record", disposition } or { action: "close" } (needs a final disposition, not "Pending Investigation").
  */
 export async function POST(req: Request, { params }: { params: Promise<{ inc: string }> }) {
   const ctx = await authorizeFor("invAct");
@@ -22,8 +22,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ inc: st
     if (!investigating) return deny(409, "Start the investigation before recording a disposition.");
     if (typeof body.disposition !== "string" || !DISPOSITIONS.includes(body.disposition)) return deny(400, "Pick a disposition.");
   } else if (body.action === "close") {
-    if (!investigating) return deny(409, "Start the investigation before closing it.");
-    if (!incident.disposition) return deny(409, "Record a disposition before closing the investigation.");
+    if (!investigating) return deny(409, "Start the investigation before closing the incident.");
+    if (!canClose(incident.disposition)) {
+      return deny(409, incident.disposition === PENDING_DISPOSITION
+        ? "Change the disposition from Pending Investigation to a final outcome before closing."
+        : "Record a disposition before closing the incident.");
+    }
   } else return deny(400, "Unknown action.");
   ctx.rt.engine.invAction(inc, body.action, typeof body.disposition === "string" ? body.disposition : undefined);
   ctx.rt.publish();
