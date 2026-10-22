@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { Instance, Roster, Team } from "@/lib/types";
+import { rollUp } from "@/lib/queueStats";
+import type { Instance, Queue, QueueCounts, Roster, Team } from "@/lib/types";
 import { SimFeed, seedFromRoster, simulateReplies } from "./SimFeed";
 
 const team = (name: string, tl = "", mgr = ""): Team => ({ team: name, tl, mgr, lob: name });
@@ -68,5 +69,53 @@ describe("simulated agent replies", () => {
 
   it("stays quiet most of the time", () => {
     expect(run([row(1, 960)], () => 0.5)).toEqual([]);
+  });
+});
+
+describe("simulated per-queue numbers", () => {
+  const lcg = (seed: number) => () => (seed = (seed * 1664525 + 1013904223) % 4294967296) / 4294967296;
+  type Frame = { queue: Queue; by: Record<string, QueueCounts> };
+  const run = (ticks: number, seed = 7) => {
+    const frames: Frame[] = [];
+    const feed = new SimFeed({ thr: () => 8, strikes: () => 0 }, lcg(seed));
+    feed.subscribe({ onRoster() {}, onAgentState() {}, onQueue: (queue, by) => frames.push({ queue, by: by! }), onHeartbeat() {} });
+    for (let t = 1; t <= ticks; t++) feed.tick(t);
+    return frames;
+  };
+
+  it("reports numbers for every team, and a floor total that is their roll-up", () => {
+    const frames = run(300);
+    const teams = ["Team Alpha", "Team Bravo", "Team Charlie", "Team Delta", "Team Echo", "Team Foxtrot", "Team Golf", "Team Hotel", "Team India", "Team Juliet"];
+    for (const f of [frames[0], frames[150], frames[299]]) {
+      expect(Object.keys(f.by).sort()).toEqual(teams);
+      expect(f.queue).toEqual(rollUp(Object.values(f.by)));
+    }
+  });
+
+  it("keeps calm floor queues around the old level", () => {
+    const frames = run(3600);
+    const mean = frames.reduce((s, f) => s + f.queue.cq, 0) / frames.length;
+    expect(mean).toBeGreaterThan(2);
+    expect(mean).toBeLessThan(4.5);
+    for (const f of frames) if (f.queue.sl !== null) { expect(f.queue.sl).toBeGreaterThanOrEqual(45); expect(f.queue.sl).toBeLessThanOrEqual(99); }
+  });
+
+  it("runs some queues hotter than others", () => {
+    const last = run(1800).at(-1)!;
+    const sls = Object.values(last.by).map(c => (c.slWithin / c.slCounted) * 100);
+    expect(Math.max(...sls) - Math.min(...sls)).toBeGreaterThanOrEqual(10);
+  });
+
+  // Episodes (entries into the condition) per 7 200 ticks. The old single walk gave cq>8 24-37 times,
+  // SL<80 0-1 times and abandon>5 2-10 times over seeds 3, 7, 11, 19, 23; bands are about +-50%.
+  it("fires the floor queue rules about as often as the old walk did", () => {
+    const episodes = (frames: Frame[], on: (q: Queue) => boolean) => frames.reduce((n, f, i) => n + (on(f.queue) && !(i > 0 && on(frames[i - 1].queue)) ? 1 : 0), 0);
+    for (const seed of [3, 7, 11, 19, 23]) {
+      const frames = run(7200, seed);
+      const cq = episodes(frames, q => q.cq > 8), sl = episodes(frames, q => q.sl !== null && q.sl < 80), ab = episodes(frames, q => q.ab > 5);
+      expect([seed, cq >= 12 && cq <= 56]).toEqual([seed, true]);
+      expect([seed, sl <= 2]).toEqual([seed, true]);
+      expect([seed, ab >= 1 && ab <= 15]).toEqual([seed, true]);
+    }
   });
 });

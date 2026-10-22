@@ -1,3 +1,4 @@
+import type { QueueMapRow } from "@/lib/import/queueMap";
 export type AgentState = "oncall" | "avail" | "acw" | "auxb" | "auxp" | "outb" | "off";
 export type Role = "admin" | "senior" | "mgr" | "tl" | "agent";
 export type Stage = "nudge" | "lead" | "ops";
@@ -52,13 +53,33 @@ export interface View { role: Role; who: string | null }
 /** Floor queue numbers. `sl` is null when the source has no service level yet (not 0%). */
 export interface Queue { cq: number; sl: number | null; asa: number; ab: number }
 
+/** One queue's raw call counts, kept so any group of queues can be rolled up by calls. */
+export interface QueueCounts {
+  waiting: number; offered: number; answered: number; abandoned: number;
+  /** Total answer time, seconds. */
+  answerSec: number;
+  /** Calls answered within target, out of `slCounted`. */
+  slWithin: number; slCounted: number;
+}
+
 export interface ReplayMeta { agents: number; events: number; endT: number; done: boolean }
+
+/** What an admin gets back after uploading the queue-to-LOB mapping. */
+export interface QueueMapResult {
+  queues: number;
+  towers: string[];
+  unmappedWatched: string[];
+  skipped: { row: number; reason: string }[];
+  duplicates: { queue: string; kept: string; dropped: string }[];
+}
 
 export interface Perms {
   tabs: TabId[]; rulesEdit: boolean; invAct: boolean; export: boolean;
   ackAll: boolean; ir: boolean; replay: boolean;
   /** Switch the floor between the Gencloud feed and the simulator. */
   feed: boolean;
+  /** Upload the WFM queue-to-LOB mapping. */
+  mapping: boolean;
   desc: (who: string | null) => string;
 }
 
@@ -71,7 +92,11 @@ export interface AlertNote { tag: string; n: number; title: string; body: string
 export interface RosterAgent {
   name: string; team: string; state: AgentState; stTime?: number; aht?: number; calls?: number; adh?: number;
 }
-export interface Roster { org: Team[]; agents: RosterAgent[] }
+export interface Roster {
+  org: Team[]; agents: RosterAgent[];
+  /** Queue name to the names of everyone in it. An agent in two queues is listed under both; `team` is only the first. */
+  members?: Record<string, string[]>;
+}
 /** An agent's figures for the day from the feed's own reporting. */
 export interface AgentStats {
   agent: string;
@@ -117,6 +142,12 @@ export interface TickMsg {
   org: Team[];
   /** init: the whole scoped ledger (newest first). tick: only changed or new instances. */
   ledger: Instance[];
+  /** Every queue's call counts, same for every viewer: queue numbers are floor-visible to all leaders. */
+  queues: Record<string, QueueCounts>;
+  /** Queue name to the ids of the viewer's agents in it. Sent on a snapshot and whenever the roster reloads; otherwise left out. */
+  members?: Record<string, number[]>;
+  /** The uploaded queue-to-LOB mapping. Sent on a snapshot and whenever it changes; otherwise left out. */
+  queueMap?: QueueMapRow[];
   /** `n` and `team` come from the instance behind a call-out toast; feed notices have neither. */
   toasts: (Omit<ToastEvent, "instance"> & { n?: number; team?: string })[];
   nudges: NudgeEvent[];

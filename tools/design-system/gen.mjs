@@ -397,36 +397,49 @@ mount(grid(190, [
   h(R.AgentCard, { key: 4, agent: A[4], rules: R.demo.rules, query: '', showMetrics: true })
 ]));`);
 
-card("TeamGroup", "Console", 300, "components/console/TeamGroup.tsx", 20, `
-A collapsible team on the agent grid. Its header shows the team name, its leaders and head count, how many agents are breaching, and the state mix as counts and a bar; opened, it shows the team's agent cards.
+card("TreeGroup", "Console", 300, "components/console/TreeGroup.tsx", 20, `
+One node of the agent grid's Tower → Sub-tower → LOB → Queue tree. Its row shows the name, a sub-line (queues, agents, how many are breaching), the rolled-up calls in queue, SL, ASA and abandon, and the state mix as counts and a bar. Opened, a parent shows its children and a queue shows its agent cards (100 at most, then "Show all").
 
-- You provide the \`team\`, \`all\` its agents in span (for the mix and the breach count), \`shown\` (the agents to draw after filtering and sorting), the \`rules\`, and \`open\` with \`onToggle\`.
-- Set \`filtering\` while a filter is on, so the header reads "3 of 6 agents"; pass \`query\` and \`showMetrics\` through to the cards.
-- Stack groups 12px apart. The header drops the counts and keeps the bar when the panel is narrow.
+- You provide the \`node\` (from \`buildTree\`) and its \`depth\`, \`agentsById\`, \`shownIds\` (the agents to show, id to sort position), \`breaching\` (ids breaching now), the \`queues\` counts and the \`rules\`, plus \`expanded(node)\` and \`onToggle(node)\`.
+- Prune the tree to the filter before passing it. Pass \`query\` and \`showMetrics\` through to the cards.
+- Towers draw as cards, stacked 10px apart under one \`TreeHeader\`; deeper levels are rows inside, indented 20px a level. Rows drop the mix counts and keep the bar when the panel is narrow.
 `, `
 function Demo() {
-  var o = S(true), t = R.demo.org[0];
-  var all = R.demo.agents.filter(function (a) { return a.team === t.team; });
-  return h(R.TeamGroup, { team: t, all: all, shown: all, rules: R.demo.rules, open: o[0], filtering: false, query: '', showMetrics: false, onToggle: function () { o[1](!o[0]); } });
+  var ex = S({}), A = R.demo.agents, rules = R.demo.rules;
+  var byId = new Map(A.map(function (a) { return [a.id, a]; }));
+  var shown = new Map(A.map(function (a, i) { return [a.id, i]; }));
+  var qs = R.demo.org.map(function (t) {
+    var ids = A.filter(function (a) { return a.team === t.team; }).map(function (a) { return a.id; });
+    return { key: 't:Voice/s:Sample/l:' + t.lob + '/q:' + t.team, level: 'queue', label: t.team, queues: [t.team], agentIds: ids, children: [] };
+  });
+  var lob = { key: 't:Voice/s:Sample/l:Sample LOB', level: 'lob', label: 'Sample LOB', queues: qs.map(function (q) { return q.label; }), agentIds: A.map(function (a) { return a.id; }), children: qs };
+  var node = { key: 't:Voice', level: 'tower', label: 'Voice', queues: lob.queues, agentIds: lob.agentIds, children: [lob] };
+  var counts = {};
+  qs.forEach(function (q, i) { counts[q.label] = { waiting: 3 + i * 6, offered: 120, answered: 112, abandoned: 8 - i * 4, answerSec: 112 * 24, slWithin: 96 - i * 20, slCounted: 112 }; });
+  var open = function (n) { return ex[0][n.key] !== undefined ? ex[0][n.key] : n.level !== 'queue'; };
+  return h('div', { style: { display: 'flex', flexDirection: 'column', gap: 10 } }, h(R.TreeHeader), h(R.TreeGroup, {
+    node: node, depth: 0, agentsById: byId, shownIds: shown, breaching: new Set(), queues: counts, rules: rules, query: '', showMetrics: false,
+    expanded: open, onToggle: function (n) { var next = Object.assign({}, ex[0]); next[n.key] = !open(n); ex[1](next); }
+  }));
 }
 mount(h(Demo));`);
 
 card("AgentGridToolbar", "Console", 330, "components/console/AgentGridToolbar.tsx", 20, `
-The filter bar above the agent grid: a search box, team, state and sort selects, quick-filter chips, the result line and Clear filters.
+The filter bar above the agent grid: a search box, queue, state and sort selects, quick-filter chips, the result line and Clear filters.
 
 - You own the state. Provide \`filters\` (start from \`NO_FILTERS\`), \`onChange(patch)\` and \`onClear\`, plus a \`searchRef\` for the search input so "/" can focus it.
-- Provide the data it reports: \`teamGroups\` and \`teamCount\` for the team select (hidden with one team), \`quickCounts\` for the chips, \`resultText\` for the result line, and \`filtering\` to show Clear filters.
+- Provide the data it reports: \`queueGroups\` (grouped by LOB) and \`queueCount\` for the queue select (hidden with one queue), \`quickCounts\` for the chips, \`resultText\` for the result line, and \`filtering\` to show Clear filters.
 - \`showExpandControls\` adds Expand all and Collapse all, wired to \`onExpandAll\` and \`onCollapseAll\`.
-- Place it as the first thing inside the grid's panel, above the team groups.
+- Place it as the first thing inside the grid's panel, above the tree.
 `, `
 function Demo() {
   var f = S(R.NO_FILTERS), ref = React.useRef(null);
-  var filtering = !!(f[0].q || f[0].team || f[0].states.length || f[0].quick.breach || f[0].quick.strikes || f[0].quick.hold);
-  var groups = R.demo.org.map(function (t) { return { label: t.mgr + ' \\u00b7 ' + t.lob, items: [{ value: t.team, label: t.team }] }; });
+  var filtering = !!(f[0].q || f[0].queue || f[0].states.length || f[0].quick.breach || f[0].quick.strikes || f[0].quick.hold);
+  var groups = R.demo.org.map(function (t) { return { label: 'Voice \\u00b7 ' + t.lob, items: [{ value: t.team, label: t.team }] }; });
   return h('div', { className: 'panel' }, h(R.AgentGridToolbar, {
     filters: f[0], onChange: function (p) { f[1](Object.assign({}, f[0], p)); }, onClear: function () { f[1](R.NO_FILTERS); }, searchRef: ref,
-    teamGroups: groups, teamCount: 2, quickCounts: { breach: 2, strikes: 3, hold: 1 }, filtering: filtering,
-    resultText: filtering ? 'Filtered view of 10 agents' : '10 agents in 2 teams', showExpandControls: true, onExpandAll: function () {}, onCollapseAll: function () {}
+    queueGroups: groups, queueCount: 2, quickCounts: { breach: 2, strikes: 3, hold: 1 }, filtering: filtering,
+    resultText: filtering ? 'Filtered view of 10 agents' : '10 agents \\u00b7 2 queues', showExpandControls: true, onExpandAll: function () {}, onCollapseAll: function () {}
   }));
 }
 mount(h(Demo));`);

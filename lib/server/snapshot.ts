@@ -1,22 +1,38 @@
 import type { InitMsg, TickMsg, View } from "@/lib/types";
 import { PERMS, inScope, peopleDirectory, scopeAgents, scopeIncidents, scopeLedger, scopeTeams } from "@/lib/engine/scope";
+import { queueMapRev, loadQueueMap } from "./queueMapStore";
 import { SimFeed } from "@/lib/feed/SimFeed";
 import type { Batch, Runtime } from "./runtime";
 import { VIEW_AS } from "./session";
 
+/** What a subscriber already has: the ledger revision, the roster it got members from, and the mapping revision. */
+export interface Since { rev: number; rosterRev: number; mapRev: number }
+
+/** What a subscriber has after receiving the engine's current state. */
+export const sinceNow = (rt: Runtime): Since => ({ rev: rt.engine.S.rev, rosterRev: rt.engine.S.rosterRev, mapRev: queueMapRev() });
+
 /**
- * Everything one viewer is allowed to see, scoped server-side. `sinceRev` limits the ledger
- * to instances changed after that revision (null sends the whole scoped ledger).
+ * Everything one viewer is allowed to see, scoped server-side. `since` limits the ledger to
+ * instances changed after its revision, and leaves out the membership and mapping it already
+ * has (null sends the whole scoped ledger, membership and mapping).
  */
-export function tickMsg(rt: Runtime, view: View, sinceRev: number | null, batch: Batch): TickMsg {
+export function tickMsg(rt: Runtime, view: View, since: Since | null, batch: Batch): TickMsg {
   const S = rt.engine.S;
   const replay = S.mode === "replay";
   const leader = view.role !== "agent";
   const ledger = scopeLedger(S, view, S.ledger);
+  const agents = scopeAgents(S, view);
+  let members: Record<string, number[]> | undefined;
+  if (!since || since.rosterRev !== S.rosterRev) {
+    const mine = new Set(agents.map(a => a.id));
+    members = Object.fromEntries(Object.entries(S.members ?? {}).map(([q, ids]) => [q, ids.filter(id => mine.has(id))]));
+  }
   return {
     type: "tick", t: S.t, mode: S.mode, staleFor: S.staleFor, replay: S.replay, queue: S.queue, rules: S.rules,
-    org: scopeTeams(S, view), agents: scopeAgents(S, view), incidents: scopeIncidents(S, view, S.incidents),
-    ledger: sinceRev === null ? ledger : ledger.filter(r => r.rev > sinceRev),
+    org: scopeTeams(S, view), agents, incidents: scopeIncidents(S, view, S.incidents),
+    ledger: since === null ? ledger : ledger.filter(r => r.rev > since.rev),
+    queues: S.queues ?? {}, members,
+    queueMap: !since || since.mapRev !== queueMapRev() ? loadQueueMap() : undefined,
     // Call-out toasts go to the leaders whose span they are in; feed notices go to everyone.
     // A replay only announces its own progress.
     toasts: batch.toasts

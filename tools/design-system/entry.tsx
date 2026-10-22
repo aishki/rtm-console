@@ -16,7 +16,7 @@ export * from "@/components/chrome/CsvImportDialog";
 export * from "@/components/console/AgentCard";
 export * from "@/components/console/AgentGridToolbar";
 export * from "@/components/console/IncidentTiles";
-export * from "@/components/console/TeamGroup";
+export * from "@/components/console/TreeGroup";
 export * from "@/components/console/TriggerCard";
 export * from "@/components/rules/RuleRow";
 export { SEV, STAGE, LVL, TGT, INC, TOAST } from "@/lib/ui/palette";

@@ -11,6 +11,8 @@ export type TabId = "console" | "myview" | "dash" | "rules" | "ledger";
 export type Level = "ok" | "warn" | "crit" | "esc";
 export interface Tone { bg: string; fg: string }
 export interface Team { team: string; tl: string; mgr: string; lob: string }
+/** One queue's call counts; the grid rolls them up weighted by calls. */
+export interface QueueCounts { waiting: number; offered: number; answered: number; abandoned: number; answerSec: number; slWithin: number; slCounted: number }
 export interface Agent {
   id: number; name: string; team: string; state: AgentState; stTime: number; aht: number;
   calls: number; shortCalls: number; transfers: number; onHold: boolean; holdTime: number; adh: number;
@@ -142,34 +144,48 @@ export function RuleRow(props: RuleRowProps): JSX.Element;
 export interface AgentCardProps { agent: Agent; rules: Rule[]; /** Lower-cased search text to highlight in the name. */ query: string; showMetrics: boolean }
 export function AgentCard(props: AgentCardProps): JSX.Element;
 
-export interface TeamGroupProps {
-  team: Team;
-  /** Every agent on the team in span (drives the mix and breach count). */
-  all: Agent[];
-  /** The agents to show after filtering and sorting. */
-  shown: Agent[];
+export interface TreeNode {
+  key: string;
+  level: "tower" | "subTower" | "lob" | "queue";
+  label: string;
+  /** Every queue name under the node. */
+  queues: string[];
+  /** The distinct agent ids under the node. */
+  agentIds: number[];
+  children: TreeNode[];
+}
+export interface TreeGroupProps {
+  node: TreeNode;
+  depth: number;
+  agentsById: Map<number, Agent>;
+  /** The agents to show after filtering, id → position in the chosen sort. */
+  shownIds: Map<number, number>;
+  /** Ids of the agents breaching a rule this tick. */
+  breaching: Set<number>;
+  queues: Record<string, QueueCounts>;
   rules: Rule[];
-  open: boolean;
-  filtering: boolean;
+  expanded: (node: TreeNode) => boolean;
+  onToggle: (node: TreeNode) => void;
   query: string;
   showMetrics: boolean;
-  onToggle: () => void;
 }
-export function TeamGroup(props: TeamGroupProps): JSX.Element;
+export function TreeGroup(props: TreeGroupProps): JSX.Element;
+/** Column labels above the tree, on the same grid as the rows. */
+export function TreeHeader(): JSX.Element;
 
 export type SortBy = "state" | "team" | "time" | "strikes" | "name";
 export type QuickKey = "breach" | "strikes" | "hold";
-/** `states` holds the ticked states; empty means any state. */
-export interface GridFilters { q: string; team: string; states: AgentState[]; quick: Partial<Record<QuickKey, boolean>>; sortBy: SortBy }
+/** `queue` is the picked queue name, empty for all; `states` holds the ticked states, empty for any state. */
+export interface GridFilters { q: string; queue: string; states: AgentState[]; quick: Partial<Record<QuickKey, boolean>>; sortBy: SortBy }
 export const NO_FILTERS: GridFilters;
 export interface AgentGridToolbarProps {
   filters: GridFilters;
   onChange: (patch: Partial<GridFilters>) => void;
   onClear: () => void;
   searchRef: RefObject<HTMLInputElement | null>;
-  /** Team options grouped by "{Manager} · {LOB}". */
-  teamGroups: { label: string; items: { value: string; label: string }[] }[];
-  teamCount: number;
+  /** Queue options grouped by LOB. */
+  queueGroups: { label: string; items: { value: string; label: string }[] }[];
+  queueCount: number;
   quickCounts: Record<QuickKey, number>;
   filtering: boolean;
   resultText: string;

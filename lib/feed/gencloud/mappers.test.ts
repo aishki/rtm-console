@@ -13,6 +13,21 @@ describe("buildRoster", () => {
     expect(r.agents.every(a=>a.state==="off")).toBe(true);
     expect(r.idToName.u1).toBe("Amara");
   });
+
+  it("lists an agent under every queue they are in", () => {
+    const r = buildRoster(
+      [{id:"q1",name:"Alpha"},{id:"q2",name:"Bravo"}],
+      { q1:[{id:"u1",name:"Amara"},{id:"u2",name:"Bea"}], q2:[{id:"u1",name:"Amara"}] });
+    expect(r.agents.map(a=>a.name)).toEqual(["Amara","Bea"]);
+    expect(r.members).toEqual({ Alpha:["Amara","Bea"], Bravo:["Amara"] });
+  });
+
+  it("keeps the members of two watched queues with the same name", () => {
+    const r = buildRoster(
+      [{id:"q1",name:"Alpha"},{id:"q2",name:"Alpha"}],
+      { q1:[{id:"u1",name:"Amara"}], q2:[{id:"u2",name:"Bea"}] });
+    expect(r.members).toEqual({ Alpha:["Amara","Bea"] });
+  });
 });
 
 describe("aggregateQueue", () => {
