@@ -4,7 +4,7 @@ import { GencloudClient, type QueueMember, type UserState } from "./gencloud/cli
 import { consoleState, elapsedAtConnect, stateSince } from "./gencloud/state";
 import { CallTracker } from "./gencloud/conversations";
 import { WsManager } from "./gencloud/ws";
-import { buildRoster, aggregateQueue, activeMembers, recentMembers, unknownStateIds } from "./gencloud/mappers";
+import { buildRoster, aggregateQueue, toCounts, activeMembers, recentMembers, unknownStateIds } from "./gencloud/mappers";
 import { floorMidnight } from "@/lib/floorTime";
 
 // Server-only: pulls in the Node `ws` module. Never import this from a client component.
@@ -85,7 +85,8 @@ export class GencloudFeed implements FeedSource {
     const isAuthError = (e: unknown): boolean => errMsg(e).includes("401");
     const sleep = (ms: number): Promise<void> => new Promise((resolve) => { retryTimer = setTimeout(resolve, ms); });
 
-    const pollOnce = async (queueIds: string[]): Promise<void> => {
+    const pollOnce = async (queues: { id: string; name: string }[]): Promise<void> => {
+      const queueIds = queues.map((q) => q.id);
       try {
         // "Today" is the floor's day: since Eastern midnight, not the server's (lib/floorTime.ts).
         const now = new Date();
@@ -94,7 +95,9 @@ export class GencloudFeed implements FeedSource {
           client.getAggregates(queueIds, { start: floorMidnight(now).toISOString(), end: now.toISOString() }),
         ]);
         if (stopped) return;
-        handlers.onQueue(aggregateQueue(obs, agg));
+        const counts = toCounts(obs, agg);
+        const byQueue = Object.fromEntries(queues.flatMap((q) => (counts[q.id] ? [[q.name, counts[q.id]]] : [])));
+        handlers.onQueue(aggregateQueue(obs, agg), byQueue);
         handlers.onHeartbeat();
       } catch (e) {
         // Skip this cycle; staleness is signalled by the absence of heartbeats.
@@ -103,11 +106,11 @@ export class GencloudFeed implements FeedSource {
     };
 
     /** Start the queue poll once; it only needs the queue IDs, not the roster. */
-    const startPoll = (queueIds: string[]): void => {
+    const startPoll = (queues: { id: string; name: string }[]): void => {
       if (pollStarted || stopped) return;
       pollStarted = true;
-      pollTimer = setInterval(() => { void pollOnce(queueIds); }, POLL_MS);
-      void pollOnce(queueIds);
+      pollTimer = setInterval(() => { void pollOnce(queues); }, POLL_MS);
+      void pollOnce(queues);
     };
 
     /** Each agent's AHT for the day, from Genesys's handle time on the watched queues. */
@@ -190,8 +193,8 @@ export class GencloudFeed implements FeedSource {
         const membersByQueue = recentMembers(withLogin, Date.now(), LAST_LOGIN_DAYS);
         const stale = people(activeByQueue) - people(membersByQueue);
         if (stale > 0) console.info(`GencloudFeed: left ${stale} accounts with no login in ${LAST_LOGIN_DAYS} days out of the roster`);
-        const { org, agents, idToName } = buildRoster(queues, membersByQueue);
-        handlers.onRoster({ org, agents });
+        const { org, agents, idToName, members } = buildRoster(queues, membersByQueue);
+        handlers.onRoster({ org, agents, members });
         if (Object.keys(idToName).length === 0) {
           console.warn("GencloudFeed: roster is empty (no queue members loaded)");
           return;
@@ -280,7 +283,7 @@ export class GencloudFeed implements FeedSource {
     const bootstrapOnce = async (): Promise<void> => {
       const queues = await client.getWatchedQueues();
       if (stopped) return;
-      startPoll(queues.map((q) => q.id)); // queue KPIs + heartbeats go live now
+      startPoll(queues); // queue KPIs + heartbeats go live now
       void loadRosterAndSubscribe(queues); // agents + live state load in the background
     };
 

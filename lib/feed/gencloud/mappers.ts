@@ -40,21 +40,24 @@ export function recentMembers(
 export function buildRoster(
   queues: { id: string; name: string }[],
   membersByQueue: Record<string, { id: string; name: string }[]>,
-): { org: Team[]; agents: RosterAgent[]; idToName: Record<string, string> } {
+): { org: Team[]; agents: RosterAgent[]; idToName: Record<string, string>; members: Record<string, string[]> } {
   const org: Team[] = [];
   const agents: RosterAgent[] = [];
   const idToName: Record<string, string> = {};
+  const members: Record<string, string[]> = {};
   const seen = new Set<string>();
   for (const q of queues) {
     org.push({ team: q.name, tl: "", mgr: "", lob: q.name });
+    members[q.name] = [];
     for (const m of membersByQueue[q.id] ?? []) {
+      members[q.name].push(m.name);
       if (seen.has(m.id)) continue;
       seen.add(m.id);
       idToName[m.id] = m.name;
       agents.push({ name: m.name, team: q.name, state: "off" });
     }
   }
-  return { org, agents, idToName };
+  return { org, agents, idToName, members };
 }
 
 /** Raw per-queue counts from the observation and aggregate rows, keyed by queueId. */

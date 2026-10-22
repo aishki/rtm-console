@@ -1,10 +1,11 @@
-import type { AgentStateEvent, AgentStats, Queue, Roster } from "@/lib/types";
+import type { AgentStateEvent, AgentStats, Queue, QueueCounts, Roster } from "@/lib/types";
 
 export interface FeedHandlers {
   /** Org model and the agents on shift. Replaces the engine's floor. */
   onRoster(roster: Roster): void;
   onAgentState(event: AgentStateEvent): void;
-  onQueue(queue: Queue): void;
+  /** The floor's numbers, and where the feed has them, each queue's own counts keyed by queue name. */
+  onQueue(queue: Queue, byQueue?: Record<string, QueueCounts>): void;
   /** Agents' figures for the day, when the feed reports them (Gencloud); they replace the engine's estimates. */
   onAgentStats?(stats: AgentStats[]): void;
   /** Proof of life. The engine treats a second without any feed activity as stale. */

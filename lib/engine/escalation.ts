@@ -1,4 +1,4 @@
-import type { Agent, Incident, Instance, NudgeEvent, Queue, ReplayMeta, Route, Rule, RuleId, Stage, Team, ToastEvent } from "@/lib/types";
+import type { Agent, Incident, Instance, NudgeEvent, Queue, QueueCounts, ReplayMeta, Route, Rule, RuleId, Stage, Team, ToastEvent } from "@/lib/types";
 import { nudgeCopy, valueOf } from "./rules";
 import { teamOf } from "./scope";
 
@@ -26,6 +26,12 @@ export interface EngineState {
   /** Suppresses toasts and nudges (history warm-up). */
   quiet: boolean;
   queue: Queue | null;
+  /** Each queue's latest counts, by queue name. Empty until a feed sends them. */
+  queues: Record<string, QueueCounts>;
+  /** Queue name to the ids of its agents. An agent in several queues is in each. */
+  members: Record<string, number[]>;
+  /** Bumped on every roster, so a reader can tell the membership changed. Never reset. */
+  rosterRev: number;
   /** Floor-level rules currently in breach; they re-arm on recovery. */
   floorFired: Partial<Record<RuleId, boolean>>;
   /** Bumped on every ledger change. */

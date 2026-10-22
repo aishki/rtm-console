@@ -1,4 +1,4 @@
-import type { Agent, AgentStateEvent, AgentStats, Incident, Instance, InvAction, Queue, ReplayMeta, Roster, Route, Rule, RuleId, Severity, View } from "@/lib/types";
+import type { Agent, AgentStateEvent, AgentStats, Incident, Instance, InvAction, Queue, QueueCounts, ReplayMeta, Roster, Route, Rule, RuleId, Severity, View } from "@/lib/types";
 import type { FeedHandlers } from "@/lib/feed/FeedSource";
 import { DISPOSITIONS, ONCE_PER_SHIFT, ROUTE_IDS, defaultRules, evaluateAgents, ruleApplies, ruleOf, thrOf } from "./rules";
 import { type EngineHooks, type EngineState, fire as fireRule } from "./escalation";
@@ -28,11 +28,12 @@ export type Engine = ReturnType<typeof createEngine>;
 export function createEngine(hooks: EngineHooks = {}, opts: EngineOptions = {}) {
   const S: EngineState = {
     t: 0, mode: "live", replay: null, org: [], agents: [], rules: opts.rules ?? defaultRules(),
-    ledger: [], incidents: [], seq: 0, incSeq: 0, staleFor: 0, quiet: false, queue: null, floorFired: {}, rev: 0,
+    ledger: [], incidents: [], seq: 0, incSeq: 0, staleFor: 0, quiet: false, queue: null, queues: {}, members: {}, rosterRev: 0, floorFired: {}, rev: 0,
   };
   let beat = false;
   let pending: AgentStateEvent[] = [];
   let pendingQueue: Queue | null = null;
+  let pendingQueues: Record<string, QueueCounts> | null = null;
   let pendingStats: AgentStats[] = [];
 
   const thr = (id: RuleId) => thrOf(S.rules, id);
@@ -53,10 +54,15 @@ export function createEngine(hooks: EngineHooks = {}, opts: EngineOptions = {}) 
           adh: p?.adh ?? a.adh ?? 96, ahtFromFeed: p?.ahtFromFeed, strikes: p?.strikes ?? {}, fired: p?.fired ?? {},
         };
       });
+      const ids = new Map(S.agents.map(a => [a.name, a.id]));
+      // Without membership from the feed (simulator, replay), a team's members are the agents whose team it is.
+      const byName = r.members ?? Object.fromEntries(S.org.map(t => [t.team, S.agents.filter(a => a.team === t.team).map(a => a.name)]));
+      S.members = Object.fromEntries(Object.entries(byName).map(([q, names]) => [q, names.flatMap(n => ids.get(n) ?? [])]));
+      S.rosterRev++;
       beat = true;
     },
     onAgentState(e) { pending.push(e); beat = true; },
-    onQueue(q) { pendingQueue = q; beat = true; },
+    onQueue(q, byQueue) { pendingQueue = q; if (byQueue) pendingQueues = byQueue; beat = true; },
     onAgentStats(s) { pendingStats.push(...s); beat = true; },
     onHeartbeat() { beat = true; },
   };
@@ -97,6 +103,7 @@ export function createEngine(hooks: EngineHooks = {}, opts: EngineOptions = {}) 
     }
     pendingStats = [];
     if (pendingQueue) { S.queue = pendingQueue; pendingQueue = null; }
+    if (pendingQueues) { S.queues = pendingQueues; pendingQueues = null; }
     if (opts.deriveAdh) for (const a of S.agents) {
       a.adh = Math.max(70, Math.min(100, a.adh + (a.state === "auxp" || a.state === "off" ? -0.03 : a.state === "oncall" ? 0.008 : 0)));
     }
@@ -160,9 +167,9 @@ export function createEngine(hooks: EngineHooks = {}, opts: EngineOptions = {}) 
     S, ingest, tick, thr,
     /** Clear the shift (ledger, incidents, strikes) and set the clock. Rule configuration is kept. */
     reset(o: { t: number; mode?: "live" | "replay"; replay?: ReplayMeta | null }) {
-      Object.assign(S, { t: o.t, mode: o.mode ?? "live", replay: o.replay ?? null, org: [], agents: [], ledger: [], incidents: [], seq: 0, incSeq: 0, staleFor: 0, queue: null, floorFired: {} });
+      Object.assign(S, { t: o.t, mode: o.mode ?? "live", replay: o.replay ?? null, org: [], agents: [], ledger: [], incidents: [], seq: 0, incSeq: 0, staleFor: 0, queue: null, queues: {}, members: {}, floorFired: {} });
       S.rev++;
-      pending = []; pendingQueue = null; pendingStats = []; beat = false;
+      pending = []; pendingQueue = null; pendingQueues = null; pendingStats = []; beat = false;
     },
     /** After a quiet warm-up: arm exactly the rules that are in breach right now. */
     rearm() {

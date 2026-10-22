@@ -80,7 +80,11 @@ export interface AlertNote { tag: string; n: number; title: string; body: string
 export interface RosterAgent {
   name: string; team: string; state: AgentState; stTime?: number; aht?: number; calls?: number; adh?: number;
 }
-export interface Roster { org: Team[]; agents: RosterAgent[] }
+export interface Roster {
+  org: Team[]; agents: RosterAgent[];
+  /** Queue name to the names of everyone in it. An agent in two queues is listed under both; `team` is only the first. */
+  members?: Record<string, string[]>;
+}
 /** An agent's figures for the day from the feed's own reporting. */
 export interface AgentStats {
   agent: string;

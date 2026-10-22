@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { AgentState, AgentStateEvent, NudgeEvent, RosterAgent, RuleId, Team, ToastEvent, View } from "@/lib/types";
+import type { AgentState, AgentStateEvent, NudgeEvent, QueueCounts, RosterAgent, RuleId, Team, ToastEvent, View } from "@/lib/types";
 import { createEngine } from "./engine";
 import { firstName, stageFor } from "./escalation";
 import { isBreach, myTargets } from "./rules";
@@ -516,5 +516,56 @@ describe("call data from the feed", () => {
     set("Amara Reyes", "oncall"); run(1);
     set("Amara Reyes", "oncall", { onHold: true, holdElapsed: 90 }); run(1);
     expect(agent("Amara Reyes").holdTime).toBe(90);
+  });
+});
+
+describe("queue membership and per-queue counts", () => {
+  const id = (e: ReturnType<typeof setup>["e"], name: string) => e.S.agents.find(a => a.name === name)!.id;
+
+  it("keeps every queue an agent belongs to", () => {
+    const { e } = setup();
+    e.ingest.onRoster({
+      org: [{ team: "Q1", tl: "", mgr: "", lob: "Q1" }, { team: "Q2", tl: "", mgr: "", lob: "Q2" }],
+      agents: [{ name: "A", team: "Q1", state: "avail" }, { name: "B", team: "Q1", state: "avail" }],
+      members: { Q1: ["A", "B"], Q2: ["B", "Ghost"] },
+    });
+    expect(e.S.members).toEqual({ Q1: [id(e, "A"), id(e, "B")], Q2: [id(e, "B")] });
+  });
+
+  it("derives membership from teams when the feed sends none", () => {
+    const { e } = setup();
+    expect(e.S.members).toEqual({
+      "Team Alpha": [id(e, "Amara Reyes"), id(e, "Joshua Lim")],
+      "Team Bravo": [id(e, "Bea Santos")],
+      "Team Delta": [id(e, "Miguel Cruz")],
+    });
+  });
+
+  it("bumps rosterRev on each roster, and keeps it rising across a reset", () => {
+    const { e } = setup();
+    const first = e.S.rosterRev;
+    expect(first).toBeGreaterThan(0);
+    e.ingest.onRoster({ org: ORG, agents: ROSTER });
+    expect(e.S.rosterRev).toBe(first + 1);
+    e.reset({ t: 0 });
+    expect(e.S.rosterRev).toBe(first + 1);
+    expect(e.S.members).toEqual({});
+    expect(e.S.queues).toEqual({});
+    e.ingest.onRoster({ org: ORG, agents: ROSTER });
+    expect(e.S.rosterRev).toBe(first + 2);
+  });
+
+  it("stores per-queue counts with the floor numbers", () => {
+    const { e, run } = setup();
+    const counts: QueueCounts = { waiting: 3, offered: 10, answered: 8, abandoned: 2, answerSec: 90, slWithin: 7, slCounted: 10 };
+    e.ingest.onQueue({ cq: 3, sl: 70, asa: 11, ab: 20 }, { Q1: counts });
+    expect(e.S.queues).toEqual({});
+    run(1);
+    expect(e.S.queues.Q1).toEqual(counts);
+    expect(e.S.queue?.cq).toBe(3);
+    // A queue update without per-queue counts leaves the last ones in place.
+    e.ingest.onQueue({ cq: 4, sl: 70, asa: 11, ab: 20 });
+    run(1);
+    expect(e.S.queues.Q1).toEqual(counts);
   });
 });
