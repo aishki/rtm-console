@@ -120,6 +120,17 @@ A raw Gencloud agent-status CSV still works in the same dialog, with column and 
 
 Validation and the sheet contract live in `lib/import/floor.ts` (pure, tested in `floor.test.ts`).
 
+## Queue mapping
+
+The agent grid groups agents **Tower → Sub-tower → LOB → Queue**, with each level's calls in queue, SL, ASA and abandon rolled up weighted by calls. The grouping comes from the WFM queue-to-LOB workbook. Until one is uploaded, every queue shows under **Unmapped**.
+
+Only an Admin can upload it: **Queue mapping** in the agent grid's header. It works on every floor, the live Genesys feed included, because it does not touch agent data.
+
+- The file is the `.xlsx` WFM sends. It needs a sheet named "Queue-to-LOB mapping" with the columns Tower, Sub-tower, LOB and Queue (Region and Org are read when present). Queue names match Genesys ignoring case and surrounding spaces.
+- An upload **replaces only the towers in the file** and keeps every other tower, so each tower's owner can send their own sheet.
+- The dialog reports the queues stored, the towers replaced, watched queues that are still unmapped, skipped rows and duplicate queues (the first row wins).
+- The mapping is stored in `.rtm/queue-map.json` (gitignored) and reaches every open console without a reload. The workbooks hold staff names: never commit them.
+
 ## Architecture
 
 ```
@@ -164,7 +175,7 @@ lib/
 components/
   ui/                             Buttons, FilterChip, LogoLockup, DataTable, KpiTile, Toggle, StatusPill
   chrome/                         ConsoleShell, Navbar, ContextBar, ToastStack, NudgePopup, CsvImportDialog
-  console/                        AgentCard, TeamGroup, AgentGridToolbar, TriggerCard (+ Ladder), IncidentTiles
+  console/                        AgentCard, TreeGroup, AgentGridToolbar, QueueMapDialog, TriggerCard (+ Ladder), IncidentTiles
   rules/                          RuleRow
 ```
 
