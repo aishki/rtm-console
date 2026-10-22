@@ -7,6 +7,7 @@ import { api, attempt } from "@/lib/client/api";
 import { usePerms } from "@/lib/client/hooks";
 import { useConsole } from "@/lib/client/store";
 import { queueLevels } from "@/lib/queueStats";
+import { autoOpenQueues, expandAllKeys, filterTree, flatten } from "@/lib/gridFilter";
 import { type TreeNode, buildTree } from "@/lib/queueTree";
 import type { Agent, Instance } from "@/lib/types";
 import { PurpleButton } from "@/components/ui/buttons";
@@ -46,17 +47,6 @@ function useKpis(): Kpi[] {
     ];
   }, [queue, rules, agents, replay]);
 }
-
-/** Keeps the nodes that pass `keep`, and the parents of any that do. */
-function prune(nodes: TreeNode[], keep: (n: TreeNode) => boolean): TreeNode[] {
-  return nodes.flatMap(n => {
-    if (!keep(n)) return [];
-    if (n.level === "queue") return [n];
-    const children = prune(n.children, keep);
-    return children.length ? [{ ...n, children }] : [];
-  });
-}
-const flatten = (nodes: TreeNode[]): TreeNode[] => nodes.flatMap(n => [n, ...flatten(n.children)]);
 
 /** Queue filter options, one group per LOB (the Unmapped tower is one group). */
 function queueOptions(tree: TreeNode[]) {
@@ -107,45 +97,46 @@ function AgentGrid() {
   const qn = filters.q.trim().toLowerCase();
   const { quick } = filters;
   const queueFilter = tree.some(t => t.queues.includes(filters.queue)) ? filters.queue : "";
-  const agentFiltering = !!(qn || filters.states.length || quick.breach || quick.strikes || quick.hold);
-  const filtering = agentFiltering || !!queueFilter;
+  const scoped = !!(filters.states.length || quick.breach || quick.strikes || quick.hold);
+  const filtering = scoped || !!qn || !!queueFilter;
 
-  // The queue filter picks a branch of the tree, not agents: someone in several queues shows under each.
-  const matches = (a: Agent) => {
+  const inScope = (a: Agent) => {
     if (filters.states.length && !filters.states.includes(a.state)) return false;
     if (quick.breach && !breaching.has(a.id)) return false;
     if (quick.strikes && !strikesOf(a)) return false;
     if (quick.hold && !a.onHold) return false;
-    if (qn) {
-      const tl = teamOf(org, a.team).tl;
-      if (!(a.name.toLowerCase().includes(qn) || a.team.toLowerCase().includes(qn) || tl.toLowerCase().includes(qn))) return false;
-    }
     return true;
   };
+  // A person matches on their name or team lead; queue membership stands in for their home team.
+  const hits = (a: Agent) => a.name.toLowerCase().includes(qn) || teamOf(org, a.team).tl.toLowerCase().includes(qn);
+  const view = filtering
+    ? filterTree(tree, {
+      query: qn, queue: queueFilter,
+      inScope: scoped ? new Set(agents.filter(inScope).map(a => a.id)) : null,
+      queryHits: new Set(qn ? agents.filter(hits).map(a => a.id) : []),
+    })
+    : null;
+  const visible = view?.nodes ?? tree;
+  const nodes = flatten(visible);
+
   // "state" follows the legend's order, On Call first; agents in the same state keep their roster order.
   const sorters: Partial<Record<GridFilters["sortBy"], (x: Agent, y: Agent) => number>> = {
     state: (x, y) => STATE_IDS.indexOf(x.state) - STATE_IDS.indexOf(y.state),
     time: (x, y) => y.stTime - x.stTime, strikes: (x, y) => strikesOf(y) - strikesOf(x), name: (x, y) => x.name.localeCompare(y.name),
   };
-  let shownAgents = agentFiltering ? agents.filter(matches) : agents;
   const sorter = sorters[filters.sortBy];
-  if (sorter) shownAgents = [...shownAgents].sort(sorter);
-  const shownIds = new Map(shownAgents.map((a, i) => [a.id, i]));
+  const order = new Map((sorter ? [...agents].sort(sorter) : agents).map((a, i) => [a.id, i]));
 
-  const visible = filtering
-    ? prune(tree, n => (!queueFilter || n.queues.includes(queueFilter)) && (!agentFiltering || n.agentIds.some(id => shownIds.has(id))))
-    : tree;
-  const nodes = flatten(visible);
-  // Counted from the queues left after pruning: a parent's own lists still hold its filtered-out queues.
-  const shownQueueNodes = nodes.filter(n => n.level === "queue");
-  const shownCount = new Set(shownQueueNodes.flatMap(n => n.agentIds.filter(id => shownIds.has(id)))).size;
-
-  const keyOf = (node: TreeNode) => (filtering ? "f:" : "") + node.key;
-  // Towers, sub-towers and LOBs start open and queues closed. A search also opens the queues it matches;
-  // a state, quick or queue filter alone leaves them closed, since a broad one would draw thousands of cards.
-  const isOpen = (node: TreeNode) => expanded[keyOf(node)] ?? (node.level !== "queue" || (filtering && !!qn));
+  const prefix = filtering ? "f:" : "";
+  const keyOf = (node: TreeNode) => prefix + node.key;
+  // Towers, sub-towers and LOBs start open and queues closed. A search also opens the queues it matches
+  // while the result is small; a broad one, or a state, quick or queue filter alone, leaves them closed
+  // showing counts, since it would draw thousands of cards. A node opened or closed by hand stays so.
+  const autoOpen = view ? autoOpenQueues(view, qn) : new Set<string>();
+  const isOpen = (node: TreeNode) => expanded[keyOf(node)] ?? (node.level !== "queue" || autoOpen.has(node.key));
   const toggle = (node: TreeNode) => setExpanded(ex => ({ ...ex, [keyOf(node)]: !isOpen(node) }));
-  const setAll = (open: boolean) => setExpanded(ex => ({ ...ex, ...Object.fromEntries(nodes.map(n => [keyOf(n), open])) }));
+  const expandAll = () => setExpanded(ex => ({ ...ex, ...Object.fromEntries(expandAllKeys(visible).map(k => [prefix + k, true])) }));
+  const collapseAll = () => setExpanded(ex => ({ ...ex, ...Object.fromEntries(nodes.map(n => [keyOf(n), false])) }));
   const clear = () => {
     setFilters(f => ({ ...NO_FILTERS, sortBy: f.sortBy }));
     setExpanded(ex => Object.fromEntries(Object.entries(ex).filter(([k]) => !k.startsWith("f:"))));
@@ -171,14 +162,14 @@ function AgentGrid() {
       <AgentGridToolbar
         filters={{ ...filters, queue: queueFilter }} onChange={patch => setFilters(f => ({ ...f, ...patch }))} onClear={clear} searchRef={searchRef}
         queueGroups={queueGroups} queueCount={queueCount} quickCounts={quickCounts} filtering={filtering}
-        resultText={filtering ? `${shownCount} of ${agents.length} agents · ${plural(shownQueueNodes.length, "queue")}` : `${agents.length} agents · ${plural(queueCount, "queue")}`}
-        showExpandControls={nodes.length > 1} onExpandAll={() => setAll(true)} onCollapseAll={() => setAll(false)}
+        resultText={view ? `${view.agentCount} of ${agents.length} agents · ${plural(view.queueCount, "queue")}` : `${agents.length} agents · ${plural(queueCount, "queue")}`}
+        showExpandControls={nodes.length > 1} onExpandAll={expandAll} onCollapseAll={collapseAll}
       />
       <div className="flex flex-col gap-2.5 px-5 pb-5 pt-4">
         {visible.length > 0 && <TreeHeader />}
         {visible.map(node => (
           <TreeGroup
-            key={node.key} node={node} depth={0} agentsById={agentsById} shownIds={shownIds} breaching={breaching} queues={queues} rules={rules}
+            key={node.key} node={node} depth={0} agentsById={agentsById} shown={view?.shown ?? null} order={order} breaching={breaching} queues={queues} rules={rules}
             expanded={isOpen} onToggle={toggle} query={qn} showMetrics
           />
         ))}

@@ -48,8 +48,10 @@ interface Props {
   node: TreeNode;
   depth: number;
   agentsById: Map<number, Agent>;
-  /** The agents to show after filtering, id → position in the chosen sort. */
-  shownIds: Map<number, number>;
+  /** While filtering, node key → the ids it shows; null shows every agent. */
+  shown: Map<string, number[]> | null;
+  /** Every agent's position in the chosen sort, by id. */
+  order: Map<number, number>;
   /** Ids of the agents breaching a rule this tick, worked out once for the whole tree. */
   breaching: Set<number>;
   queues: Record<string, QueueCounts>;
@@ -66,7 +68,7 @@ interface Props {
  * are rows inside them. The caller passes a tree already pruned to the filter.
  */
 export function TreeGroup(props: Props) {
-  const { node, depth, agentsById, shownIds, breaching, queues, rules, expanded, onToggle, query, showMetrics } = props;
+  const { node, depth, agentsById, shown, order, breaching, queues, rules, expanded, onToggle, query, showMetrics } = props;
   const [showAll, setShowAll] = useState(false);
   const open = expanded(node);
   const isQueue = node.level === "queue";
@@ -79,7 +81,11 @@ export function TreeGroup(props: Props) {
     if (breaching.has(a.id)) breach++;
   }
   const mix = MIX.map((m, i) => ({ ...m, n: counts[i] }));
-  const sub = isQueue ? plural(all.length, "agent") : `${plural(node.queues.length, "queue")} · ${plural(all.length, "agent")} · ${breach} breaching`;
+  const matching = shown?.get(node.key);
+  const people = matching ? `${matching.length} of ${plural(all.length, "agent")}` : plural(all.length, "agent");
+  const sub = isQueue
+    ? `${people}${breach > 0 ? ` · ${breach} breaching` : ""}`
+    : `${plural(node.queues.length, "queue")} · ${people} · ${breach} breaching`;
 
   const q = rollUp(node.queues.flatMap(name => queues[name] ?? []));
   const lv = q && queueLevels(q, rules);
@@ -87,10 +93,10 @@ export function TreeGroup(props: Props) {
     ? <span className="num text-right text-sm font-semibold text-muted">—</span>
     : <span className="num text-right text-sm font-semibold" style={{ color: LVL[level].fg }}>{text}</span>;
 
-  const shown = isQueue && open
-    ? node.agentIds.filter(id => shownIds.has(id)).sort((a, b) => shownIds.get(a)! - shownIds.get(b)!).flatMap(id => agentsById.get(id) ?? [])
+  const listed = isQueue && open
+    ? [...(matching ?? node.agentIds)].sort((a, b) => (order.get(a) ?? 0) - (order.get(b) ?? 0)).flatMap(id => agentsById.get(id) ?? [])
     : [];
-  const cards = showAll ? shown : shown.slice(0, CARD_LIMIT);
+  const cards = showAll ? listed : listed.slice(0, CARD_LIMIT);
 
   const row = (
     <button
@@ -102,7 +108,7 @@ export function TreeGroup(props: Props) {
       </svg>
       <span className="flex min-w-0 flex-col gap-0.5">
         <span title={node.label} className={`truncate font-semibold text-purple ${depth === 0 ? "text-base" : "text-sm"}`}>{node.label}</span>
-        <span title={sub} className={`truncate text-xs ${breach > 0 && !isQueue ? "text-error-text" : "text-muted"}`}>{sub}</span>
+        <span title={sub} className={`truncate text-xs ${breach > 0 ? "text-error-text" : "text-muted"}`}>{sub}</span>
       </span>
       {cell(q && String(Math.round(q.cq)), lv?.cq)}
       {cell(q && q.sl !== null ? `${q.sl.toFixed(0)}%` : null, lv?.sl)}
@@ -120,9 +126,9 @@ export function TreeGroup(props: Props) {
       <div className="grid grid-cols-[repeat(auto-fill,minmax(190px,1fr))] gap-2.5">
         {cards.map(a => <AgentCard key={a.id} agent={a} rules={rules} query={query} showMetrics={showMetrics} />)}
       </div>
-      {cards.length < shown.length && (
+      {cards.length < listed.length && (
         <button type="button" onClick={() => setShowAll(true)} className="h-8 self-start border-0 bg-transparent px-0 text-[13px] font-semibold text-purple hover:text-purple-hover">
-          Show all {shown.length}
+          Show all {listed.length}
         </button>
       )}
     </div>
