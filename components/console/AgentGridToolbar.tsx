@@ -10,18 +10,18 @@ import { Select, type SelectOption } from "@/components/ui/Select";
 
 export type SortBy = "state" | "team" | "time" | "strikes" | "name";
 export type QuickKey = "breach" | "strikes" | "hold";
-/** `states` holds the ticked states; empty means any state. */
-export interface GridFilters { q: string; team: string; states: AgentState[]; quick: Partial<Record<QuickKey, boolean>>; sortBy: SortBy }
-export const NO_FILTERS: GridFilters = { q: "", team: "", states: [], quick: {}, sortBy: "state" };
+/** `queue` is the picked queue name, empty for all; `states` holds the ticked states, empty for any state. */
+export interface GridFilters { q: string; queue: string; states: AgentState[]; quick: Partial<Record<QuickKey, boolean>>; sortBy: SortBy }
+export const NO_FILTERS: GridFilters = { q: "", queue: "", states: [], quick: {}, sortBy: "state" };
 
 interface Props {
   filters: GridFilters;
   onChange: (patch: Partial<GridFilters>) => void;
   onClear: () => void;
   searchRef: RefObject<HTMLInputElement | null>;
-  /** Team options grouped by "{Manager} · {LOB}". */
-  teamGroups: { label: string; items: { value: string; label: string }[] }[];
-  teamCount: number;
+  /** Queue options grouped by LOB. */
+  queueGroups: { label: string; items: { value: string; label: string }[] }[];
+  queueCount: number;
   quickCounts: Record<QuickKey, number>;
   filtering: boolean;
   resultText: string;
@@ -40,8 +40,8 @@ const SORT_OPTIONS: SelectOption<SortBy>[] = [
   { value: "name", label: "Sort: name A–Z" },
 ];
 
-/** Search, team/state/sort selects, quick-filter chips and the result line for the agent grid. */
-export function AgentGridToolbar({ filters: f, onChange, onClear, searchRef, teamGroups, teamCount, quickCounts, filtering, resultText, showExpandControls, onExpandAll, onCollapseAll }: Props) {
+/** Search, queue/state/sort selects, quick-filter chips and the result line for the agent grid. */
+export function AgentGridToolbar({ filters: f, onChange, onClear, searchRef, queueGroups, queueCount, quickCounts, filtering, resultText, showExpandControls, onExpandAll, onCollapseAll }: Props) {
   const select = "field h-10 max-w-full px-3";
   const textBtn = "h-8 border-0 bg-transparent px-2.5 text-[13px] font-semibold text-purple hover:text-purple-hover";
   return (
@@ -63,8 +63,8 @@ export function AgentGridToolbar({ filters: f, onChange, onClear, searchRef, tea
             <span title="Press / to search" className="pointer-events-none absolute right-3 flex h-[22px] min-w-[22px] items-center justify-center rounded-[6px] px-1.5 font-ui text-xs text-muted shadow-[inset_0_0_0_1px_var(--border-neutral)]">/</span>
           )}
         </div>
-        {teamCount > 1 && (
-          <Select value={f.team} onChange={team => onChange({ team })} options={[{ value: "", label: `All teams (${teamCount})` }, ...teamGroups]} aria-label="Filter by team" className={`${select} !max-w-[240px]`} />
+        {queueCount > 1 && (
+          <Select value={f.queue} onChange={queue => onChange({ queue })} options={[{ value: "", label: `All queues (${queueCount})` }, ...queueGroups]} aria-label="Filter by queue" className={`${select} !max-w-[240px]`} />
         )}
         <MultiSelect value={f.states} onChange={states => onChange({ states })} options={STATE_OPTIONS} anyLabel="Any state" countLabel={n => `${n} states`} aria-label="Filter by state" className={select} />
         <Select value={f.sortBy} onChange={sortBy => onChange({ sortBy })} options={SORT_OPTIONS} aria-label="Sort agents" className={select} />

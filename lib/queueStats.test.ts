@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { rollUp, queueKey } from "./queueStats";
+import { defaultRules, thrOf } from "./engine/rules";
+import { rollUp, queueKey, queueLevels } from "./queueStats";
 import type { QueueCounts } from "./types";
 
 const c = (p: Partial<QueueCounts>): QueueCounts => ({ waiting: 0, offered: 0, answered: 0, abandoned: 0, answerSec: 0, slWithin: 0, slCounted: 0, ...p });
@@ -16,4 +17,10 @@ describe("queueStats", () => {
   it("has no service level before any call is counted", () => expect(rollUp([c({ waiting: 3 })])!.sl).toBeNull());
   it("is null with no queues reporting", () => expect(rollUp([])).toBeNull());
   it("keys queue names ignoring case and surrounding spaces", () => expect(queueKey("  csbd_x ")).toBe(queueKey("CSBD_X")));
+  it("colours call numbers with the KPI tile thresholds", () => {
+    const rules = defaultRules(), thr = (id: Parameters<typeof thrOf>[1]) => thrOf(rules, id);
+    expect(queueLevels({ cq: thr("cq") + 1, sl: thr("sl") - 1, asa: 46, ab: thr("aband") + 1 }, rules)).toEqual({ cq: "crit", sl: "crit", asa: "warn", ab: "crit" });
+    expect(queueLevels({ cq: thr("cq") - 1, sl: thr("sl") + 1, asa: 10, ab: thr("aband") - 1 }, rules)).toEqual({ cq: "warn", sl: "warn", asa: "ok", ab: "warn" });
+    expect(queueLevels({ cq: 0, sl: null, asa: 0, ab: 0 }, rules)).toEqual({ cq: "ok", sl: "ok", asa: "ok", ab: "ok" });
+  });
 });
