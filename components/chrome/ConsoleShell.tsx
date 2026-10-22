@@ -2,11 +2,13 @@
 
 import { usePathname, useRouter } from "next/navigation";
 import { type ReactNode, useEffect } from "react";
+import { DEV_TOOLS } from "@/lib/client/devSettings";
 import { usePerms } from "@/lib/client/hooks";
 import { connect, disconnect, useConsole } from "@/lib/client/store";
 import { TABS } from "@/lib/ui/palette";
 import { BitsLogo } from "@/components/ui/LogoLockup";
 import { ContextBar } from "./ContextBar";
+import { DevBar } from "./DevBar";
 import { Navbar } from "./Navbar";
 import { NudgePopup } from "./NudgePopup";
 import { ToastStack } from "./ToastStack";
@@ -47,6 +49,8 @@ export function ConsoleShell({ children }: { children: ReactNode }) {
   return (
     <div className="flex min-h-screen flex-col bg-page text-sm text-ink">
       <header className="sticky top-0 z-40 bg-white">
+        {/* TODO(prod): development-only controls; remove with DevBar.tsx before production. */}
+        {DEV_TOOLS && <DevBar />}
         <Navbar current={allowed ? current : undefined} />
         <ContextBar />
       </header>

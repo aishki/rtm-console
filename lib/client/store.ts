@@ -5,6 +5,7 @@ import { alertsFor } from "@/lib/alerts";
 import type { QueueMapRow } from "@/lib/import/queueMap";
 import type { Agent, FeedKind, Incident, InitMsg, Instance, NudgeEvent, PeopleDirectory, Queue, QueueCounts, ReplayMeta, Rule, StreamMsg, Team, ToastKind, View } from "@/lib/types";
 import { alertWhileHidden, syncAlerts } from "./alerts";
+import { devOn } from "./devSettings";
 
 export interface ToastItem { id: number; kind: ToastKind; title: string; body: string }
 
@@ -81,7 +82,8 @@ function apply(msg: StreamMsg) {
   const { toast } = useConsole.getState();
   const init = msg.type === "init" ? (msg as InitMsg) : null;
   // A snapshot repeats the agent's unacknowledged nudge; a tick only carries new ones.
-  const nudge = msg.nudges.filter(e => !init || e.n !== shownNudge).at(-1);
+  // The dev bar's switches can mute nudges, floor toasts and desktop alerts (TODO(prod): see devSettings.ts).
+  const nudge = devOn("nudges") ? msg.nudges.filter(e => !init || e.n !== shownNudge).at(-1) : undefined;
   if (nudge) shownNudge = nudge.n;
   useConsole.setState(s => ({
     status: "ready", t: msg.t, mode: msg.mode, staleFor: msg.staleFor, replay: msg.replay, queue: msg.queue,
@@ -92,10 +94,10 @@ function apply(msg: StreamMsg) {
       : { ledger: mergeLedger(s.ledger, msg.ledger) }),
     ...(nudge ? { nudge } : null),
   }));
-  for (const t of msg.toasts) toast(t.kind, t.title, t.body);
-  if (init) void syncAlerts().catch(() => {});
+  if (devOn("toasts")) for (const t of msg.toasts) toast(t.kind, t.title, t.body);
+  if (init && devOn("desktop")) void syncAlerts().catch(() => {});
   const role = useConsole.getState().view?.role;
-  if (role && !init) alertWhileHidden(alertsFor(role, msg.nudges, msg.toasts));
+  if (role && !init && devOn("desktop")) alertWhileHidden(alertsFor(role, msg.nudges, msg.toasts));
 }
 
 let source: EventSource | null = null;
