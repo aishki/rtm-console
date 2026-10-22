@@ -77,7 +77,7 @@ describe("simulated per-queue numbers", () => {
   type Frame = { queue: Queue; by: Record<string, QueueCounts> };
   const run = (ticks: number, seed = 7) => {
     const frames: Frame[] = [];
-    const feed = new SimFeed({ thr: () => 6, strikes: () => 0 }, lcg(seed));
+    const feed = new SimFeed({ thr: () => 8, strikes: () => 0 }, lcg(seed));
     feed.subscribe({ onRoster() {}, onAgentState() {}, onQueue: (queue, by) => frames.push({ queue, by: by! }), onHeartbeat() {} });
     for (let t = 1; t <= ticks; t++) feed.tick(t);
     return frames;
@@ -92,14 +92,12 @@ describe("simulated per-queue numbers", () => {
     }
   });
 
-  it("keeps the floor in today's range over a shift", () => {
+  it("keeps calm floor queues around the old level", () => {
     const frames = run(3600);
     const mean = frames.reduce((s, f) => s + f.queue.cq, 0) / frames.length;
-    expect(mean).toBeGreaterThan(1);
-    expect(mean).toBeLessThan(8);
-    for (const f of frames) {
-      if (f.queue.sl !== null) { expect(f.queue.sl).toBeGreaterThanOrEqual(45); expect(f.queue.sl).toBeLessThanOrEqual(99); }
-    }
+    expect(mean).toBeGreaterThan(2);
+    expect(mean).toBeLessThan(4.5);
+    for (const f of frames) if (f.queue.sl !== null) { expect(f.queue.sl).toBeGreaterThanOrEqual(45); expect(f.queue.sl).toBeLessThanOrEqual(99); }
   });
 
   it("runs some queues hotter than others", () => {
@@ -108,12 +106,16 @@ describe("simulated per-queue numbers", () => {
     expect(Math.max(...sls) - Math.min(...sls)).toBeGreaterThanOrEqual(10);
   });
 
-  it("lets the floor rules fire: SL dips under 80 and abandon passes 5, yet SL stays in range", () => {
-    const frames = run(7200);
-    const sls = frames.map(f => f.queue.sl).filter((x): x is number => x !== null);
-    expect(Math.min(...sls)).toBeLessThan(80);
-    expect(Math.min(...sls)).toBeGreaterThanOrEqual(45);
-    expect(Math.max(...sls)).toBeLessThanOrEqual(99);
-    expect(Math.max(...frames.map(f => f.queue.ab))).toBeGreaterThan(5);
+  // Episodes (entries into the condition) per 7 200 ticks. The old single walk gave cq>8 24-37 times,
+  // SL<80 0-1 times and abandon>5 2-10 times over seeds 3, 7, 11, 19, 23; bands are about +-50%.
+  it("fires the floor queue rules about as often as the old walk did", () => {
+    const episodes = (frames: Frame[], on: (q: Queue) => boolean) => frames.reduce((n, f, i) => n + (on(f.queue) && !(i > 0 && on(frames[i - 1].queue)) ? 1 : 0), 0);
+    for (const seed of [3, 7, 11, 19, 23]) {
+      const frames = run(7200, seed);
+      const cq = episodes(frames, q => q.cq > 8), sl = episodes(frames, q => q.sl !== null && q.sl < 80), ab = episodes(frames, q => q.ab > 5);
+      expect([seed, cq >= 12 && cq <= 56]).toEqual([seed, true]);
+      expect([seed, sl <= 2]).toEqual([seed, true]);
+      expect([seed, ab >= 1 && ab <= 15]).toEqual([seed, true]);
+    }
   });
 });

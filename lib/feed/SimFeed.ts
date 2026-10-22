@@ -67,13 +67,17 @@ type Rogue = "acw" | "aux" | "break" | "short" | "off" | "hold";
 const ROGUE_STATE: Partial<Record<Rogue, AgentState>> = { acw: "acw", aux: "auxp", break: "auxb", off: "off" };
 const ROGUE_RULE: Partial<Record<Rogue, RuleId>> = { short: "short", hold: "hold", acw: "acw" };
 
-/** One team's queue: calls waiting right now, the day's cumulative counts, and how hot it runs (1 is typical). */
-interface SimQueue { heat: number; counts: QueueCounts }
+/** One team's queue: how hot it runs (1 is typical), its share of the floor's calls, and its interval counts. */
+interface SimQueue { heat: number; volume: number; counts: QueueCounts }
 
 /** Heats spread evenly over this range, so some queues always run hot and others quiet. */
 const HEAT_MIN = 0.4, HEAT_SPAN = 1.2;
-/** Counts are a rolling interval, not the whole day: they fade by half every 12 simulated minutes. */
-const DECAY = 0.5 ** (1 / 720);
+/** A hot queue sits this many SL points below the floor, and a quiet one as many above. */
+const SL_PER_HEAT = 20;
+/** Calls in each team's interval window, at average volume: a half-hour of the floor's traffic. */
+const INTERVAL_CALLS = 1500;
+/** Chance per second of a backlog spike on the floor, and its size in calls. */
+const SPIKE_CHANCE = 0.004, SPIKE_CALLS = 7;
 
 interface SimAgent { name: string; team: string; state: AgentState; stTime: number; onHold: boolean; holdTime: number; rogue: Rogue | null }
 
@@ -89,10 +93,10 @@ export class SimFeed implements FeedSource {
   private agents: SimAgent[] = [];
   /** The floor's numbers: the roll-up of the teams' queues. Agents read its `cq`. */
   private queue: Queue;
+  /** The floor's own walk (calls waiting, SL, ASA, abandon %); each team's numbers are skewed from it by heat. */
+  private walk = { cq: 3, sl: 92, asa: 18, ab: 2 };
   private queues = new Map<string, SimQueue>();
   private outage = 0;
-  /** Seconds left of a rush that backs up every queue; 0 when calm. */
-  private rush = 0;
   /** Engine second at which the feed goes silent for a while. */
   outageAt = -1;
 
@@ -100,22 +104,32 @@ export class SimFeed implements FeedSource {
     const teams = seed.org.map(t => t.team), n = teams.length;
     // One slot per team across the heat range, dealt out in random order.
     const slots = teams.map((_, i) => HEAT_MIN + HEAT_SPAN * ((i + rnd()) / n));
-    for (const team of teams) {
-      const heat = slots.splice(Math.floor(rnd() * slots.length), 1)[0];
-      this.queues.set(team, { heat, counts: this.morningCounts(heat) });
-    }
+    const heats = teams.map(() => slots.splice(Math.floor(rnd() * slots.length), 1)[0]);
+    const weight = heats.map(h => 0.6 + 0.4 * h), total = weight.reduce((a, b) => a + b, 0);
+    teams.forEach((team, i) => this.queues.set(team, { heat: heats[i], volume: weight[i] / total, counts: { waiting: 0, offered: 0, answered: 0, abandoned: 0, answerSec: 0, slWithin: 0, slCounted: 0 } }));
+    this.refreshCounts();
     this.queue = this.floor();
   }
 
-  /** A plausible morning so far (SL about 92%, ASA 18s, abandon 2%, hotter queues worse) so the ratios move smoothly. */
-  private morningCounts(heat: number): QueueCounts {
-    const offered = Math.round(100 * (0.6 + 0.4 * heat) + this.rnd() * 30);
-    const abandoned = Math.round(offered * 0.02 * heat), answered = offered - abandoned;
-    return {
-      waiting: 0, offered, answered, abandoned,
-      answerSec: Math.round(answered * (18 + (heat - 1) * 8)),
-      slCounted: offered, slWithin: Math.round(offered * (0.92 - (heat - 1) * 0.1)),
-    };
+  /**
+   * Writes each team's counts from the floor walk, skewed by heat: hot queues hold more of the backlog,
+   * answer slower, abandon more and miss service level, while the call-weighted floor lands back on the walk.
+   */
+  private refreshCounts() {
+    const w = this.walk, qs = [...this.queues.values()];
+    const hbar = qs.reduce((a, q) => a + q.volume * q.heat, 0), hsum = qs.reduce((a, q) => a + q.heat, 0);
+    for (const q of qs) {
+      const c = q.counts, rel = q.heat / hbar;
+      const sl = Math.max(0, Math.min(100, w.sl - SL_PER_HEAT * (q.heat - hbar)));
+      const ab = Math.min(100, w.ab * rel);
+      c.waiting = Math.round(w.cq * (q.heat / hsum) * 10) / 10;
+      c.offered = Math.round(INTERVAL_CALLS * q.volume);
+      c.abandoned = Math.round(c.offered * ab / 100);
+      c.answered = c.offered - c.abandoned;
+      c.answerSec = Math.round(c.answered * w.asa * rel);
+      c.slCounted = c.offered;
+      c.slWithin = Math.round(c.offered * sl / 100);
+    }
   }
 
   private floor(): Queue { return rollUp([...this.queues.values()].map(q => q.counts))!; }
@@ -208,31 +222,13 @@ export class SimFeed implements FeedSource {
   }
 
   private tickQueue() {
-    const rnd = this.rnd;
-    if (this.rush > 0) this.rush--;
-    else if (rnd() < 0.0008) this.rush = 240 + Math.floor(rnd() * 180);
-    const rushing = this.rush > 0;
-    for (const q of this.queues.values()) {
-      const c = q.counts;
-      c.offered *= DECAY; c.answered *= DECAY; c.abandoned *= DECAY;
-      c.answerSec *= DECAY; c.slWithin *= DECAY; c.slCounted *= DECAY;
-      // Calls waiting: a birth-death walk that settles lower for quiet queues, with the odd spike.
-      const mean = (rushing ? 3 : 0.3) * q.heat, up = 0.15 * mean / (1 + mean);
-      if (rnd() < up) c.waiting++;
-      if (c.waiting > 0 && rnd() < (c.waiting > 3 ? 0.35 : 0.15)) c.waiting--;
-      if (rnd() < 0.0004) c.waiting += 4;
-      // A call arrives now and then, more often at hot queues; waiting callers hurt how it goes.
-      if (rnd() < (0.01 + 0.02 * q.heat) * (rushing ? 1.5 : 1)) {
-        c.offered++; c.slCounted++; // an abandoned call counts against service level
-        if (rnd() < 0.02 * q.heat + 0.03 * c.waiting) c.abandoned++;
-        else {
-          const within = rnd() < 0.99 - 0.12 * q.heat - 0.06 * c.waiting;
-          c.answered++;
-          c.answerSec += within ? Math.round(rnd() * 24) : 21 + Math.round(rnd() * 60);
-          if (within) c.slWithin++;
-        }
-      }
-    }
+    const q = this.walk, rnd = this.rnd;
+    q.cq = Math.max(0, Math.round((q.cq + (rnd() - 0.5) * 1.4 - (q.cq > 5 ? 0.35 : 0)) * 10) / 10);
+    if (rnd() < SPIKE_CHANCE) q.cq += SPIKE_CALLS;
+    q.sl = Math.max(45, Math.min(99, q.sl + (q.cq > this.probe.thr("cq") ? -0.5 : 0.25) * (rnd() + 0.4)));
+    q.asa = Math.max(5, Math.round(q.asa + (q.cq > 5 ? 1.4 : -0.8) * rnd()));
+    q.ab = Math.max(0, Math.min(25, q.ab + (q.cq > 6 ? 0.3 : -0.18) * (rnd() + 0.3)));
+    this.refreshCounts();
     this.queue = this.floor();
   }
 
