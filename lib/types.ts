@@ -52,6 +52,15 @@ export interface View { role: Role; who: string | null }
 /** Floor queue numbers. `sl` is null when the source has no service level yet (not 0%). */
 export interface Queue { cq: number; sl: number | null; asa: number; ab: number }
 
+/** One queue's raw call counts, kept so any group of queues can be rolled up by calls. */
+export interface QueueCounts {
+  waiting: number; offered: number; answered: number; abandoned: number;
+  /** Total answer time, seconds. */
+  answerSec: number;
+  /** Calls answered within target, out of `slCounted`. */
+  slWithin: number; slCounted: number;
+}
+
 export interface ReplayMeta { agents: number; events: number; endT: number; done: boolean }
 
 export interface Perms {

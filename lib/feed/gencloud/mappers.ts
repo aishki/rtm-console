@@ -1,4 +1,5 @@
-import type { Team, RosterAgent, Queue } from "@/lib/types";
+import type { Team, RosterAgent, Queue, QueueCounts } from "@/lib/types";
+import { rollUp } from "@/lib/queueStats";
 import type { QueueObs, QueueAgg, QueueMember } from "./client";
 
 /** Members whose account state the member record leaves out, to be checked against the users lookup. */
@@ -56,20 +57,19 @@ export function buildRoster(
   return { org, agents, idToName };
 }
 
-const sum = <T,>(xs: T[], f: (x: T) => number): number => xs.reduce((s, x) => s + f(x), 0);
-
-/**
- * One set of floor numbers from every watched queue, weighted by calls rather than averaged
- * per queue, so a queue with 7 calls does not count as much as one with 700. Service level is
- * null when no queue counted a call yet: "no data", not 0%.
- */
-export function aggregateQueue(obs: QueueObs[], agg: QueueAgg[]): Queue {
-  const offered = sum(agg, a => a.offered), abandoned = sum(agg, a => a.abandoned);
-  const answered = sum(agg, a => a.answered), counted = sum(agg, a => a.slCounted);
-  return {
-    cq: sum(obs, o => o.waiting),
-    sl: counted > 0 ? (sum(agg, a => a.slWithin) / counted) * 100 : null,
-    asa: answered > 0 ? sum(agg, a => a.answerSec) / answered : 0,
-    ab: offered > 0 ? (abandoned / offered) * 100 : 0,
-  };
+/** Raw per-queue counts from the observation and aggregate rows, keyed by queueId. */
+export function toCounts(obs: QueueObs[], agg: QueueAgg[]): Record<string, QueueCounts> {
+  const out: Record<string, QueueCounts> = {};
+  const at = (id: string) => (out[id] ??= { waiting: 0, offered: 0, answered: 0, abandoned: 0, answerSec: 0, slWithin: 0, slCounted: 0 });
+  for (const o of obs) at(o.queueId).waiting += o.waiting;
+  for (const a of agg) {
+    const c = at(a.queueId);
+    c.offered += a.offered; c.answered += a.answered; c.abandoned += a.abandoned;
+    c.answerSec += a.answerSec; c.slWithin += a.slWithin; c.slCounted += a.slCounted;
+  }
+  return out;
 }
+
+/** One set of floor numbers from every watched queue, call-weighted (see `rollUp`). */
+export const aggregateQueue = (obs: QueueObs[], agg: QueueAgg[]): Queue =>
+  rollUp(Object.values(toCounts(obs, agg))) ?? { cq: 0, sl: null, asa: 0, ab: 0 };
