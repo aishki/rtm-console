@@ -1,7 +1,6 @@
 "use client";
 
 import { type CSSProperties, useState } from "react";
-import { isBreach } from "@/lib/engine/rules";
 import { queueLevels, rollUp } from "@/lib/queueStats";
 import type { TreeNode } from "@/lib/queueTree";
 import type { Agent, AgentState, QueueCounts, Rule } from "@/lib/types";
@@ -15,6 +14,8 @@ const MIX: { label: string; states: AgentState[]; color: string }[] = [
   { label: "aux", states: ["auxb", "auxp"], color: "#794CFF" },
   { label: "off", states: ["off"], color: "#929299" },
 ];
+/** State → index into MIX, so a row's mix is one pass over its agents. */
+const BUCKET = Object.fromEntries(MIX.flatMap((m, i) => m.states.map(s => [s, i]))) as Record<AgentState, number>;
 /** An open queue draws this many cards before asking to show the rest. */
 const CARD_LIMIT = 100;
 const INDENT = 20;
@@ -49,6 +50,8 @@ interface Props {
   agentsById: Map<number, Agent>;
   /** The agents to show after filtering, id → position in the chosen sort. */
   shownIds: Map<number, number>;
+  /** Ids of the agents breaching a rule this tick, worked out once for the whole tree. */
+  breaching: Set<number>;
   queues: Record<string, QueueCounts>;
   rules: Rule[];
   expanded: (node: TreeNode) => boolean;
@@ -63,21 +66,26 @@ interface Props {
  * are rows inside them. The caller passes a tree already pruned to the filter.
  */
 export function TreeGroup(props: Props) {
-  const { node, depth, agentsById, shownIds, queues, rules, expanded, onToggle, query, showMetrics } = props;
+  const { node, depth, agentsById, shownIds, breaching, queues, rules, expanded, onToggle, query, showMetrics } = props;
   const [showAll, setShowAll] = useState(false);
   const open = expanded(node);
   const isQueue = node.level === "queue";
 
   const all = node.agentIds.flatMap(id => agentsById.get(id) ?? []);
-  const breach = all.filter(a => isBreach(a, rules)).length;
-  const mix = MIX.map(m => ({ ...m, n: all.filter(a => m.states.includes(a.state)).length }));
+  const counts = MIX.map(() => 0);
+  let breach = 0;
+  for (const a of all) {
+    counts[BUCKET[a.state]]++;
+    if (breaching.has(a.id)) breach++;
+  }
+  const mix = MIX.map((m, i) => ({ ...m, n: counts[i] }));
   const sub = isQueue ? plural(all.length, "agent") : `${plural(node.queues.length, "queue")} · ${plural(all.length, "agent")} · ${breach} breaching`;
 
   const q = rollUp(node.queues.flatMap(name => queues[name] ?? []));
   const lv = q && queueLevels(q, rules);
-  const cell = (text: string | null, level?: keyof typeof LVL) => (
-    <span className="num text-right text-sm font-semibold" style={{ color: level && text !== null ? LVL[level].fg : "#5C5C6F" }}>{text ?? "—"}</span>
-  );
+  const cell = (text: string | null, level?: keyof typeof LVL) => text === null || !level
+    ? <span className="num text-right text-sm font-semibold text-muted">—</span>
+    : <span className="num text-right text-sm font-semibold" style={{ color: LVL[level].fg }}>{text}</span>;
 
   const shown = isQueue && open
     ? node.agentIds.filter(id => shownIds.has(id)).sort((a, b) => shownIds.get(a)! - shownIds.get(b)!).flatMap(id => agentsById.get(id) ?? [])

@@ -160,6 +160,8 @@ export interface TreeGroupProps {
   agentsById: Map<number, Agent>;
   /** The agents to show after filtering, id → position in the chosen sort. */
   shownIds: Map<number, number>;
+  /** Ids of the agents breaching a rule this tick. */
+  breaching: Set<number>;
   queues: Record<string, QueueCounts>;
   rules: Rule[];
   expanded: (node: TreeNode) => boolean;

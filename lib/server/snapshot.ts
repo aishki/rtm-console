@@ -25,13 +25,13 @@ export function tickMsg(rt: Runtime, view: View, since: Since | null, batch: Bat
   let members: Record<string, number[]> | undefined;
   if (!since || since.rosterRev !== S.rosterRev) {
     const mine = new Set(agents.map(a => a.id));
-    members = Object.fromEntries(Object.entries(S.members).map(([q, ids]) => [q, ids.filter(id => mine.has(id))]));
+    members = Object.fromEntries(Object.entries(S.members ?? {}).map(([q, ids]) => [q, ids.filter(id => mine.has(id))]));
   }
   return {
     type: "tick", t: S.t, mode: S.mode, staleFor: S.staleFor, replay: S.replay, queue: S.queue, rules: S.rules,
     org: scopeTeams(S, view), agents, incidents: scopeIncidents(S, view, S.incidents),
     ledger: since === null ? ledger : ledger.filter(r => r.rev > since.rev),
-    queues: S.queues, members,
+    queues: S.queues ?? {}, members,
     queueMap: !since || since.mapRev !== queueMapRev() ? loadQueueMap() : undefined,
     // Call-out toasts go to the leaders whose span they are in; feed notices go to everyone.
     // A replay only announces its own progress.

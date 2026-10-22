@@ -6,7 +6,7 @@ import type { QueueMapResult } from "@/lib/types";
 import { PurpleButton } from "@/components/ui/buttons";
 
 const count = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
-const problems = (e: unknown) => (e instanceof ApiError ? e.details : [e instanceof Error ? e.message : "The mapping could not be uploaded."]);
+const problems = (e: unknown) => (e instanceof ApiError && e.details.length ? e.details : [e instanceof Error ? e.message : "The mapping could not be uploaded."]);
 
 /**
  * Upload the WFM queue-to-LOB workbook that groups the agent grid by tower, sub-tower, LOB and queue.
@@ -99,7 +99,7 @@ export function QueueMapDialog({ onClose }: { onClose: () => void }) {
 
         {errors.length > 0 && (
           <ul role="alert" className={`m-0 flex flex-col gap-1 text-[13px] font-semibold leading-normal text-error-text ${errors.length > 1 ? "list-disc pl-5" : "list-none pl-0"}`}>
-            {errors.map(e => <li key={e}>{e}</li>)}
+            {errors.map((e, i) => <li key={i}>{e}</li>)}
           </ul>
         )}
 

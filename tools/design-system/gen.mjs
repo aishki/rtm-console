@@ -400,7 +400,7 @@ mount(grid(190, [
 card("TreeGroup", "Console", 300, "components/console/TreeGroup.tsx", 20, `
 One node of the agent grid's Tower → Sub-tower → LOB → Queue tree. Its row shows the name, a sub-line (queues, agents, how many are breaching), the rolled-up calls in queue, SL, ASA and abandon, and the state mix as counts and a bar. Opened, a parent shows its children and a queue shows its agent cards (100 at most, then "Show all").
 
-- You provide the \`node\` (from \`buildTree\`) and its \`depth\`, \`agentsById\`, \`shownIds\` (the agents to show, id to sort position), the \`queues\` counts and the \`rules\`, plus \`expanded(node)\` and \`onToggle(node)\`.
+- You provide the \`node\` (from \`buildTree\`) and its \`depth\`, \`agentsById\`, \`shownIds\` (the agents to show, id to sort position), \`breaching\` (ids breaching now), the \`queues\` counts and the \`rules\`, plus \`expanded(node)\` and \`onToggle(node)\`.
 - Prune the tree to the filter before passing it. Pass \`query\` and \`showMetrics\` through to the cards.
 - Towers draw as cards, stacked 10px apart under one \`TreeHeader\`; deeper levels are rows inside, indented 20px a level. Rows drop the mix counts and keep the bar when the panel is narrow.
 `, `
@@ -418,7 +418,7 @@ function Demo() {
   qs.forEach(function (q, i) { counts[q.label] = { waiting: 3 + i * 6, offered: 120, answered: 112, abandoned: 8 - i * 4, answerSec: 112 * 24, slWithin: 96 - i * 20, slCounted: 112 }; });
   var open = function (n) { return ex[0][n.key] !== undefined ? ex[0][n.key] : n.level !== 'queue'; };
   return h('div', { style: { display: 'flex', flexDirection: 'column', gap: 10 } }, h(R.TreeHeader), h(R.TreeGroup, {
-    node: node, depth: 0, agentsById: byId, shownIds: shown, queues: counts, rules: rules, query: '', showMetrics: false,
+    node: node, depth: 0, agentsById: byId, shownIds: shown, breaching: new Set(), queues: counts, rules: rules, query: '', showMetrics: false,
     expanded: open, onToggle: function (n) { var next = Object.assign({}, ex[0]); next[n.key] = !open(n); ex[1](next); }
   }));
 }

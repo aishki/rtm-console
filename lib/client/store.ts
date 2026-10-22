@@ -85,7 +85,7 @@ function apply(msg: StreamMsg) {
   if (nudge) shownNudge = nudge.n;
   useConsole.setState(s => ({
     status: "ready", t: msg.t, mode: msg.mode, staleFor: msg.staleFor, replay: msg.replay, queue: msg.queue,
-    rules: msg.rules, agents: msg.agents, incidents: msg.incidents, org: msg.org, queues: msg.queues,
+    rules: msg.rules, agents: msg.agents, incidents: msg.incidents, org: msg.org, queues: msg.queues ?? {},
     members: msg.members ?? (init ? {} : s.members), queueMap: msg.queueMap ?? (init ? [] : s.queueMap),
     ...(init
       ? { view: init.view, people: init.people, feed: init.feed, realNames: init.realNames, canSwitchFeed: init.canSwitchFeed, ledger: msg.ledger }

@@ -100,6 +100,8 @@ function AgentGrid() {
   const tree = useMemo(() => buildTree(JSON.parse(namesKey) as string[], queueMap, members), [namesKey, queueMap, members]);
   const queueGroups = useMemo(() => queueOptions(tree), [tree]);
   const agentsById = useMemo(() => new Map(agents.map(a => [a.id, a])), [agents]);
+  // Once per tick, not once per queue membership: the same person sits in many queues.
+  const breaching = useMemo(() => new Set(agents.filter(a => isBreach(a, rules)).map(a => a.id)), [agents, rules]);
   const queueCount = tree.reduce((n, t) => n + t.queues.length, 0);
 
   const qn = filters.q.trim().toLowerCase();
@@ -111,7 +113,7 @@ function AgentGrid() {
   // The queue filter picks a branch of the tree, not agents: someone in several queues shows under each.
   const matches = (a: Agent) => {
     if (filters.states.length && !filters.states.includes(a.state)) return false;
-    if (quick.breach && !isBreach(a, rules)) return false;
+    if (quick.breach && !breaching.has(a.id)) return false;
     if (quick.strikes && !strikesOf(a)) return false;
     if (quick.hold && !a.onHold) return false;
     if (qn) {
@@ -139,8 +141,9 @@ function AgentGrid() {
   const shownCount = new Set(shownQueueNodes.flatMap(n => n.agentIds.filter(id => shownIds.has(id)))).size;
 
   const keyOf = (node: TreeNode) => (filtering ? "f:" : "") + node.key;
-  // Towers, sub-towers and LOBs start open and queues closed. Filtering opens every branch with a match.
-  const isOpen = (node: TreeNode) => expanded[keyOf(node)] ?? (filtering || node.level !== "queue");
+  // Towers, sub-towers and LOBs start open and queues closed. A search also opens the queues it matches;
+  // a state, quick or queue filter alone leaves them closed, since a broad one would draw thousands of cards.
+  const isOpen = (node: TreeNode) => expanded[keyOf(node)] ?? (node.level !== "queue" || (filtering && !!qn));
   const toggle = (node: TreeNode) => setExpanded(ex => ({ ...ex, [keyOf(node)]: !isOpen(node) }));
   const setAll = (open: boolean) => setExpanded(ex => ({ ...ex, ...Object.fromEntries(nodes.map(n => [keyOf(n), open])) }));
   const clear = () => {
@@ -149,7 +152,7 @@ function AgentGrid() {
   };
 
   const quickCounts: Record<QuickKey, number> = {
-    breach: agents.filter(a => isBreach(a, rules)).length, strikes: agents.filter(a => strikesOf(a) > 0).length, hold: agents.filter(a => a.onHold).length,
+    breach: breaching.size, strikes: agents.filter(a => strikesOf(a) > 0).length, hold: agents.filter(a => a.onHold).length,
   };
 
   return (
@@ -175,7 +178,7 @@ function AgentGrid() {
         {visible.length > 0 && <TreeHeader />}
         {visible.map(node => (
           <TreeGroup
-            key={node.key} node={node} depth={0} agentsById={agentsById} shownIds={shownIds} queues={queues} rules={rules}
+            key={node.key} node={node} depth={0} agentsById={agentsById} shownIds={shownIds} breaching={breaching} queues={queues} rules={rules}
             expanded={isOpen} onToggle={toggle} query={qn} showMetrics
           />
         ))}
