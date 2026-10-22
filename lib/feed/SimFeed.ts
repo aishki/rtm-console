@@ -72,6 +72,8 @@ interface SimQueue { heat: number; counts: QueueCounts }
 
 /** Heats spread evenly over this range, so some queues always run hot and others quiet. */
 const HEAT_MIN = 0.4, HEAT_SPAN = 1.2;
+/** Counts are a rolling interval, not the whole day: they fade by half every 12 simulated minutes. */
+const DECAY = 0.5 ** (1 / 720);
 
 interface SimAgent { name: string; team: string; state: AgentState; stTime: number; onHold: boolean; holdTime: number; rogue: Rogue | null }
 
@@ -89,6 +91,8 @@ export class SimFeed implements FeedSource {
   private queue: Queue;
   private queues = new Map<string, SimQueue>();
   private outage = 0;
+  /** Seconds left of a rush that backs up every queue; 0 when calm. */
+  private rush = 0;
   /** Engine second at which the feed goes silent for a while. */
   outageAt = -1;
 
@@ -205,19 +209,24 @@ export class SimFeed implements FeedSource {
 
   private tickQueue() {
     const rnd = this.rnd;
+    if (this.rush > 0) this.rush--;
+    else if (rnd() < 0.0008) this.rush = 240 + Math.floor(rnd() * 180);
+    const rushing = this.rush > 0;
     for (const q of this.queues.values()) {
       const c = q.counts;
+      c.offered *= DECAY; c.answered *= DECAY; c.abandoned *= DECAY;
+      c.answerSec *= DECAY; c.slWithin *= DECAY; c.slCounted *= DECAY;
       // Calls waiting: a birth-death walk that settles lower for quiet queues, with the odd spike.
-      const mean = 0.3 * q.heat, up = 0.15 * mean / (1 + mean);
+      const mean = (rushing ? 3 : 0.3) * q.heat, up = 0.15 * mean / (1 + mean);
       if (rnd() < up) c.waiting++;
       if (c.waiting > 0 && rnd() < (c.waiting > 3 ? 0.35 : 0.15)) c.waiting--;
       if (rnd() < 0.0004) c.waiting += 4;
       // A call arrives now and then, more often at hot queues; waiting callers hurt how it goes.
-      if (rnd() < 0.01 + 0.02 * q.heat) {
+      if (rnd() < (0.01 + 0.02 * q.heat) * (rushing ? 1.5 : 1)) {
         c.offered++; c.slCounted++; // an abandoned call counts against service level
-        if (rnd() < 0.02 * q.heat + 0.01 * c.waiting) c.abandoned++;
+        if (rnd() < 0.02 * q.heat + 0.03 * c.waiting) c.abandoned++;
         else {
-          const within = rnd() < 0.99 - 0.12 * q.heat - 0.04 * c.waiting;
+          const within = rnd() < 0.99 - 0.12 * q.heat - 0.06 * c.waiting;
           c.answered++;
           c.answerSec += within ? Math.round(rnd() * 24) : 21 + Math.round(rnd() * 60);
           if (within) c.slWithin++;

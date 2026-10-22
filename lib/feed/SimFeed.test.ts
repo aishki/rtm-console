@@ -108,16 +108,12 @@ describe("simulated per-queue numbers", () => {
     expect(Math.max(...sls) - Math.min(...sls)).toBeGreaterThanOrEqual(10);
   });
 
-  it("only grows the day's counts", () => {
-    const frames = run(600);
-    const grow = ["offered", "answered", "abandoned", "answerSec", "slWithin", "slCounted"] as const;
-    let grew = false;
-    for (let i = 1; i < frames.length; i++) {
-      for (const [team, c] of Object.entries(frames[i].by)) {
-        for (const k of grow) { expect(c[k]).toBeGreaterThanOrEqual(frames[i - 1].by[team][k]); }
-        if (c.offered > frames[i - 1].by[team].offered) grew = true;
-      }
-    }
-    expect(grew).toBe(true);
+  it("lets the floor rules fire: SL dips under 80 and abandon passes 5, yet SL stays in range", () => {
+    const frames = run(7200);
+    const sls = frames.map(f => f.queue.sl).filter((x): x is number => x !== null);
+    expect(Math.min(...sls)).toBeLessThan(80);
+    expect(Math.min(...sls)).toBeGreaterThanOrEqual(45);
+    expect(Math.max(...sls)).toBeLessThanOrEqual(99);
+    expect(Math.max(...frames.map(f => f.queue.ab))).toBeGreaterThan(5);
   });
 });
