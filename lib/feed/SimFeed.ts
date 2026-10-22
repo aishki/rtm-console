@@ -1,4 +1,5 @@
-import type { AgentState, AgentStateEvent, Instance, Queue, RuleId, Team } from "@/lib/types";
+import { rollUp } from "@/lib/queueStats";
+import type { AgentState, AgentStateEvent, Instance, Queue, QueueCounts, RuleId, Team } from "@/lib/types";
 import type { FeedHandlers, FeedSource } from "./FeedSource";
 
 // Stand-in for the Gencloud feed so the console moves without a live floor: organic state
@@ -66,6 +67,12 @@ type Rogue = "acw" | "aux" | "break" | "short" | "off" | "hold";
 const ROGUE_STATE: Partial<Record<Rogue, AgentState>> = { acw: "acw", aux: "auxp", break: "auxb", off: "off" };
 const ROGUE_RULE: Partial<Record<Rogue, RuleId>> = { short: "short", hold: "hold", acw: "acw" };
 
+/** One team's queue: calls waiting right now, the day's cumulative counts, and how hot it runs (1 is typical). */
+interface SimQueue { heat: number; counts: QueueCounts }
+
+/** Heats spread evenly over this range, so some queues always run hot and others quiet. */
+const HEAT_MIN = 0.4, HEAT_SPAN = 1.2;
+
 interface SimAgent { name: string; team: string; state: AgentState; stTime: number; onHold: boolean; holdTime: number; rogue: Rogue | null }
 
 /** What the simulator reads back from the engine: live thresholds and strike counts. */
@@ -78,12 +85,36 @@ export class SimFeed implements FeedSource {
   readonly kind = "sim" as const;
   private h: FeedHandlers | null = null;
   private agents: SimAgent[] = [];
-  private queue: Queue & { sl: number } = { cq: 3, sl: 92, asa: 18, ab: 2 };
+  /** The floor's numbers: the roll-up of the teams' queues. Agents read its `cq`. */
+  private queue: Queue;
+  private queues = new Map<string, SimQueue>();
   private outage = 0;
   /** Engine second at which the feed goes silent for a while. */
   outageAt = -1;
 
-  constructor(private readonly probe: SimProbe, private readonly rnd: () => number = Math.random, readonly seed: SimSeed = sampleSeed()) {}
+  constructor(private readonly probe: SimProbe, private readonly rnd: () => number = Math.random, readonly seed: SimSeed = sampleSeed()) {
+    const teams = seed.org.map(t => t.team), n = teams.length;
+    // One slot per team across the heat range, dealt out in random order.
+    const slots = teams.map((_, i) => HEAT_MIN + HEAT_SPAN * ((i + rnd()) / n));
+    for (const team of teams) {
+      const heat = slots.splice(Math.floor(rnd() * slots.length), 1)[0];
+      this.queues.set(team, { heat, counts: this.morningCounts(heat) });
+    }
+    this.queue = this.floor();
+  }
+
+  /** A plausible morning so far (SL about 92%, ASA 18s, abandon 2%, hotter queues worse) so the ratios move smoothly. */
+  private morningCounts(heat: number): QueueCounts {
+    const offered = Math.round(100 * (0.6 + 0.4 * heat) + this.rnd() * 30);
+    const abandoned = Math.round(offered * 0.02 * heat), answered = offered - abandoned;
+    return {
+      waiting: 0, offered, answered, abandoned,
+      answerSec: Math.round(answered * (18 + (heat - 1) * 8)),
+      slCounted: offered, slWithin: Math.round(offered * (0.92 - (heat - 1) * 0.1)),
+    };
+  }
+
+  private floor(): Queue { return rollUp([...this.queues.values()].map(q => q.counts))!; }
 
   subscribe(handlers: FeedHandlers): () => void {
     this.h = handlers;
@@ -106,7 +137,7 @@ export class SimFeed implements FeedSource {
     for (const a of this.agents) this.tickAgent(a);
     this.tickQueue();
     this.maybeRogue(t);
-    this.h.onQueue({ ...this.queue });
+    this.h.onQueue({ ...this.queue }, Object.fromEntries([...this.queues].map(([team, q]) => [team, { ...q.counts }])));
     this.h.onHeartbeat();
   }
 
@@ -173,12 +204,27 @@ export class SimFeed implements FeedSource {
   }
 
   private tickQueue() {
-    const q = this.queue, rnd = this.rnd;
-    q.cq = Math.max(0, Math.round((q.cq + (rnd() - 0.5) * 1.4 - (q.cq > 5 ? 0.35 : 0)) * 10) / 10);
-    if (rnd() < 0.004) q.cq += 7;
-    q.sl = Math.max(45, Math.min(99, q.sl + (q.cq > this.probe.thr("cq") ? -0.5 : 0.25) * (rnd() + 0.4)));
-    q.asa = Math.max(5, Math.round(q.asa + (q.cq > 5 ? 1.4 : -0.8) * rnd()));
-    q.ab = Math.max(0, Math.min(25, q.ab + (q.cq > 6 ? 0.3 : -0.18) * (rnd() + 0.3)));
+    const rnd = this.rnd;
+    for (const q of this.queues.values()) {
+      const c = q.counts;
+      // Calls waiting: a birth-death walk that settles lower for quiet queues, with the odd spike.
+      const mean = 0.3 * q.heat, up = 0.15 * mean / (1 + mean);
+      if (rnd() < up) c.waiting++;
+      if (c.waiting > 0 && rnd() < (c.waiting > 3 ? 0.35 : 0.15)) c.waiting--;
+      if (rnd() < 0.0004) c.waiting += 4;
+      // A call arrives now and then, more often at hot queues; waiting callers hurt how it goes.
+      if (rnd() < 0.01 + 0.02 * q.heat) {
+        c.offered++; c.slCounted++; // an abandoned call counts against service level
+        if (rnd() < 0.02 * q.heat + 0.01 * c.waiting) c.abandoned++;
+        else {
+          const within = rnd() < 0.99 - 0.12 * q.heat - 0.04 * c.waiting;
+          c.answered++;
+          c.answerSec += within ? Math.round(rnd() * 24) : 21 + Math.round(rnd() * 60);
+          if (within) c.slWithin++;
+        }
+      }
+    }
+    this.queue = this.floor();
   }
 
   /** Organic repeat behaviour so the escalation ladder shows up without any demo controls. */
