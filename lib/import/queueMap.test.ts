@@ -55,6 +55,17 @@ describe("parseQueueMap", () => {
   });
 });
 
+describe("parseQueueMap duplicates", () => {
+  it("keeps the first of a repeated queue silently when the LOB is the same", () => {
+    const r = parseQueueMap({ [SHEET]: [
+      ["Tower", "Sub Tower", "LOB", "Queues"],
+      ["Member Services", "Benefits", "Small Group", "Q1"],
+      ["Member Services", "Other", "Small Group", "q1"],
+    ] });
+    expect(r).toEqual({ ok: true, rows: [{ tower: "Member Services", subTower: "Benefits", lob: "Small Group", queue: "Q1" }], skipped: [], duplicates: [] });
+  });
+});
+
 describe("mergeQueueMap", () => {
   it("replaces only the towers in the upload", () => {
     const p = (tower: string, queue: string): QueueMapRow => ({ tower, subTower: "s", lob: "l", queue });

@@ -48,7 +48,8 @@ export function buildRoster(
   const seen = new Set<string>();
   for (const q of queues) {
     org.push({ team: q.name, tl: "", mgr: "", lob: q.name });
-    members[q.name] = [];
+    // Two watched queues can share a name; their members add up.
+    members[q.name] ??= [];
     for (const m of membersByQueue[q.id] ?? []) {
       members[q.name].push(m.name);
       if (seen.has(m.id)) continue;

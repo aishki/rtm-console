@@ -29,8 +29,8 @@ const newNode = (parentKey: string, level: TreeLevel, label: string): TreeNode =
   children: [],
 });
 
-/** Adds a queue under `path` (labels from the tower down), creating nodes as needed. */
-function place(roots: TreeNode[], path: string[], levels: TreeLevel[], queueName: string, agents: number[]): void {
+/** Adds a queue under `path` (labels from the tower down), creating nodes as needed. `ids` holds each node's agentIds as a set. */
+function place(roots: TreeNode[], path: string[], levels: TreeLevel[], queueName: string, agents: number[], ids: Map<TreeNode, Set<number>>): void {
   let siblings = roots;
   let parentKey = "";
   path.forEach((label, depth) => {
@@ -38,9 +38,11 @@ function place(roots: TreeNode[], path: string[], levels: TreeLevel[], queueName
     if (!node) {
       node = newNode(parentKey, levels[depth], label);
       siblings.push(node);
+      ids.set(node, new Set());
     }
     node.queues.push(queueName);
-    for (const id of agents) if (!node.agentIds.includes(id)) node.agentIds.push(id);
+    const has = ids.get(node)!;
+    for (const id of agents) if (!has.has(id)) { has.add(id); node.agentIds.push(id); }
     siblings = node.children;
     parentKey = node.key;
   });
@@ -61,14 +63,15 @@ export function buildTree(queueNames: string[], map: QueueMapRow[], members: Rec
   const seen = new Set<string>();
   const mapped: TreeNode[] = [];
   const unmapped: TreeNode[] = [];
+  const ids = new Map<TreeNode, Set<number>>();
   for (const name of queueNames) {
     const k = queueKey(name);
     if (seen.has(k)) continue;
     seen.add(k);
     const agents = members[name] ?? [];
     const r = firstRow.get(k);
-    if (r) place(mapped, [r.tower, r.subTower, r.lob, name], MAPPED, name, agents);
-    else place(unmapped, [UNMAPPED, name], FLAT, name, agents);
+    if (r) place(mapped, [r.tower, r.subTower, r.lob, name], MAPPED, name, agents, ids);
+    else place(unmapped, [UNMAPPED, name], FLAT, name, agents, ids);
   }
 
   sortTree(mapped);

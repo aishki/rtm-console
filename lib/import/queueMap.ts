@@ -54,7 +54,10 @@ export function parseQueueMap(sheets: Record<string, Sheet>): QueueMapParse {
     };
     for (const c of opt) { const v = text(cells[c.col]); if (v) out[c.key] = v; }
     const first = seen.get(queueKey(out.queue));
-    if (first) { duplicates.push({ queue: out.queue, kept: first.lob, dropped: out.lob }); return; }
+    if (first) {
+      if (first.lob !== out.lob) duplicates.push({ queue: out.queue, kept: first.lob, dropped: out.lob });
+      return;
+    }
     seen.set(queueKey(out.queue), out);
     rows.push(out);
   });

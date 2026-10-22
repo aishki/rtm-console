@@ -32,6 +32,13 @@ describe("buildTree", () => {
     expect(t[0].agentIds).toEqual([1, 2, 3]);
     expect(t[0].children[0].children[0].children.map(q => q.agentIds)).toEqual([[1, 2], [2, 3]]);
   });
+  it("dedupes big queues in linear time, keeping first-seen order", () => {
+    const ids = Array.from({ length: 60000 }, (_, i) => i);
+    const start = performance.now();
+    const t = buildTree(["Q1", "Q2"], [row("T", "S", "L", "Q1"), row("T", "S", "L", "Q2")], { Q1: ids, Q2: [...ids].reverse() });
+    expect(performance.now() - start).toBeLessThan(1000);
+    expect(t[0].agentIds).toEqual(ids);
+  });
   it("is a flat Unmapped tower with no mapping", () => {
     const t = buildTree(["Team B", "Team A"], [], { "Team A": [1], "Team B": [2] });
     expect(t).toHaveLength(1);
