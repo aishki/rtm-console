@@ -1,7 +1,7 @@
 import { resolveView } from "@/lib/engine/scope";
 import { authorize } from "@/lib/server/guard";
 import { liveRuntime, onFloorChange } from "@/lib/server/runtime";
-import { initMsg, tickMsg } from "@/lib/server/snapshot";
+import { initMsg, sinceNow, tickMsg } from "@/lib/server/snapshot";
 import type { StreamMsg } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -21,11 +21,11 @@ export async function GET(req: Request) {
       let unsubscribe = () => {};
       const attach = () => {
         const view = resolveView(rt.engine.S, ctx.view);
-        let rev = rt.engine.S.rev;
+        let since = sinceNow(rt);
         send(initMsg(rt, view));
         unsubscribe = rt.subscribe(batch => {
-          const msg = tickMsg(rt, view, rev, batch);
-          rev = rt.engine.S.rev;
+          const msg = tickMsg(rt, view, since, batch);
+          since = sinceNow(rt);
           try { send(msg); } catch { close(); }
         });
       };

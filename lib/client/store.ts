@@ -2,7 +2,8 @@
 
 import { create } from "zustand";
 import { alertsFor } from "@/lib/alerts";
-import type { Agent, FeedKind, Incident, InitMsg, Instance, NudgeEvent, PeopleDirectory, Queue, ReplayMeta, Rule, StreamMsg, Team, ToastKind, View } from "@/lib/types";
+import type { QueueMapRow } from "@/lib/import/queueMap";
+import type { Agent, FeedKind, Incident, InitMsg, Instance, NudgeEvent, PeopleDirectory, Queue, QueueCounts, ReplayMeta, Rule, StreamMsg, Team, ToastKind, View } from "@/lib/types";
 import { alertWhileHidden, syncAlerts } from "./alerts";
 
 export interface ToastItem { id: number; kind: ToastKind; title: string; body: string }
@@ -26,6 +27,12 @@ interface ConsoleState {
   queue: Queue | null;
   rules: Rule[];
   agents: Agent[];
+  /** Every queue's call counts. */
+  queues: Record<string, QueueCounts>;
+  /** Queue name to the ids of the viewer's agents in it. Kept from the last tick that carried it. */
+  members: Record<string, number[]>;
+  /** The uploaded queue-to-LOB mapping. Kept from the last tick that carried it. */
+  queueMap: QueueMapRow[];
   incidents: Incident[];
   /** Scoped ledger, newest first. */
   ledger: Instance[];
@@ -50,7 +57,7 @@ function whenSeen(fn: () => void): void {
 
 export const useConsole = create<ConsoleState>((set, get) => ({
   status: "connecting", view: null, org: [], people: null, t: 0, mode: "live", feed: "gencloud", realNames: false, canSwitchFeed: false, staleFor: 0, replay: null,
-  queue: null, rules: [], agents: [], incidents: [], ledger: [], toasts: [], nudge: null,
+  queue: null, rules: [], agents: [], queues: {}, members: {}, queueMap: [], incidents: [], ledger: [], toasts: [], nudge: null,
   toast(kind, title, body) {
     const id = ++toastSeq;
     set(s => ({ toasts: [...s.toasts, { id, kind, title, body }].slice(-MAX_TOASTS) }));
@@ -78,7 +85,8 @@ function apply(msg: StreamMsg) {
   if (nudge) shownNudge = nudge.n;
   useConsole.setState(s => ({
     status: "ready", t: msg.t, mode: msg.mode, staleFor: msg.staleFor, replay: msg.replay, queue: msg.queue,
-    rules: msg.rules, agents: msg.agents, incidents: msg.incidents, org: msg.org,
+    rules: msg.rules, agents: msg.agents, incidents: msg.incidents, org: msg.org, queues: msg.queues,
+    members: msg.members ?? (init ? {} : s.members), queueMap: msg.queueMap ?? (init ? [] : s.queueMap),
     ...(init
       ? { view: init.view, people: init.people, feed: init.feed, realNames: init.realNames, canSwitchFeed: init.canSwitchFeed, ledger: msg.ledger }
       : { ledger: mergeLedger(s.ledger, msg.ledger) }),

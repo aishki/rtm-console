@@ -1,3 +1,4 @@
+import type { QueueMapRow } from "@/lib/import/queueMap";
 export type AgentState = "oncall" | "avail" | "acw" | "auxb" | "auxp" | "outb" | "off";
 export type Role = "admin" | "senior" | "mgr" | "tl" | "agent";
 export type Stage = "nudge" | "lead" | "ops";
@@ -141,6 +142,12 @@ export interface TickMsg {
   org: Team[];
   /** init: the whole scoped ledger (newest first). tick: only changed or new instances. */
   ledger: Instance[];
+  /** Every queue's call counts, same for every viewer: queue numbers are floor-visible to all leaders. */
+  queues: Record<string, QueueCounts>;
+  /** Queue name to the ids of the viewer's agents in it. Sent on a snapshot and whenever the roster reloads; otherwise left out. */
+  members?: Record<string, number[]>;
+  /** The uploaded queue-to-LOB mapping. Sent on a snapshot and whenever it changes; otherwise left out. */
+  queueMap?: QueueMapRow[];
   /** `n` and `team` come from the instance behind a call-out toast; feed notices have neither. */
   toasts: (Omit<ToastEvent, "instance"> & { n?: number; team?: string })[];
   nudges: NudgeEvent[];
