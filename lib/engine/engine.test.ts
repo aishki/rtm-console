@@ -122,14 +122,14 @@ describe("the 3× rule", () => {
     expect(e.S.incidents.map(i => i.inc)).toEqual(["INC-2026-0003", "INC-2026-0002", "INC-2026-0001"]);
 
     expect(e.invAction("INC-2026-0001", "start")!.status).toBe("Investigating");
-    e.invAction("INC-2026-0001", "record", "Validated / excused");
+    e.invAction("INC-2026-0001", "record", "Excused/Validated");
     const closed = e.invAction("INC-2026-0001", "close")!;
-    expect(closed).toMatchObject({ status: "Closed", disposition: "Validated / excused", closedT: e.S.t });
+    expect(closed).toMatchObject({ status: "Closed", disposition: "Excused/Validated", closedT: e.S.t });
     episode("Amara Reyes", "acw", 120);
     expect(e.S.incidents[0]).toMatchObject({ inc: "INC-2026-0004", agent: "Amara Reyes", ruleId: "acw", instances: 4, status: "Open" });
   });
 
-  it("closes an investigation only with a recorded disposition, and can send it back to open", () => {
+  it("closes an investigation only with a final disposition (not Pending Investigation), and can send it back to open", () => {
     const { e, episode } = setup();
     for (let i = 0; i < 3; i++) episode("Amara Reyes", "acw", 120);
     const inc = "INC-2026-0001";
@@ -137,12 +137,14 @@ describe("the 3× rule", () => {
     e.invAction(inc, "start");
     expect(e.invAction(inc, "close")).toMatchObject({ status: "Investigating", disposition: "", closedT: null });
     expect(e.invAction(inc, "record", "Not a disposition")!.disposition).toBe("");
-    expect(e.invAction(inc, "record", "Coached & documented")!.disposition).toBe("Coached & documented");
+    expect(e.invAction(inc, "record", "Coached & Documented")!.disposition).toBe("Coached & Documented");
     expect(e.invAction(inc, "reopen")).toMatchObject({ status: "Open", disposition: "" });
     e.invAction(inc, "start");
     expect(e.invAction(inc, "close")!.status).toBe("Investigating");
-    e.invAction(inc, "record", "Validated / excused");
-    expect(e.invAction(inc, "close")).toMatchObject({ status: "Closed", disposition: "Validated / excused", closedT: e.S.t });
+    e.invAction(inc, "record", "Pending Investigation");
+    expect(e.invAction(inc, "close")).toMatchObject({ status: "Investigating", disposition: "Pending Investigation", closedT: null });
+    e.invAction(inc, "record", "Excused/Validated");
+    expect(e.invAction(inc, "close")).toMatchObject({ status: "Closed", disposition: "Excused/Validated", closedT: e.S.t });
     expect(e.invAction(inc, "reopen")!.status).toBe("Closed");
   });
 

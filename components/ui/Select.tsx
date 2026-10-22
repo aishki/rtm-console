@@ -1,6 +1,6 @@
 "use client";
 
-import { type CSSProperties, type KeyboardEvent, useId, useLayoutEffect, useRef, useState } from "react";
+import { type CSSProperties, type KeyboardEvent, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 export interface SelectOption<T extends string = string> { value: T; label: string }
@@ -17,6 +17,10 @@ interface Props<T extends string> {
   style?: CSSProperties;
   /** For pill triggers: the menu floats 4px away with every corner rounded instead of joining the trigger. */
   detached?: boolean;
+  /** Focus the trigger and open the list as soon as the select appears. */
+  autoOpen?: boolean;
+  /** Called each time the list closes, whether or not a new option was picked. */
+  onClose?: () => void;
 }
 
 const MENU_MAX = 320;
@@ -29,10 +33,10 @@ const TYPEAHEAD_MS = 600;
  * square where they meet and rounded at the far end. The list is portalled to the body so
  * tables, panels and dialogs that scroll cannot clip it.
  */
-export function Select<T extends string>({ value, onChange, options, disabled = false, className = "", style, detached = false, ...aria }: Props<T>) {
+export function Select<T extends string>({ value, onChange, options, disabled = false, className = "", style, detached = false, autoOpen = false, onClose, ...aria }: Props<T>) {
   const id = useId();
-  const [open, setOpen] = useState(false);
-  const [active, setActive] = useState(-1);
+  const [open, setOpen] = useState(autoOpen);
+  const [active, setActive] = useState(() => autoOpen ? Math.max(0, options.flatMap(o => ("items" in o ? o.items : [o])).findIndex(o => o.value === value)) : -1);
   const btnRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const typed = useRef<{ text: string; timer?: ReturnType<typeof setTimeout> }>({ text: "" });
@@ -41,6 +45,12 @@ export function Select<T extends string>({ value, onChange, options, disabled = 
   const indexOf = new Map(flat.map((o, i) => [o.value, i]));
   const selected = indexOf.get(value) ?? -1;
   const optionId = (i: number) => `${id}-${i}`;
+
+  const wasOpen = useRef(open);
+  useEffect(() => {
+    if (wasOpen.current && !open) onClose?.();
+    wasOpen.current = open;
+  }, [open, onClose]);
 
   // Placed by hand, not through state: it has to follow the trigger on every scroll and resize.
   useLayoutEffect(() => {
@@ -149,6 +159,7 @@ export function Select<T extends string>({ value, onChange, options, disabled = 
       <button
         ref={btnRef} type="button" role="combobox" aria-haspopup="listbox" aria-expanded={open} aria-controls={open ? id : undefined}
         aria-activedescendant={open && active >= 0 ? optionId(active) : undefined} aria-label={aria["aria-label"]} disabled={disabled}
+        autoFocus={autoOpen}
         onClick={() => (open ? setOpen(false) : show())} onKeyDown={onKeyDown} onBlur={() => setOpen(false)}
         className={`inline-flex items-center justify-between gap-2 text-left transition-colors duration-200 ease-standard disabled:cursor-not-allowed disabled:opacity-60 ${open && !detached ? "!border-purple" : ""} ${className}`}
         style={style}

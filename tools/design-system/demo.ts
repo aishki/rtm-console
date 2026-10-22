@@ -35,7 +35,7 @@ const ledger: Instance[] = [
 ];
 const incidents: Incident[] = [
   { inc: "IR-0003", t: 36420, agent: "Example, Eli - AH10005", team: A, rule: "Prolonged offline", ruleId: "offl", instances: 3, status: "Open", disposition: "", closedT: null },
-  { inc: "IR-0002", t: 31200, agent: "Example, Gio - AH10007", team: B, rule: "Outbound call", ruleId: "outb", instances: 3, status: "Closed", disposition: "Coached & documented", closedT: 33900 },
+  { inc: "IR-0002", t: 31200, agent: "Example, Gio - AH10007", team: B, rule: "Outbound call", ruleId: "outb", instances: 3, status: "Closed", disposition: "Coached & Documented", closedT: 33900 },
 ];
 const nudge: NudgeEvent = { n: 12, agent: "Example, Carlo - AH10003", team: A, first: "Carlo", body: "Your member has been on hold for over 2 minutes. If you need more time, check back in with them or tell your TL what's holding things up." };
 

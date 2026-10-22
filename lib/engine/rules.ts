@@ -22,7 +22,16 @@ export const ROUTES: [Route, string][] = [
   ["leadonly", "TL only (no auto-Ops)"],
 ];
 export const ROUTE_IDS = ROUTES.map(r => r[0]);
-export const DISPOSITIONS = ["Coached & documented", "Validated / excused", "Referred to HR / PIP", "System issue / no fault"];
+/** Outcomes a leader can record when closing an investigation, in dropdown order. */
+export const DISPOSITIONS = [
+  "Coached", "Coached & Documented", "Assisted & Coached", "Excused/Validated", "Uncontrollable/No-Fault", "System/Tool Issue",
+  "Refresher Training Assigned", "Approved Business Activity", "Invalid/Disputed", "Corrective Action Initiated",
+  "Escalated to Leadership/HR", "Pending Investigation",
+];
+/** Recorded while the investigation is still under way: it does not let the investigation close. */
+export const PENDING_DISPOSITION = "Pending Investigation";
+/** True when the recorded disposition is a final outcome, so the investigation can be closed. */
+export const canClose = (disposition: string) => disposition !== "" && disposition !== PENDING_DISPOSITION;
 export const ROLES: [Role, string][] = [
   ["admin", "Admin (WFM)"], ["senior", "Senior Leader"], ["mgr", "Manager"], ["tl", "Team Lead / AM"], ["agent", "Agent"],
 ];

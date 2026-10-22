@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { clock, splitAgent } from "@/lib/engine/format";
-import { DISPOSITIONS } from "@/lib/engine/rules";
+import { DISPOSITIONS, PENDING_DISPOSITION, canClose } from "@/lib/engine/rules";
 import { api, attempt, download } from "@/lib/client/api";
 import { avgResponse, usePerms } from "@/lib/client/hooks";
 import { useConsole } from "@/lib/client/store";
@@ -77,27 +77,40 @@ function BarChart({ title, sub, bars, note, people }: { title: string; sub: stri
 
 /**
  * Start / disposition + close / closed note, for roles with investigation actions. Picking a disposition records it
- * straight away; "Close investigation" unlocks once one is recorded, and "None" sends the incident back to Open.
+ * straight away and folds the list into an "Update disposition" button, which opens the list again to change it.
+ * "Close incident" unlocks once a final one is recorded (not "Pending Investigation"), and "None" sends the incident back to Open.
  */
 function IncidentAction({ incident: i, canAct }: { incident: Incident; canAct: boolean }) {
   const toast = useConsole(s => s.toast);
+  const [editing, setEditing] = useState(false);
   const note = i.status === "Closed" ? `Closed ${clock(i.closedT ?? 0)}` : !canAct ? "Read-only in this view" : "";
-  const pick = (v: string) => void attempt(v === REOPEN ? api.incident(i.inc, "reopen") : api.incident(i.inc, "record", v));
+  const pick = (v: string) => { setEditing(false); void attempt(v === REOPEN ? api.incident(i.inc, "reopen") : api.incident(i.inc, "record", v)); };
+  const closable = canClose(i.disposition);
+  const closeHint = closable ? undefined : i.disposition === PENDING_DISPOSITION ? "Change the disposition from Pending Investigation first" : "Record a disposition first";
   const close = async () => {
     const res = await attempt(api.incident(i.inc, "close"));
     if (res) toast("info", `${res.incident.inc} closed`, `${res.incident.agent} · ${res.incident.rule} · ${res.incident.disposition}`);
   };
-  // w-max: the cell is as wide as its controls, so the select is never squeezed.
+  // The disposition slot has one fixed width (the longest option) for both the button and the list, so the row never
+  // shifts between them. Side by side on wide screens; below 1360px "Close incident" wraps under it instead of
+  // widening the table (the Team column would otherwise take the room and squeeze this cell).
   return (
-    <div className="flex w-max items-center gap-2">
+    <div className="flex flex-wrap items-center gap-2 min-[1360px]:w-max min-[1360px]:flex-nowrap">
       {canAct && i.status === "Open" && <PurpleButton compact onClick={() => void attempt(api.incident(i.inc, "start"))}>Start investigation</PurpleButton>}
       {canAct && i.status === "Investigating" && (
         <>
-          <Select
-            value={i.disposition} onChange={pick} options={i.disposition ? DISPOSITION_OPTIONS : [NO_DISPOSITION, ...DISPOSITION_OPTIONS]}
-            aria-label={`Disposition for ${i.inc}`} className="field h-8 px-2 text-[13px]"
-          />
-          <PurpleButton compact disabled={!i.disposition} title={i.disposition ? undefined : "Record a disposition first"} onClick={close}>Close investigation</PurpleButton>
+          <div className="w-[212px] shrink-0">
+            {i.disposition && !editing ? (
+              <PurpleButton compact variant="outline" className="w-full" title={`Current disposition: ${i.disposition}`} onClick={() => setEditing(true)}>Update disposition</PurpleButton>
+            ) : (
+              <Select
+                value={i.disposition} onChange={pick} options={i.disposition ? DISPOSITION_OPTIONS : [NO_DISPOSITION, ...DISPOSITION_OPTIONS]}
+                aria-label={`Disposition for ${i.inc}`} className="field h-8 w-full px-2 text-[13px]"
+                autoOpen={editing} onClose={editing ? () => setEditing(false) : undefined}
+              />
+            )}
+          </div>
+          <PurpleButton compact disabled={!closable} title={closeHint} onClick={close}>Close incident</PurpleButton>
         </>
       )}
       {note && <span className="text-[13px] text-muted">{note}</span>}
@@ -148,22 +161,36 @@ export default function DashboardsPage() {
   const byAgent = useMemo(() => tally(ledger.filter(r => !r.isFloor), r => r.agent, 8), [ledger]);
 
   const incidentColumns: Column<Incident>[] = [
-    { key: "inc", header: "Incident #", thClass: "whitespace-nowrap", tdClass: "whitespace-nowrap font-ui font-semibold text-purple", cell: i => i.inc },
-    { key: "opened", header: "Opened", tdClass: "num", cell: i => clock(i.t) },
-    // The domain ID sits under the name, so the column stays narrow and "Trigger rule" keeps to one line.
+    // Below 1280px the Opened time folds under the incident number and the count next to the rule,
+    // so the table fits without scrolling sideways.
     {
-      key: "agent", header: "Agent", tdClass: "whitespace-nowrap", cell: i => {
+      key: "inc", header: "Incident #", thClass: "whitespace-nowrap", tdClass: "whitespace-nowrap", cell: i => (
+        <span className="flex flex-col gap-0.5">
+          <span className="font-ui font-semibold text-purple">{i.inc}</span>
+          <span className="num text-[11px] text-muted xl:hidden">Opened {clock(i.t)}</span>
+        </span>
+      ),
+    },
+    { key: "opened", header: "Opened", thClass: "max-xl:hidden", tdClass: "num max-xl:hidden", cell: i => clock(i.t) },
+    // The domain ID sits under the name, so the column stays narrow and "Trigger rule" keeps to one line.
+    // Long names wrap rather than widen the table.
+    {
+      key: "agent", header: "Agent", thClass: "min-w-[120px]", cell: i => {
         const { who, id } = splitAgent(i.agent);
-        return <span className="flex flex-col gap-0.5"><span className="font-semibold">{who}</span>{id && <span className="num text-[11px] text-muted">{id}</span>}</span>;
+        return <span className="flex flex-col gap-0.5"><span className="font-semibold">{who}</span>{id && <span className="num whitespace-nowrap text-[11px] text-muted">{id}</span>}</span>;
       },
     },
     // Team takes whatever width is left and ellipsises, so the Action buttons never slide off the panel.
-    { key: "team", header: "Team", thClass: "w-full min-w-[160px]", tdClass: "max-w-0 truncate text-muted", cell: i => <span title={i.team}>{i.team}</span> },
-    { key: "rule", header: "Trigger rule", thClass: "whitespace-nowrap", tdClass: "whitespace-nowrap", cell: i => i.rule },
-    { key: "instances", header: "Instances", tdClass: "font-ui font-semibold", cell: i => `×${i.instances}` },
+    { key: "team", header: "Team", thClass: "w-full min-w-[80px]", tdClass: "max-w-0 truncate text-muted", cell: i => <span title={i.team}>{i.team}</span> },
+    // One line from 1280px up; below that it may wrap, so the table never scrolls sideways.
+    {
+      key: "rule", header: "Trigger rule", thClass: "xl:whitespace-nowrap", tdClass: "xl:whitespace-nowrap",
+      cell: i => <>{i.rule}<span className="font-ui font-semibold xl:hidden"> ×{i.instances}</span></>,
+    },
+    { key: "instances", header: "Instances", thClass: "max-xl:hidden", tdClass: "font-ui font-semibold max-xl:hidden", cell: i => `×${i.instances}` },
     { key: "status", header: "Status", cell: i => <StatusPill tone={INC[i.status]}>{i.status}</StatusPill> },
-    { key: "disp", header: "Disposition", tdClass: "whitespace-nowrap text-muted", cell: i => i.disposition || "—" },
-    { key: "action", header: "Action", thClass: "min-w-[300px]", cell: i => <IncidentAction incident={i} canAct={canAct} /> },
+    { key: "disp", header: "Disposition", thClass: "min-w-[120px]", tdClass: "text-muted", cell: i => i.disposition || "—" },
+    { key: "action", header: "Action", cell: i => <IncidentAction incident={i} canAct={canAct} /> },
   ];
 
   const teamRows = useMemo<TeamRow[]>(() => teams.map(t => {
