@@ -16,16 +16,18 @@ interface Props {
   /** Lets the caller load `states` only while the list is on screen. */
   onOpenChange?: (open: boolean) => void;
   "aria-label"?: string;
+  /** "dark" for the dev bar: a translucent box with white text. The list itself stays light. */
+  tone?: "light" | "dark";
 }
 
 /** A long floor is searched, not scrolled: only the first matches are drawn. */
 const MAX_SHOWN = 80;
 
-function StateTag({ state }: { state: AgentState | undefined }) {
+function StateTag({ state, className = "text-ink" }: { state: AgentState | undefined; className?: string }) {
   const s = state && STATES[state];
   if (!s) return null;
   return (
-    <span className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap text-xs font-medium text-ink">
+    <span className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap text-xs font-medium ${className}`}>
       <span className="h-2 w-2 rounded-full" style={{ background: s.color }} />{s.label}
     </span>
   );
@@ -35,7 +37,8 @@ function StateTag({ state }: { state: AgentState | undefined }) {
  * The "View as" person box: type part of a name or a domain ID to narrow the list, then pick with
  * the mouse or the arrow keys and Enter. Escape or clicking away keeps the current person.
  */
-export function PersonSearch({ value, groups, onChange, states, onOpenChange, ...aria }: Props) {
+export function PersonSearch({ value, groups, onChange, states, onOpenChange, tone = "light", ...aria }: Props) {
+  const dark = tone === "dark";
   const id = useId();
   const inputRef = useRef<HTMLInputElement>(null);
   const [open, setOpenState] = useState(false);
@@ -75,7 +78,7 @@ export function PersonSearch({ value, groups, onChange, states, onOpenChange, ..
 
   return (
     <div className="relative w-[340px] max-w-full">
-      <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-purple">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true" className={`pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 ${dark ? "text-primary-500" : "text-purple"}`}>
         <circle cx="6" cy="6" r="4.2" stroke="currentColor" strokeWidth="1.6" />
         <path d="m9.2 9.2 3.3 3.3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
       </svg>
@@ -86,9 +89,11 @@ export function PersonSearch({ value, groups, onChange, states, onOpenChange, ..
         value={open ? text : value} title={open ? undefined : value}
         onFocus={show} onBlur={() => setOpen(false)} onKeyDown={onKeyDown}
         onChange={e => { setText(e.target.value); setActive(0); }}
-        className={`h-9 w-full truncate rounded-8 border bg-white pl-8 text-sm text-ink outline-none transition-colors duration-200 ease-standard placeholder:text-muted ${open ? "border-purple pr-3" : "border-line pr-[116px]"}`}
+        className={`w-full truncate rounded-8 border pl-8 outline-none transition-colors duration-200 ease-standard ${dark
+          ? `h-7 bg-white/10 text-xs font-semibold text-white placeholder:text-white/50 ${open ? "border-white/60 pr-3" : "border-white/20 pr-[116px]"}`
+          : `h-9 bg-white text-sm text-ink placeholder:text-muted ${open ? "border-purple pr-3" : "border-line pr-[116px]"}`}`}
       />
-      {!open && <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2"><StateTag state={states?.[value]} /></span>}
+      {!open && <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2"><StateTag state={states?.[value]} className={dark ? "text-white" : "text-ink"} /></span>}
       {open && (
         <div
           id={id} role="listbox" aria-label={aria["aria-label"]}

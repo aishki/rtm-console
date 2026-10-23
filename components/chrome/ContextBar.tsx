@@ -1,19 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { clock } from "@/lib/engine/format";
-import { ROLES } from "@/lib/engine/rules";
+import { ROLE_LABEL } from "@/lib/engine/rules";
 import { enableAlerts, useAlertState } from "@/lib/client/alerts";
 import { api, attempt } from "@/lib/client/api";
 import { usePerms } from "@/lib/client/hooks";
 import { useConsole } from "@/lib/client/store";
-import type { AgentState, FloorSource, Role } from "@/lib/types";
 import { PurpleButton } from "@/components/ui/buttons";
-import { Select, type SelectOption } from "@/components/ui/Select";
-import { PersonSearch } from "./PersonSearch";
-
-const ROLE_OPTIONS: SelectOption<Role>[] = ROLES.map(([value, label]) => ({ value, label }));
-const SOURCE_OPTIONS: SelectOption<FloorSource>[] = [{ value: "gencloud", label: "Live Genesys" }, { value: "sim", label: "Simulation" }];
 
 /**
  * True once the feed has been silent for longer than the "Gencloud not responding" rule's
@@ -40,10 +33,12 @@ function useFeedPill() {
   return { bg: "#D9F5F5", fg: "#028283", dot: "#00BBBA", text: "Live feed · Gencloud/NICE API" };
 }
 
-/** Under the navbar: the "View as" selectors (dev flag), role description, data source switch (dev), feed status and shift clock. */
+/**
+ * Under the navbar: who you are viewing as and what that role covers, the desktop-alert opt-in, feed status and
+ * shift clock. The developer controls (View as, data source, notification switches) live in the dev bar above.
+ */
 export function ContextBar() {
   const view = useConsole(s => s.view);
-  const people = useConsole(s => s.people);
   const ready = useConsole(s => s.status === "ready");
   const t = useConsole(s => s.t);
   const isReplay = useConsole(s => s.mode === "replay");
@@ -51,17 +46,9 @@ export function ContextBar() {
   const perms = usePerms();
   const feed = useFeedPill();
   const source = useConsole(s => s.feed);
-  const canSwitchFeed = useConsole(s => s.canSwitchFeed);
   const feedDown = useFeedDown();
   // The usual cause of a silent Gencloud feed is an expired token; Admins get a shortcut to replace it.
   const gencloudDown = ready && !isReplay && source === "gencloud" && feedDown && view?.role === "admin";
-  const switchFeed = async (to: FloorSource) => {
-    const res = await attempt(api.setFeed(to));
-    if (!res) return;
-    if (res.feed !== "sim") toast("info", "Back to the live Genesys feed", "The simulation was cleared.");
-    else if (res.realNames) toast("info", "Simulation is on", "Team and agent names are real. Every state change, call-out and incident is invented.");
-    else toast("info", "Simulation is on", "No Genesys roster was available, so the sample teams and names are in use.");
-  };
   const alerts = useAlertState();
   const turnOnAlerts = async () => {
     const state = await enableAlerts();
@@ -69,61 +56,30 @@ export function ContextBar() {
     else if (state === "denied") toast("warn", "Desktop alerts are blocked", "Allow notifications for this site in the browser's site settings, then reload.");
   };
 
-  const groups = !people || !view ? []
-    : view.role === "agent" ? people.agentsByTeam.map(g => ({ label: g.team, items: g.agents }))
-    : view.role === "tl" ? [{ label: "Team Leads", items: people.tls }]
-    : view.role === "mgr" ? [{ label: "Managers", items: people.mgrs }]
-    : [];
-  const select = "h-9 rounded-8 border bg-white px-3 text-sm text-ink";
-
-  // Agent states for the person box: everyone's while its list is open, and the chosen agent's own from the live stream.
-  const asAgent = view?.role === "agent";
-  const [picking, setPicking] = useState(false);
-  const [floorStates, setFloorStates] = useState<Record<string, AgentState> | null>(null);
-  const ownState = useConsole(s => (s.view?.role === "agent" ? s.agents.find(a => a.name === s.view?.who)?.state : undefined));
-  useEffect(() => {
-    if (!asAgent || !picking) return;
-    let live = true;
-    const load = () => void api.peopleStates().then(r => { if (live) setFloorStates(r.states); }).catch(() => {});
-    load();
-    const timer = setInterval(load, 5000);
-    return () => { live = false; clearInterval(timer); };
-  }, [asAgent, picking]);
-  const states = !asAgent ? null : view.who && ownState ? { ...floorStates, [view.who]: ownState } : floorStates;
-
   return (
-    <div className="flex flex-wrap items-center gap-4 bg-white px-4 py-2.5 shadow-[inset_0_-1px_0_var(--border-hairline)] sm:px-8">
-      {people && view && (
-        <>
-          <label className="flex items-center gap-2.5">
-            <span className="text-[13px] font-semibold text-muted">View as</span>
-            <Select value={view.role} onChange={role => void attempt(api.setView(role, null))} options={ROLE_OPTIONS} className={`${select} border-purple`} />
-          </label>
-          {groups.length > 0 && (
-            <PersonSearch
-              value={view.who ?? ""} aria-label="Person" groups={groups} states={states} onOpenChange={setPicking}
-              onChange={who => void attempt(api.setView(view.role, who))}
-            />
-          )}
-        </>
+    <div className="flex min-h-[52px] flex-wrap items-center gap-x-4 gap-y-2 bg-white px-4 py-2.5 shadow-[inset_0_-1px_0_var(--border-hairline)] sm:px-8">
+      {view && (
+        <span className="inline-flex h-6 shrink-0 items-center rounded-pill bg-tint px-2.5 text-xs font-semibold text-purple-900">{ROLE_LABEL[view.role]}</span>
       )}
       <span className="text-pretty text-[13px] text-muted">{view && perms ? perms.desc(view.who) : ""}</span>
       <div className="flex-1" />
       {isReplay && perms?.replay && (
         <PurpleButton
-          variant="outline"
+          variant="outline" compact
           onClick={async () => { if (await attempt(api.exitReplay().then(() => true))) toast("info", "Back to the live feed", "Replay results were cleared."); }}
         >
           Exit replay
         </PurpleButton>
       )}
-      {ready && canSwitchFeed && !isReplay && source !== "csv" && (
-        <label className="flex items-center gap-2.5">
-          <span className="text-[13px] font-semibold text-muted">Data</span>
-          <Select value={source} onChange={to => void switchFeed(to)} options={SOURCE_OPTIONS} className={`${select} border-line`} />
-        </label>
+      {ready && alerts === "default" && (
+        <PurpleButton variant="outline" compact onClick={() => void turnOnAlerts()}>
+          <BellIcon />Enable desktop alerts
+        </PurpleButton>
       )}
-      {ready && alerts === "default" && <PurpleButton variant="outline" onClick={() => void turnOnAlerts()}>Enable desktop alerts</PurpleButton>}
+      {ready && alerts === "granted" && (
+        <span className="hidden items-center gap-1.5 text-[13px] font-semibold text-success-text md:inline-flex"><BellIcon />Desktop alerts on</span>
+      )}
+      <span aria-hidden="true" className="hidden h-5 w-px bg-hairline md:block" />
       <div className="inline-flex h-8 items-center gap-2 rounded-pill px-3.5 text-[13px] font-semibold" style={{ background: feed.bg, color: feed.fg }}>
         <span className="h-2 w-2 rounded-full" style={{ background: feed.dot }} />
         <span>{feed.text}</span>
@@ -134,5 +90,13 @@ export function ContextBar() {
         <span className="num text-base font-semibold">{ready ? clock(t) : "--:--:--"}</span>
       </div>
     </div>
+  );
+}
+
+function BellIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M8 2.5a3.5 3.5 0 0 0-3.5 3.5v2.3L3.3 10.6h9.4L11.5 8.3V6A3.5 3.5 0 0 0 8 2.5ZM6.6 12.6a1.5 1.5 0 0 0 2.8 0" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
   );
 }

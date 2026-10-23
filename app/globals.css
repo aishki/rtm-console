@@ -197,6 +197,10 @@
   .panel-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; padding: 18px 20px; border-bottom: 1px solid var(--border-card); }
   .panel-title { margin: 0; font-size: 20px; font-weight: 500; line-height: normal; color: var(--purple); letter-spacing: -0.01em; }
   .panel-sub { font-size: 13px; color: var(--text-muted); }
+  /* A panel body that slides between a capped and a full height (set max-height inline). */
+  /* Ease in and out (not the snappy BITS curve) so a tall list starts and settles gently. */
+  .panel-slide { transition: max-height 450ms cubic-bezier(0.65, 0, 0.35, 1); }
+  @media (prefers-reduced-motion: reduce) { .panel-slide { transition: none; } }
   .field { box-sizing: border-box; border-radius: 8px; border: 1px solid var(--border-neutral); background: var(--white); color: var(--text-body); font-size: 14px; }
   .field:disabled { cursor: not-allowed; }
   /* Table header cell: a purple tint with a line under it, so it reads as a band on white panels and the grey page alike. */

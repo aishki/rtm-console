@@ -15,7 +15,7 @@ export function PurpleButton({ variant = "solid", compact = false, className = "
   return (
     <button
       type={type}
-      className={`inline-flex items-center justify-center gap-2.5 whitespace-nowrap rounded-20 border-0 font-semibold leading-none shadow-[var(--ring-button)] transition-colors duration-200 ease-standard disabled:cursor-not-allowed disabled:opacity-40 ${size} ${skin} ${className}`}
+      className={`inline-flex items-center justify-center gap-2.5 whitespace-nowrap rounded-20 border-0 font-semibold leading-none shadow-[var(--ring-button)] transition-[color,background-color,opacity] duration-200 ease-standard disabled:cursor-not-allowed disabled:opacity-40 ${size} ${skin} ${className}`}
       {...rest}
     />
   );

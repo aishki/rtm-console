@@ -50,6 +50,19 @@ export async function enableAlerts(): Promise<AlertState> {
   return alertState();
 }
 
+/**
+ * Stop this browser's desktop alerts without taking back the permission: drop the push subscription here and on
+ * the server. `syncAlerts()` turns them back on. Used by the dev bar's switch.
+ */
+export async function pauseAlerts(): Promise<void> {
+  if (alertState() !== "granted" || !("PushManager" in window)) return;
+  const reg = await worker();
+  const sub = await reg.pushManager.getSubscription();
+  if (!sub) return;
+  await fetch("/api/push", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ endpoint: sub.endpoint }) }).catch(() => {});
+  await sub.unsubscribe();
+}
+
 function tell(msg: { type: "alert"; note: AlertNote } | { type: "clear"; tag: string }): void {
   if (alertState() !== "granted") return;
   void worker().then(reg => reg.active?.postMessage(msg)).catch(() => {});

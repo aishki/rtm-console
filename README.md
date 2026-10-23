@@ -62,9 +62,19 @@ The brand logo PNGs are in `public/assets/logos/`: `carelon-global-solutions.png
 - **Dev with `NEXT_PUBLIC_FEED=sim`:** 199 simulated agents in 10 teams, starting at 08:15 with 15 minutes of history, random repeat offenders, and one 44-second feed outage four minutes in.
 - **Dev/prod with `NEXT_PUBLIC_FEED=gencloud` and valid `GENESYS_TOKEN`:** live agents and queues from the watched view (presence/routing state and queue metrics). Bootstrap failure or an expired token keeps the feed silent until a fresh token is pasted on `/admin/token` or the server restarts.
 
+### The dev bar
+
+In `next dev` a dark strip with a striped edge sits above the navbar. It holds the developer controls, so the context bar under the navbar keeps only what production needs (role, desktop-alert opt-in, feed status, shift clock):
+
+- **View as:** the role and person to view the console as (needs `NEXT_PUBLIC_VIEW_AS=1`).
+- **Data:** Live Genesys or Simulation (below). Only an Admin can switch it.
+- **Notifications:** switches that mute floor toasts, the nudge pop-up and desktop alerts in this browser. Toasts from your own clicks still show. The choice is saved in the browser.
+
+Production builds never show the bar, and every notification stays on there. It is marked `TODO(prod)` in `components/chrome/DevBar.tsx` and `lib/client/devSettings.ts` for removal before go-live. Until SSO exists, that also means a production build has no "View as".
+
 ### Switching the data source
 
-An Admin sees a **Data** selector in the context bar: **Live Genesys** or **Simulation**. `NEXT_PUBLIC_FEED` only decides which one the server starts on.
+An Admin sees a **Data** switch in the dev bar: **Live Genesys** or **Simulation**. `NEXT_PUBLIC_FEED` only decides which one the server starts on.
 
 - The switch is for everyone: there is one floor, and every open console follows it without reloading. The feed pill says which one is on screen.
 - **The simulation uses real names.** Its floor keeps the simulator's shape (ten teams of 15 to 25 agents) but takes the ten largest teams of the Gencloud roster and the first agents of each. Team leads, managers and LOBs are not in the Gencloud roster, so the sample ones stay. Everything that happens on that floor (states, call-outs, incidents) is invented.
@@ -148,7 +158,7 @@ Only an Admin can upload it: **Queue mapping** in the agent grid's header. It wo
 
 ```
 app/
-  (console)/layout.tsx            Navbar, context bar, footer, toast stack, nudge host
+  (console)/layout.tsx            Dev bar (development only), navbar, context bar, footer, toast stack, nudge host
   (console)/{console,my-view,dashboards,rules,ledger}/page.tsx
   api/                            Route handlers (see API reference)
 lib/

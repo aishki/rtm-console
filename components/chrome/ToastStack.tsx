@@ -1,5 +1,6 @@
 "use client";
 
+import { DEV_TOOLS } from "@/lib/client/devSettings";
 import { type ToastItem, useConsole } from "@/lib/client/store";
 import { TOAST } from "@/lib/ui/palette";
 
@@ -24,7 +25,8 @@ export function Toast({ toast }: { toast: ToastItem }) {
 export function ToastStack() {
   const toasts = useConsole(s => s.toasts);
   return (
-    <div className="fixed right-6 top-[188px] z-[60] flex w-[360px] max-w-[calc(100vw-48px)] flex-col gap-2.5 sm:top-[205px] lg:bottom-6 lg:top-auto">
+    // In development the dev bar (about 92px tall when it wraps) sits above the header. TODO(prod): drop the DEV_TOOLS branch.
+    <div className={`fixed right-6 z-[60] flex w-[360px] max-w-[calc(100vw-48px)] flex-col gap-2.5 lg:bottom-6 lg:top-auto ${DEV_TOOLS ? "top-[280px] sm:top-[297px]" : "top-[188px] sm:top-[205px]"}`}>
       {toasts.map(t => <Toast key={t.id} toast={t} />)}
     </div>
   );
