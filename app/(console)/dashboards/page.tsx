@@ -1,17 +1,18 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { clock, splitAgent } from "@/lib/engine/format";
 import { DISPOSITIONS, PENDING_DISPOSITION, canClose } from "@/lib/engine/rules";
 import { api, attempt, download } from "@/lib/client/api";
-import { avgResponse, usePerms } from "@/lib/client/hooks";
+import { avgResponse, useMorph, usePerms } from "@/lib/client/hooks";
 import { useConsole } from "@/lib/client/store";
 import { INC, STAGE } from "@/lib/ui/palette";
 import type { Incident, Instance, Stage } from "@/lib/types";
 import { CsvImportDialog } from "@/components/chrome/CsvImportDialog";
 import { PurpleButton } from "@/components/ui/buttons";
 import { type Column, DataTable } from "@/components/ui/DataTable";
+import { MorphText } from "@/components/ui/MorphText";
 import { type Kpi, KpiTile, PageTitle, StatusPill } from "@/components/ui/primitives";
 import { Select } from "@/components/ui/Select";
 
@@ -83,6 +84,9 @@ function BarChart({ title, sub, bars, note, people }: { title: string; sub: stri
 function IncidentAction({ incident: i, canAct }: { incident: Incident; canAct: boolean }) {
   const toast = useConsole(s => s.toast);
   const [editing, setEditing] = useState(false);
+  // Starting, recording, closing and reopening swap these controls: fade them in and out and slide between sizes.
+  const box = useRef<HTMLDivElement>(null);
+  useMorph(box);
   const note = i.status === "Closed" ? `Closed ${clock(i.closedT ?? 0)}` : !canAct ? "Read-only in this view" : "";
   const pick = (v: string) => { setEditing(false); void attempt(v === REOPEN ? api.incident(i.inc, "reopen") : api.incident(i.inc, "record", v)); };
   const closable = canClose(i.disposition);
@@ -95,7 +99,7 @@ function IncidentAction({ incident: i, canAct }: { incident: Incident; canAct: b
   // shifts between them. Side by side on wide screens; below 1360px "Close incident" wraps under it instead of
   // widening the table (the Team column would otherwise take the room and squeeze this cell).
   return (
-    <div className="flex flex-wrap items-center gap-2 min-[1360px]:w-max min-[1360px]:flex-nowrap">
+    <div ref={box} className="flex flex-wrap items-center gap-2 min-[1360px]:w-max min-[1360px]:flex-nowrap">
       {canAct && i.status === "Open" && <PurpleButton compact onClick={() => void attempt(api.incident(i.inc, "start"))}>Start investigation</PurpleButton>}
       {canAct && i.status === "Investigating" && (
         <>
@@ -113,7 +117,7 @@ function IncidentAction({ incident: i, canAct }: { incident: Incident; canAct: b
           <PurpleButton compact disabled={!closable} title={closeHint} onClick={close}>Close incident</PurpleButton>
         </>
       )}
-      {note && <span className="text-[13px] text-muted">{note}</span>}
+      {note && <span data-morph className="text-[13px] text-muted">{note}</span>}
     </div>
   );
 }
@@ -189,7 +193,7 @@ export default function DashboardsPage() {
     },
     { key: "instances", header: "Instances", thClass: "max-xl:hidden", tdClass: "font-ui font-semibold max-xl:hidden", cell: i => `×${i.instances}` },
     { key: "status", header: "Status", cell: i => <StatusPill tone={INC[i.status]}>{i.status}</StatusPill> },
-    { key: "disp", header: "Disposition", thClass: "min-w-[120px]", tdClass: "text-muted", cell: i => i.disposition || "—" },
+    { key: "disp", header: "Disposition", thClass: "min-w-[120px]", tdClass: "text-muted", cell: i => <MorphText>{i.disposition || "—"}</MorphText> },
     { key: "action", header: "Action", cell: i => <IncidentAction incident={i} canAct={canAct} /> },
   ];
 
