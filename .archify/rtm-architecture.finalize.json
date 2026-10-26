@@ -1,0 +1,112 @@
+{
+  "schemaVersion": 1,
+  "ok": false,
+  "command": "finalize",
+  "status": "fail",
+  "type": "architecture",
+  "quality": "showcase",
+  "startedAt": "2026-10-26T11:25:26.333Z",
+  "specification": {
+    "path": "C:\\Users\\aguin\\Documents\\WebProjects\\rtm-dashboard\\tmp_spec\\rtm-arch.json",
+    "sha256": "7ad48b35f3192f696c7349aa86a0b23fe060556b845686f0ba06cab0489ae8b9",
+    "bytes": 6722
+  },
+  "artifact": {
+    "path": "C:\\Users\\aguin\\Documents\\WebProjects\\rtm-dashboard\\.archify\\rtm-architecture.html",
+    "sha256": "2c8175e787db1cc8271fcc3d1dc111e5d833aa53518b0a0dc63cb501019a24a5",
+    "bytes": 831305
+  },
+  "stages": {
+    "validate": {
+      "status": "not-run",
+      "execution": "embedded-in-deliver"
+    },
+    "deliver": {
+      "status": "fail",
+      "exitCode": 1,
+      "durationMs": 74,
+      "command": [
+        "C:\\Program Files\\nodejs\\node.exe",
+        "C:\\Users\\aguin\\.gemini\\config\\skills\\archify\\bin\\archify.mjs",
+        "deliver",
+        "architecture",
+        "C:\\Users\\aguin\\Documents\\WebProjects\\rtm-dashboard\\tmp_spec\\rtm-arch.json",
+        "C:\\Users\\aguin\\Documents\\WebProjects\\rtm-dashboard\\.archify\\rtm-architecture.html",
+        "--quality",
+        "showcase",
+        "--repo-root",
+        "C:\\Users\\aguin\\Documents\\WebProjects\\rtm-dashboard",
+        "--json"
+      ],
+      "receipt": {
+        "schemaVersion": 1,
+        "ok": false,
+        "command": "deliver",
+        "receiptId": "30f91169-4b91-4d17-b05e-3eb372c0674a",
+        "stage": "prepare",
+        "type": "architecture",
+        "input": "C:\\Users\\aguin\\Documents\\WebProjects\\rtm-dashboard\\tmp_spec\\rtm-arch.json",
+        "output": "C:\\Users\\aguin\\Documents\\WebProjects\\rtm-dashboard\\.archify\\rtm-architecture.html",
+        "error": "meta.output must be a portable POSIX-relative path.",
+        "diagnostics": [
+          {
+            "severity": "error",
+            "subject": {
+              "output": "../.archify/rtm-arch.html",
+              "path": "/meta/output"
+            },
+            "evidence": {
+              "reason": "dot-segment",
+              "segmentIndex": 0,
+              "segment": ".."
+            },
+            "supportedFixes": [
+              "set meta.output to a portable relative .html path such as reports/diagram.html"
+            ],
+            "code": "output/meta-path-syntax",
+            "message": "meta.output must be a portable POSIX-relative path."
+          }
+        ]
+      }
+    }
+  },
+  "diagnostics": [
+    {
+      "severity": "error",
+      "subject": {
+        "output": "../.archify/rtm-arch.html",
+        "path": "/meta/output"
+      },
+      "evidence": {
+        "reason": "dot-segment",
+        "segmentIndex": 0,
+        "segment": ".."
+      },
+      "supportedFixes": [
+        "set meta.output to a portable relative .html path such as reports/diagram.html"
+      ],
+      "code": "output/meta-path-syntax",
+      "message": "meta.output must be a portable POSIX-relative path."
+    }
+  ],
+  "evidence": {
+    "receipt": "C:\\Users\\aguin\\Documents\\WebProjects\\rtm-dashboard\\.archify\\rtm-architecture.finalize.json",
+    "summaryReceipt": "C:\\Users\\aguin\\Documents\\WebProjects\\rtm-dashboard\\.archify\\rtm-architecture.finalize-summary.json"
+  },
+  "visualReview": "not-requested",
+  "failedStage": "deliver",
+  "finishedAt": "2026-10-26T11:25:26.603Z",
+  "durationMs": 270,
+  "update": {
+    "status": "update_available",
+    "installedVersion": "3.1.0",
+    "availableVersion": "3.2.0",
+    "releaseNotes": "https://github.com/tt-a1i/archify/releases/tag/v3.2.0",
+    "severity": "normal",
+    "checkedAt": "2026-10-25T12:52:40.737Z",
+    "source": "cache",
+    "noticeRequired": true,
+    "noticeText": "Archify update: 3.1.0 → 3.2.0. A previous check at 2026-10-25T12:52:40.737Z found a newer release. Release notes: https://github.com/tt-a1i/archify/releases/tag/v3.2.0. The installed Skill has not changed; ask to snooze or ignore this reminder.",
+    "eventKey": "archify@sha256:70e210265c59f24dcbdf2a502ff671104b5454e7ee7d3554aecd86bad32384f5"
+  }
+}

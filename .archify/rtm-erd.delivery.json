@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "receiptId": "f817186b-674a-40e2-9f1d-2d9df6cd8de3",
+  "status": "current",
+  "command": "deliver",
+  "type": "erd",
+  "input": "C:\\Users\\aguin\\Documents\\WebProjects\\rtm-dashboard\\.archify\\rtm-erd.json",
+  "output": "C:\\Users\\aguin\\Documents\\WebProjects\\rtm-dashboard\\.archify\\rtm-erd.html",
+  "specification": {
+    "sha256": "d0d3b7e383bbac70aae22bfb03d10e4bea78df44d2c8c84e6ae64fa68c20a908",
+    "bytes": 18225
+  },
+  "artifact": {
+    "sha256": "04b9e995641615e5d483b31ae50390b41e9c6da35c9e18c4c264ff8c088e29b6",
+    "bytes": 891160
+  }
+}

@@ -1,0 +1,818 @@
+{
+  "schema_version": 1,
+  "diagram_type": "erd",
+  "meta": {
+    "title": "RTM Console \u2014 Proposed PostgreSQL Schema & Ingestion Flow (20 Tables)",
+    "locale": "en",
+    "output": ".archify/rtm-erd.html",
+    "quality_profile": "standard",
+    "views": [
+      {
+        "id": "ingestion-and-rules",
+        "label": "Ingestion & Rules Flow",
+        "focus": [
+          "source_event_stream",
+          "status_mapping",
+          "rules_master",
+          "rule_version",
+          "notification_route",
+          "notification_route_step"
+        ],
+        "note": "Raw Genesys telemetry lands in source_event_stream and status_mapping, evaluated against rules_master and rule_version."
+      },
+      {
+        "id": "people-and-queues",
+        "label": "People, Teams & Queues",
+        "focus": [
+          "genesys_region",
+          "genesys_org",
+          "queue",
+          "queue_member",
+          "team",
+          "person",
+          "shift"
+        ],
+        "note": "Regions, Orgs, Queues, Teams, People and Shifts model the organizational hierarchy and active agents."
+      },
+      {
+        "id": "incidents-and-delivery",
+        "label": "Incidents & Delivery",
+        "focus": [
+          "monitoring_instance",
+          "incident_log",
+          "incident_counter",
+          "notification_log",
+          "push_subscription",
+          "agent_rule_state",
+          "audit_event"
+        ],
+        "note": "Monitoring instances trigger incidents, notification logs, push subscriptions, and audit events."
+      }
+    ]
+  },
+  "layout": {
+    "mode": "grid",
+    "gapX": 56,
+    "gapY": 36,
+    "entityW": 260
+  },
+  "entities": [
+    {
+      "id": "genesys_region",
+      "label": "genesys_region",
+      "row": 0,
+      "col": 0,
+      "attributes": [
+        {
+          "name": "region_id",
+          "type": "text",
+          "key": "pk"
+        },
+        {
+          "name": "name",
+          "type": "text"
+        },
+        {
+          "name": "api_host",
+          "type": "text"
+        },
+        {
+          "name": "login_host",
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "id": "genesys_org",
+      "label": "genesys_org",
+      "row": 1,
+      "col": 0,
+      "attributes": [
+        {
+          "name": "org_id",
+          "type": "text",
+          "key": "pk"
+        },
+        {
+          "name": "region_id",
+          "type": "text",
+          "key": "fk",
+          "references": "genesys_region.region_id"
+        },
+        {
+          "name": "name",
+          "type": "text"
+        },
+        {
+          "name": "view_config_id",
+          "type": "text"
+        },
+        {
+          "name": "oauth_client_id",
+          "type": "text"
+        },
+        {
+          "name": "enabled",
+          "type": "boolean"
+        }
+      ]
+    },
+    {
+      "id": "team",
+      "label": "team",
+      "row": 2,
+      "col": 0,
+      "attributes": [
+        {
+          "name": "team_id",
+          "type": "text",
+          "key": "pk"
+        },
+        {
+          "name": "org_id",
+          "type": "text",
+          "key": "fk",
+          "references": "genesys_org.org_id"
+        },
+        {
+          "name": "name",
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "id": "person",
+      "label": "person",
+      "row": 3,
+      "col": 0,
+      "attributes": [
+        {
+          "name": "person_id",
+          "type": "text",
+          "key": "pk"
+        },
+        {
+          "name": "name",
+          "type": "text"
+        },
+        {
+          "name": "email",
+          "type": "text"
+        },
+        {
+          "name": "role",
+          "type": "text"
+        },
+        {
+          "name": "team_id",
+          "type": "text",
+          "key": "fk",
+          "references": "team.team_id"
+        },
+        {
+          "name": "org_id",
+          "type": "text",
+          "key": "fk",
+          "references": "genesys_org.org_id"
+        },
+        {
+          "name": "account_state",
+          "type": "text"
+        },
+        {
+          "name": "last_login_at",
+          "type": "timestamptz"
+        }
+      ]
+    },
+    {
+      "id": "queue",
+      "label": "queue",
+      "row": 1,
+      "col": 1,
+      "attributes": [
+        {
+          "name": "queue_id",
+          "type": "text",
+          "key": "pk"
+        },
+        {
+          "name": "org_id",
+          "type": "text",
+          "key": "fk",
+          "references": "genesys_org.org_id"
+        },
+        {
+          "name": "name",
+          "type": "text"
+        },
+        {
+          "name": "division",
+          "type": "text"
+        },
+        {
+          "name": "queue_group",
+          "type": "text"
+        },
+        {
+          "name": "queue_subgroup",
+          "type": "text"
+        },
+        {
+          "name": "watched",
+          "type": "boolean"
+        },
+        {
+          "name": "team_id",
+          "type": "text",
+          "key": "fk",
+          "references": "team.team_id"
+        }
+      ]
+    },
+    {
+      "id": "queue_member",
+      "label": "queue_member",
+      "row": 2,
+      "col": 1,
+      "attributes": [
+        {
+          "name": "queue_id",
+          "type": "text",
+          "key": "pk",
+          "references": "queue.queue_id"
+        },
+        {
+          "name": "person_id",
+          "type": "text",
+          "key": "pk",
+          "references": "person.person_id"
+        }
+      ]
+    },
+    {
+      "id": "shift",
+      "label": "shift",
+      "row": 3,
+      "col": 1,
+      "attributes": [
+        {
+          "name": "shift_id",
+          "type": "text",
+          "key": "pk"
+        },
+        {
+          "name": "person_id",
+          "type": "text",
+          "key": "fk",
+          "references": "person.person_id"
+        },
+        {
+          "name": "start_time",
+          "type": "timestamptz"
+        },
+        {
+          "name": "end_time",
+          "type": "timestamptz"
+        }
+      ]
+    },
+    {
+      "id": "source_event_stream",
+      "label": "source_event_stream",
+      "row": 0,
+      "col": 2,
+      "attributes": [
+        {
+          "name": "event_id",
+          "type": "bigint",
+          "key": "pk"
+        },
+        {
+          "name": "org_id",
+          "type": "text",
+          "key": "fk",
+          "references": "genesys_org.org_id"
+        },
+        {
+          "name": "payload_jsonb",
+          "type": "jsonb"
+        },
+        {
+          "name": "received_at",
+          "type": "timestamptz"
+        }
+      ]
+    },
+    {
+      "id": "status_mapping",
+      "label": "status_mapping",
+      "row": 1,
+      "col": 2,
+      "attributes": [
+        {
+          "name": "priority",
+          "type": "smallint",
+          "key": "pk"
+        },
+        {
+          "name": "signal",
+          "type": "text"
+        },
+        {
+          "name": "genesys_status",
+          "type": "text"
+        },
+        {
+          "name": "console_state",
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "id": "rules_master",
+      "label": "rules_master",
+      "row": 2,
+      "col": 2,
+      "attributes": [
+        {
+          "name": "rule_id",
+          "type": "text",
+          "key": "pk"
+        },
+        {
+          "name": "name",
+          "type": "text"
+        },
+        {
+          "name": "description",
+          "type": "text"
+        },
+        {
+          "name": "enabled",
+          "type": "boolean"
+        }
+      ]
+    },
+    {
+      "id": "rule_version",
+      "label": "rule_version",
+      "row": 3,
+      "col": 2,
+      "attributes": [
+        {
+          "name": "rule_id",
+          "type": "text",
+          "key": "pk",
+          "references": "rules_master.rule_id"
+        },
+        {
+          "name": "version",
+          "type": "int",
+          "key": "pk"
+        },
+        {
+          "name": "config_jsonb",
+          "type": "jsonb"
+        },
+        {
+          "name": "route_id",
+          "type": "text"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz"
+        }
+      ]
+    },
+    {
+      "id": "notification_route",
+      "label": "notification_route",
+      "row": 0,
+      "col": 3,
+      "attributes": [
+        {
+          "name": "route_id",
+          "type": "text",
+          "key": "pk"
+        },
+        {
+          "name": "name",
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "id": "notification_route_step",
+      "label": "notification_route_step",
+      "row": 1,
+      "col": 3,
+      "attributes": [
+        {
+          "name": "step_id",
+          "type": "bigint",
+          "key": "pk"
+        },
+        {
+          "name": "route_id",
+          "type": "text",
+          "key": "fk",
+          "references": "notification_route.route_id"
+        },
+        {
+          "name": "step_order",
+          "type": "int"
+        },
+        {
+          "name": "channel",
+          "type": "text"
+        },
+        {
+          "name": "delay_seconds",
+          "type": "int"
+        }
+      ]
+    },
+    {
+      "id": "monitoring_instance",
+      "label": "monitoring_instance",
+      "row": 2,
+      "col": 3,
+      "attributes": [
+        {
+          "name": "instance_id",
+          "type": "uuid",
+          "key": "pk"
+        },
+        {
+          "name": "shift_id",
+          "type": "text",
+          "key": "fk",
+          "references": "shift.shift_id"
+        },
+        {
+          "name": "rule_id",
+          "type": "text",
+          "key": "fk",
+          "references": "rules_master.rule_id"
+        },
+        {
+          "name": "rule_version",
+          "type": "int"
+        },
+        {
+          "name": "person_id",
+          "type": "text",
+          "key": "fk",
+          "references": "person.person_id"
+        },
+        {
+          "name": "incident_id",
+          "type": "text",
+          "key": "fk",
+          "references": "incident_log.incident_id"
+        },
+        {
+          "name": "status",
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "id": "incident_log",
+      "label": "incident_log",
+      "row": 3,
+      "col": 3,
+      "attributes": [
+        {
+          "name": "incident_id",
+          "type": "text",
+          "key": "pk"
+        },
+        {
+          "name": "person_id",
+          "type": "text",
+          "key": "fk",
+          "references": "person.person_id"
+        },
+        {
+          "name": "status",
+          "type": "text"
+        },
+        {
+          "name": "opened_at",
+          "type": "timestamptz"
+        },
+        {
+          "name": "resolved_at",
+          "type": "timestamptz"
+        }
+      ]
+    },
+    {
+      "id": "incident_counter",
+      "label": "incident_counter",
+      "row": 0,
+      "col": 4,
+      "attributes": [
+        {
+          "name": "date_prefix",
+          "type": "text",
+          "key": "pk"
+        },
+        {
+          "name": "last_seq",
+          "type": "int"
+        }
+      ]
+    },
+    {
+      "id": "notification_log",
+      "label": "notification_log",
+      "row": 1,
+      "col": 4,
+      "attributes": [
+        {
+          "name": "notification_id",
+          "type": "bigint",
+          "key": "pk"
+        },
+        {
+          "name": "instance_id",
+          "type": "uuid",
+          "key": "fk",
+          "references": "monitoring_instance.instance_id"
+        },
+        {
+          "name": "channel",
+          "type": "text"
+        },
+        {
+          "name": "status",
+          "type": "text"
+        },
+        {
+          "name": "sent_at",
+          "type": "timestamptz"
+        }
+      ]
+    },
+    {
+      "id": "push_subscription",
+      "label": "push_subscription",
+      "row": 2,
+      "col": 4,
+      "attributes": [
+        {
+          "name": "subscription_id",
+          "type": "bigint",
+          "key": "pk"
+        },
+        {
+          "name": "person_id",
+          "type": "text",
+          "key": "fk",
+          "references": "person.person_id"
+        },
+        {
+          "name": "endpoint",
+          "type": "text"
+        },
+        {
+          "name": "keys_jsonb",
+          "type": "jsonb"
+        }
+      ]
+    },
+    {
+      "id": "agent_rule_state",
+      "label": "agent_rule_state",
+      "row": 3,
+      "col": 4,
+      "attributes": [
+        {
+          "name": "state_id",
+          "type": "bigint",
+          "key": "pk"
+        },
+        {
+          "name": "shift_id",
+          "type": "text",
+          "key": "fk",
+          "references": "shift.shift_id"
+        },
+        {
+          "name": "person_id",
+          "type": "text",
+          "key": "fk",
+          "references": "person.person_id"
+        },
+        {
+          "name": "strike_count",
+          "type": "int"
+        },
+        {
+          "name": "fired",
+          "type": "boolean"
+        }
+      ]
+    },
+    {
+      "id": "audit_event",
+      "label": "audit_event",
+      "row": 0,
+      "col": 1,
+      "attributes": [
+        {
+          "name": "audit_id",
+          "type": "bigint",
+          "key": "pk"
+        },
+        {
+          "name": "person_id",
+          "type": "text",
+          "key": "fk",
+          "references": "person.person_id"
+        },
+        {
+          "name": "action",
+          "type": "text"
+        },
+        {
+          "name": "details_jsonb",
+          "type": "jsonb"
+        },
+        {
+          "name": "timestamp",
+          "type": "timestamptz"
+        }
+      ]
+    }
+  ],
+  "relationships": [
+    {
+      "id": "r1",
+      "from": "genesys_org",
+      "to": "genesys_region",
+      "fromCardinality": "many",
+      "toCardinality": "one"
+    },
+    {
+      "id": "r2",
+      "from": "team",
+      "to": "genesys_org",
+      "fromCardinality": "many",
+      "toCardinality": "one"
+    },
+    {
+      "id": "r3",
+      "from": "person",
+      "to": "team",
+      "fromCardinality": "many",
+      "toCardinality": "one",
+      "fromOptional": true
+    },
+    {
+      "id": "r4",
+      "from": "person",
+      "to": "genesys_org",
+      "fromCardinality": "many",
+      "toCardinality": "one"
+    },
+    {
+      "id": "r5",
+      "from": "queue",
+      "to": "genesys_org",
+      "fromCardinality": "many",
+      "toCardinality": "one"
+    },
+    {
+      "id": "r6",
+      "from": "queue",
+      "to": "team",
+      "fromCardinality": "many",
+      "toCardinality": "one",
+      "fromOptional": true
+    },
+    {
+      "id": "r7",
+      "from": "queue_member",
+      "to": "queue",
+      "fromCardinality": "many",
+      "toCardinality": "one"
+    },
+    {
+      "id": "r8",
+      "from": "queue_member",
+      "to": "person",
+      "fromCardinality": "many",
+      "toCardinality": "one"
+    },
+    {
+      "id": "r9",
+      "from": "shift",
+      "to": "person",
+      "fromCardinality": "many",
+      "toCardinality": "one"
+    },
+    {
+      "id": "r10",
+      "from": "source_event_stream",
+      "to": "genesys_org",
+      "fromCardinality": "many",
+      "toCardinality": "one"
+    },
+    {
+      "id": "r11",
+      "from": "rule_version",
+      "to": "rules_master",
+      "fromCardinality": "many",
+      "toCardinality": "one"
+    },
+    {
+      "id": "r12",
+      "from": "notification_route_step",
+      "to": "notification_route",
+      "fromCardinality": "many",
+      "toCardinality": "one"
+    },
+    {
+      "id": "r13",
+      "from": "monitoring_instance",
+      "to": "shift",
+      "fromCardinality": "many",
+      "toCardinality": "one"
+    },
+    {
+      "id": "r14",
+      "from": "monitoring_instance",
+      "to": "person",
+      "fromCardinality": "many",
+      "toCardinality": "one"
+    },
+    {
+      "id": "r15",
+      "from": "incident_log",
+      "to": "person",
+      "fromCardinality": "many",
+      "toCardinality": "one"
+    },
+    {
+      "id": "r16",
+      "from": "notification_log",
+      "to": "monitoring_instance",
+      "fromCardinality": "many",
+      "toCardinality": "one"
+    },
+    {
+      "id": "r17",
+      "from": "push_subscription",
+      "to": "person",
+      "fromCardinality": "many",
+      "toCardinality": "one"
+    },
+    {
+      "id": "r18",
+      "from": "agent_rule_state",
+      "to": "shift",
+      "fromCardinality": "many",
+      "toCardinality": "one"
+    },
+    {
+      "id": "r19",
+      "from": "agent_rule_state",
+      "to": "person",
+      "fromCardinality": "many",
+      "toCardinality": "one"
+    },
+    {
+      "id": "r20",
+      "from": "audit_event",
+      "to": "person",
+      "fromCardinality": "many",
+      "toCardinality": "one",
+      "fromOptional": true
+    }
+  ],
+  "cards": [
+    {
+      "dot": "rose",
+      "title": "PostgreSQL Database Status",
+      "items": [
+        "Status: NON-EXISTENT / NO DATABASE CONNECTED YET",
+        "The 20 tables above are fully designed in docs/data-architecture.md",
+        "Data flows from Ingestion (source_event_stream, status_mapping) into Rules Engine and Incidents once connected."
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Ingestion to Schema Dataflow",
+      "items": [
+        "1. Raw WebSocket / API events land in `source_event_stream` (JSONB).",
+        "2. Status changes are mapped via `status_mapping` priority table.",
+        "3. Rules Engine evaluates state against `rules_master` and `rule_version`.",
+        "4. Violations trigger `monitoring_instance` and `incident_log`, dispatching notifications via `notification_log`."
+      ]
+    }
+  ]
+}

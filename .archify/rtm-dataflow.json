@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "diagram_type": "dataflow",
+  "meta": {
+    "title": "RTM Console — Ingestion to Store Dataflow & Proposed Schema",
+    "output": ".archify/rtm-dataflow.html",
+    "viewBox": [1068, 520],
+    "animation": "trace",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/aishki/rtm-console",
+      "revision": "99a7a3688319f3b1957922c489ae226112a29abf"
+    }
+  },
+  "stages": [
+    { "label": "Sources" },
+    { "label": "Ingest" },
+    { "label": "Process" },
+    { "label": "Store" },
+    { "label": "Consume" }
+  ],
+  "nodes": [
+    { "id": "gencloud-ws", "type": "cloud", "label": "GenCloud Feed", "sublabel": "WS telemetry", "stage": 0, "row": 0, "tag": "real-time", "sources": [{ "path": "lib/feed/GencloudFeed.ts", "line": 1, "end_line": 30 }] },
+    { "id": "user-input", "type": "frontend", "label": "Console Users", "sublabel": "Admins / Supervisors", "stage": 0, "row": 2, "tag": "REST", "sources": [{ "path": "README.md", "line": 1, "end_line": 20 }] },
+    { "id": "server-runtime", "type": "backend", "label": "Server Runtime", "sublabel": "runtime.ts ticks", "stage": 1, "row": 0, "tag": "Node.js", "sources": [{ "path": "lib/server/runtime.ts", "line": 1, "end_line": 40 }] },
+    { "id": "api-guard", "type": "security", "label": "API Guard", "sublabel": "guard.ts validation", "stage": 1, "row": 2, "tag": "RBAC", "sources": [{ "path": "lib/server/guard.ts", "line": 1, "end_line": 25 }] },
+    { "id": "rules-engine", "type": "backend", "label": "Rules Engine", "sublabel": "engine.ts eval", "stage": 2, "row": 1, "tag": "eval", "sources": [{ "path": "lib/engine/engine.ts", "line": 1, "end_line": 40 }] },
+    { "id": "in-memory-store", "type": "database", "label": "In-Memory Store", "sublabel": "QueueMap active", "stage": 3, "row": 0, "tag": "active", "sources": [{ "path": "lib/server/queueMapStore.ts", "line": 1, "end_line": 30 }] },
+    { "id": "proposed-pg-db", "type": "database", "label": "Proposed PostgreSQL", "sublabel": "20 Tables (Not Connected)", "stage": 3, "row": 2, "tag": "unconnected", "sources": [{ "path": "docs/data-architecture.md", "line": 474, "end_line": 576 }] },
+    { "id": "sse-stream", "type": "backend", "label": "SSE Broadcast", "sublabel": "snapshot.ts stream", "stage": 4, "row": 0, "tag": "stream", "sources": [{ "path": "lib/server/snapshot.ts", "line": 1, "end_line": 35 }] },
+    { "id": "react-ui", "type": "frontend", "label": "React Console UI", "sublabel": "Zustand + Next.js", "stage": 4, "row": 2, "tag": "UI", "sources": [{ "path": "app/page.tsx", "line": 1, "end_line": 13 }] }
+  ],
+  "flows": [
+    { "id": "f1", "from": "gencloud-ws", "to": "server-runtime", "label": "WebSocket events", "classification": "telemetry", "variant": "emphasis", "route": "straight" },
+    { "id": "f2", "from": "user-input", "to": "api-guard", "label": "HTTP request", "classification": "user action", "variant": "security", "route": "straight" },
+    { "id": "f3", "from": "server-runtime", "to": "rules-engine", "label": "telemetry tick", "classification": "process", "variant": "emphasis", "route": "straight" },
+    { "id": "f4", "from": "api-guard", "to": "rules-engine", "label": "authorized call", "classification": "secure route", "variant": "security", "route": "straight" },
+    { "id": "f5", "from": "rules-engine", "to": "in-memory-store", "label": "state write", "classification": "active store", "variant": "emphasis", "route": "straight" },
+    { "id": "f6", "from": "rules-engine", "to": "proposed-pg-db", "label": "designed schema (unconnected)", "classification": "persistence", "variant": "dashed", "route": "straight", "labelAt": [638, 315] },
+    { "id": "f7", "from": "in-memory-store", "to": "sse-stream", "label": "snapshot broadcast", "classification": "real-time feed", "variant": "emphasis", "route": "straight" },
+    { "id": "f8", "from": "sse-stream", "to": "react-ui", "label": "SSE update", "classification": "reactive UI", "variant": "emphasis", "route": "straight" }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "Active Ingestion & Runtime Flow",
+      "items": [
+        "GenCloud feed streams live telemetry via WebSocket",
+        "Rules Engine processes events and updates active in-memory store",
+        "SSE stream pushes real-time updates to React Zustand store & UI"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Proposed PostgreSQL Schema (20 Tables)",
+      "items": [
+        "Status: NON-EXISTENT / NO DATABASE CONNECTED YET",
+        "Full proposed schema: source_event_stream, rules_master, rule_version, notification_route, notification_route_step, monitoring_instance, incident_log, incident_counter, notification_log, push_subscription, person, team, shift, agent_rule_state, status_mapping, genesys_region, genesys_org, queue, queue_member, audit_event",
+        "Persistence currently relies entirely on in-memory state until DB integration"
+      ]
+    }
+  ]
+}

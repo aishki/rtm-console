@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "ok": false,
+  "command": "finalize",
+  "status": "fail",
+  "type": "architecture",
+  "quality": "showcase",
+  "specification": {
+    "path": "C:\\Users\\aguin\\Documents\\WebProjects\\rtm-dashboard\\tmp_spec\\rtm-arch.json",
+    "sha256": "7ad48b35f3192f696c7349aa86a0b23fe060556b845686f0ba06cab0489ae8b9",
+    "bytes": 6722
+  },
+  "artifact": {
+    "path": "C:\\Users\\aguin\\Documents\\WebProjects\\rtm-dashboard\\.archify\\rtm-architecture.html",
+    "sha256": "2c8175e787db1cc8271fcc3d1dc111e5d833aa53518b0a0dc63cb501019a24a5",
+    "bytes": 831305
+  },
+  "gates": {
+    "validate": "not-run",
+    "deliver": "fail",
+    "check": "not-run",
+    "browser-check": "not-run"
+  },
+  "failedStage": "deliver",
+  "diagnostics": [
+    {
+      "code": "output/meta-path-syntax",
+      "severity": "error",
+      "message": "meta.output must be a portable POSIX-relative path.",
+      "subject": {
+        "output": "../.archify/rtm-arch.html",
+        "path": "/meta/output"
+      },
+      "evidence": {
+        "reason": "dot-segment",
+        "segmentIndex": 0,
+        "segment": ".."
+      },
+      "supportedFixes": [
+        "set meta.output to a portable relative .html path such as reports/diagram.html"
+      ]
+    }
+  ],
+  "diagnosticSummary": {
+    "total": 1,
+    "shown": 1,
+    "truncated": false
+  },
+  "evidence": {
+    "receipt": "C:\\Users\\aguin\\Documents\\WebProjects\\rtm-dashboard\\.archify\\rtm-architecture.finalize.json",
+    "summaryReceipt": "C:\\Users\\aguin\\Documents\\WebProjects\\rtm-dashboard\\.archify\\rtm-architecture.finalize-summary.json"
+  },
+  "update": {
+    "status": "update_available",
+    "installedVersion": "3.1.0",
+    "availableVersion": "3.2.0",
+    "releaseNotes": "https://github.com/tt-a1i/archify/releases/tag/v3.2.0",
+    "severity": "normal",
+    "checkedAt": "2026-10-25T12:52:40.737Z",
+    "source": "cache",
+    "noticeRequired": true,
+    "noticeText": "Archify update: 3.1.0 → 3.2.0. A previous check at 2026-10-25T12:52:40.737Z found a newer release. Release notes: https://github.com/tt-a1i/archify/releases/tag/v3.2.0. The installed Skill has not changed; ask to snooze or ignore this reminder.",
+    "eventKey": "archify@sha256:70e210265c59f24dcbdf2a502ff671104b5454e7ee7d3554aecd86bad32384f5"
+  },
+  "visualReview": "not-requested",
+  "durationMs": 270
+}
