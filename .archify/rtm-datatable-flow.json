@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "diagram_type": "dataflow",
+  "meta": {
+    "title": "RTM Console — Ingestion to PostgreSQL Schema & 20 Tables",
+    "output": ".archify/rtm-datatable-flow.html",
+    "viewBox": [1080, 520],
+    "animation": "trace",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/aishki/rtm-console",
+      "revision": "99a7a3688319f3b1957922c489ae226112a29abf"
+    }
+  },
+  "stages": [
+    { "label": "Source" },
+    { "label": "Ingestion" },
+    { "label": "Processing" },
+    { "label": "Schema Tables" },
+    { "label": "Persistence" }
+  ],
+  "nodes": [
+    { "id": "genesys-ws", "type": "cloud", "label": "GenCloud Feed", "sublabel": "WebSocket", "stage": 0, "row": 0, "tag": "feed", "sources": [{ "path": "lib/feed/GencloudFeed.ts", "line": 1, "end_line": 30 }] },
+    { "id": "source-stream", "type": "database", "label": "source_event_stream", "sublabel": "JSONB payloads", "stage": 1, "row": 0, "tag": "ingest", "sources": [{ "path": "docs/data-architecture.md", "line": 480, "end_line": 512 }] },
+    { "id": "rules-engine", "type": "backend", "label": "Rules Engine", "sublabel": "Evaluation", "stage": 2, "row": 0, "tag": "engine", "sources": [{ "path": "lib/engine/engine.ts", "line": 1, "end_line": 40 }] },
+    { "id": "schema-tables", "type": "database", "label": "20 Schema Tables", "sublabel": "Relational entities", "stage": 3, "row": 0, "tag": "schema", "sources": [{ "path": "docs/data-architecture.md", "line": 474, "end_line": 568 }] },
+    { "id": "unconnected-db", "type": "database", "label": "PostgreSQL DB", "sublabel": "Not Connected", "stage": 4, "row": 0, "tag": "unconnected", "sources": [{ "path": "docs/data-architecture.md", "line": 474, "end_line": 481 }] }
+  ],
+  "flows": [
+    { "id": "df1", "from": "genesys-ws", "to": "source-stream", "label": "WebSocket telemetry", "classification": "ingestion", "variant": "emphasis", "route": "straight" },
+    { "id": "df2", "from": "source-stream", "to": "rules-engine", "label": "evaluate status", "classification": "process", "variant": "emphasis", "route": "straight" },
+    { "id": "df3", "from": "rules-engine", "to": "schema-tables", "label": "persist state & violations", "classification": "schema", "variant": "dashed", "route": "straight" },
+    { "id": "df4", "from": "schema-tables", "to": "unconnected-db", "label": "targeted DB storage", "classification": "storage", "variant": "dashed", "route": "straight" }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "Complete 20-Table PostgreSQL Schema (For Database Engineer Review)",
+      "items": [
+        "1. **Genesys Domain (4):** `genesys_region`, `genesys_org`, `queue`, `queue_member`",
+        "2. **People & Shift (4):** `person`, `team`, `shift`, `agent_rule_state`",
+        "3. **Rules & Routes (4):** `rules_master`, `rule_version`, `notification_route`, `notification_route_step`",
+        "4. **Records & Delivery (5):** `monitoring_instance`, `incident_log`, `incident_counter`, `notification_log`, `push_subscription`",
+        "5. **Ingestion & Audit (3):** `source_event_stream` (JSONB), `status_mapping`, `audit_event`",
+        "6. **Database Connection Status:** Fully designed for PostgreSQL in `docs/data-architecture.md`, but **no database is connected yet** (active runtime runs in-memory)."
+      ]
+    }
+  ]
+}

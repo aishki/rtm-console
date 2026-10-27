@@ -60,3 +60,10 @@ next-env.d.ts
 
 # Brainstorming mockups
 .superpowers/
+
+# Archify / Graphify run files: receipts with local paths and caches (keep the diagrams and reports)
+/.archify/*.delivery.json
+/.archify/*.finalize*.json
+/graphify-out/cache/
+/graphify-out/manifest.json
+/graphify-out/.graphify_*

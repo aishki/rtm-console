@@ -1,0 +1,238 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "RTM Console — Runtime Architecture & Proposed PostgreSQL Schema",
+    "output": ".archify/rtm-architecture.html",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/aishki/rtm-console",
+      "revision": "99a7a3688319f3b1957922c489ae226112a29abf"
+    }
+  },
+  "components": [
+    {
+      "id": "users",
+      "type": "external",
+      "label": "Console Users",
+      "sublabel": "Admins / Agents / Supervisors",
+      "pos": [40, 260],
+      "size": [130, 60],
+      "sources": [{ "path": "README.md", "line": 1, "end_line": 20 }]
+    },
+    {
+      "id": "gencloud",
+      "type": "external",
+      "label": "GenCloud Feed",
+      "sublabel": "WebSocket & REST Telemetry",
+      "pos": [40, 110],
+      "size": [130, 64],
+      "tag": "real-time events",
+      "sources": [{ "path": "lib/feed/GencloudFeed.ts", "line": 1, "end_line": 35 }]
+    },
+    {
+      "id": "server",
+      "type": "backend",
+      "label": "Server Runtime",
+      "sublabel": "runtime.ts / ticks",
+      "pos": [220, 185],
+      "size": [140, 64],
+      "tag": "Node.js core",
+      "sources": [{ "path": "lib/server/runtime.ts", "line": 1, "end_line": 50 }]
+    },
+    {
+      "id": "engine",
+      "type": "backend",
+      "label": "Rules Engine",
+      "sublabel": "engine.ts / escalation.ts",
+      "pos": [480, 185],
+      "size": [140, 64],
+      "sources": [{ "path": "lib/engine/engine.ts", "line": 1, "end_line": 45 }]
+    },
+    {
+      "id": "guard",
+      "type": "security",
+      "label": "API Guard",
+      "sublabel": "guard.ts / RBAC",
+      "pos": [480, 70],
+      "size": [140, 60],
+      "sources": [{ "path": "lib/server/guard.ts", "line": 1, "end_line": 30 }]
+    },
+    {
+      "id": "snapshot",
+      "type": "backend",
+      "label": "SSE Broadcast",
+      "sublabel": "snapshot.ts / /api/stream",
+      "pos": [740, 185],
+      "size": [140, 64],
+      "sources": [{ "path": "lib/server/snapshot.ts", "line": 1, "end_line": 40 }]
+    },
+    {
+      "id": "store",
+      "type": "frontend",
+      "label": "Zustand Store",
+      "sublabel": "client/store.ts",
+      "pos": [1000, 260],
+      "size": [140, 60],
+      "sources": [{ "path": "lib/client/store.ts", "line": 1, "end_line": 35 }]
+    },
+    {
+      "id": "ui",
+      "type": "frontend",
+      "label": "Console UI",
+      "sublabel": "Next.js 16 / React 19",
+      "pos": [1260, 260],
+      "size": [140, 60],
+      "sources": [{ "path": "app/page.tsx", "line": 1, "end_line": 13 }]
+    },
+    {
+      "id": "inMemoryStore",
+      "type": "database",
+      "label": "In-Memory Store",
+      "sublabel": "Active Runtime State",
+      "pos": [620, 310],
+      "size": [130, 60],
+      "tag": "active",
+      "sources": [{ "path": "lib/server/queueMapStore.ts", "line": 1, "end_line": 30 }]
+    },
+    {
+      "id": "pgSchema",
+      "type": "database",
+      "label": "Proposed PostgreSQL",
+      "sublabel": "20 Tables / Not Connected Yet",
+      "pos": [880, 400],
+      "size": [150, 60],
+      "tag": "unconnected",
+      "sources": [{ "path": "docs/data-architecture.md", "line": 474, "end_line": 576 }]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "Server Runtime Zone",
+      "wraps": ["server", "engine", "guard", "snapshot", "inMemoryStore"]
+    },
+    {
+      "kind": "security-group",
+      "label": "Proposed Persistence (No DB Connected Yet)",
+      "wraps": ["pgSchema"]
+    },
+    {
+      "kind": "security-group",
+      "label": "Client Browser Zone",
+      "wraps": ["store", "ui"]
+    }
+  ],
+  "connections": [
+    {
+      "id": "gencloud-ingest",
+      "from": "gencloud",
+      "to": "server",
+      "label": "WS telemetries",
+      "variant": "emphasis",
+      "fromSide": "right",
+      "toSide": "top"
+    },
+    {
+      "id": "server-to-engine",
+      "from": "server",
+      "to": "engine",
+      "label": "evaluate rules",
+      "variant": "emphasis",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "engine-memory-sync",
+      "from": "engine",
+      "to": "inMemoryStore",
+      "label": "active state",
+      "variant": "emphasis",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "engine-proposed-sync",
+      "from": "engine",
+      "to": "pgSchema",
+      "label": "designed schema (unconnected)",
+      "variant": "default",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "engine-to-snapshot",
+      "from": "engine",
+      "to": "snapshot",
+      "label": "state snapshot",
+      "variant": "emphasis",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "snapshot-to-store",
+      "from": "snapshot",
+      "to": "store",
+      "label": "SSE stream",
+      "variant": "emphasis",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "store-to-ui",
+      "from": "store",
+      "to": "ui",
+      "label": "reactive state",
+      "variant": "default",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "api-guard-check",
+      "from": "users",
+      "to": "guard",
+      "label": "REST request",
+      "variant": "security",
+      "fromSide": "top",
+      "toSide": "bottom"
+    },
+    {
+      "id": "guard-to-engine",
+      "from": "guard",
+      "to": "engine",
+      "label": "authorized call",
+      "variant": "security",
+      "fromSide": "right",
+      "toSide": "top"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "Active Runtime & In-Memory State",
+      "items": [
+        "GenCloud feed (Hop 1) streams live agent telemetries",
+        "Rules Engine evaluates rules and maintains transient in-memory state",
+        "SSE broadcast (Hop 2) pushes state updates to browser UI"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Proposed PostgreSQL Schema (20 Tables)",
+      "items": [
+        "Status: NON-EXISTENT / NO DATABASE CONNECTED YET",
+        "Designed tables: person, team, shift, agent_rule_state, rules_master, rule_version, notification_route, notification_route_step, monitoring_instance, incident_log, incident_counter, notification_log, push_subscription, source_event_stream, status_mapping, genesys_region, genesys_org, queue, queue_member, audit_event",
+        "Purpose: Persistence across server restarts and historical reporting"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "External Integration",
+      "items": [
+        "Genesys Cloud WebSocket API for presence & queues",
+        "Next.js 16 & React 19 frontend application",
+        "Database integration is fully designed in docs/data-architecture.md but awaits implementation"
+      ]
+    }
+  ]
+}

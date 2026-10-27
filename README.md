@@ -154,6 +154,18 @@ Only an Admin can upload it: **Queue mapping** in the agent grid's header. It wo
 - **Everything is scoped on the server.** Each route resolves the caller's role and span, checks `PERMS`, and only returns data inside that span.
 - **A replay is private to the session that started it.** It gets its own engine, so reviewing a past day never disturbs the live floor. It shares the live rule configuration.
 
+### Diagrams
+
+Open these in a browser. They are generated, so re-run the tools after design changes and commit the new output.
+
+- `.archify/rtm-architecture.html`: runtime architecture (feeds, server runtime, rules engine, in-memory store).
+- `.archify/rtm-dataflow.html`: from ingestion to the store.
+- `.archify/rtm-datatable-flow.html`: from ingestion to the proposed PostgreSQL tables.
+- `.archify/rtm-erd.html`: the 20 proposed tables from `docs/data-architecture.md`.
+- `graphify-out/graph.html` and `GRAPH_REPORT.md`: code dependency graph. Refresh it with `graphify update .`.
+
+The `.json` file next to each Archify diagram is its source.
+
 ### Layout
 
 ```

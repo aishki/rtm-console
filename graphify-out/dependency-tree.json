@@ -1,0 +1,81 @@
+{
+  "label": "rtm-dashboard",
+  "nodes": [
+    {
+      "label": "archify.dependencies['rtm-dashboard']",
+      "nodes": []
+    },
+    {
+      "label": "exceljs.dependencies['rtm-dashboard']",
+      "nodes": []
+    },
+    {
+      "label": "next.dependencies['rtm-dashboard']",
+      "nodes": []
+    },
+    {
+      "label": "react.dependencies['rtm-dashboard']",
+      "nodes": []
+    },
+    {
+      "label": "react-dom.dependencies['rtm-dashboard']",
+      "nodes": []
+    },
+    {
+      "label": "web-push.dependencies['rtm-dashboard']",
+      "nodes": []
+    },
+    {
+      "label": "ws.dependencies['rtm-dashboard']",
+      "nodes": []
+    },
+    {
+      "label": "zustand.dependencies['rtm-dashboard']",
+      "nodes": []
+    },
+    {
+      "label": "[dev] @tailwindcss/postcss.devDependencies['rtm-dashboard']",
+      "nodes": []
+    },
+    {
+      "label": "[dev] @types/node.devDependencies['rtm-dashboard']",
+      "nodes": []
+    },
+    {
+      "label": "[dev] @types/react.devDependencies['rtm-dashboard']",
+      "nodes": []
+    },
+    {
+      "label": "[dev] @types/react-dom.devDependencies['rtm-dashboard']",
+      "nodes": []
+    },
+    {
+      "label": "[dev] @types/web-push.devDependencies['rtm-dashboard']",
+      "nodes": []
+    },
+    {
+      "label": "[dev] @types/ws.devDependencies['rtm-dashboard']",
+      "nodes": []
+    },
+    {
+      "label": "[dev] eslint.devDependencies['rtm-dashboard']",
+      "nodes": []
+    },
+    {
+      "label": "[dev] eslint-config-next.devDependencies['rtm-dashboard']",
+      "nodes": []
+    },
+    {
+      "label": "[dev] tailwindcss.devDependencies['rtm-dashboard']",
+      "nodes": []
+    },
+    {
+      "label": "[dev] typescript.devDependencies['rtm-dashboard']",
+      "nodes": []
+    },
+    {
+      "label": "[dev] vitest.devDependencies['rtm-dashboard']",
+      "nodes": []
+    }
+  ]
+}
