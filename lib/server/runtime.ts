@@ -9,7 +9,8 @@ import { type SimSeed, SimFeed, seedFromRoster, simulateReplies } from "@/lib/fe
 import { pushBatch } from "./push";
 import { loadRoster, saveRoster } from "./rosterCache";
 import { loadQueueMap } from "./queueMapStore";
-import { genesysToken } from "./tokenStore";
+import { genesysToken, loadActiveOrg, saveActiveOrg } from "./tokenStore";
+import { type OrgId, orgOf, queueNamesFor } from "@/lib/orgs";
 import { floorSeconds } from "@/lib/floorTime";
 
 // Server-side home of the rules engine. One live runtime serves the whole floor; a CSV
@@ -32,6 +33,8 @@ export interface Runtime {
   pendingNudge(agent: string): NudgeEvent | null;
   /** Drop the feed's connection and open a fresh one. The engine's floor, ledger and strikes are kept. */
   restartFeed(): void;
+  /** The Genesys org a Gencloud floor watches. */
+  readonly genesysOrg?: OrgId;
   stop(): void;
 }
 
@@ -73,31 +76,37 @@ function createRuntime(kind: Runtime["kind"], rules: Rule[], speed: number, deri
   };
 }
 
-/** Keeps the real roster on disk, so the simulator can use its names when Gencloud is away. */
-const remembering = (feed: FeedSource): FeedSource => ({
+/** Keeps the org's real roster on disk, so its floor starts from it next time and the simulator can use its names. */
+const remembering = (feed: FeedSource, org: OrgId): FeedSource => ({
   kind: feed.kind,
-  subscribe: h => feed.subscribe({ ...h, onRoster(r) { saveRoster(r); h.onRoster(r); } }),
+  subscribe: h => feed.subscribe({ ...h, onRoster(r) { saveRoster(r, org); h.onRoster(r); } }),
 });
 
-/** How the live feed reaches Genesys. The token check on /admin/token uses it too. */
-export const gencloudConfig = (): GencloudConfig => ({
-  apiBase: process.env.GENCLOUD_API_BASE, getToken: genesysToken, viewConfigId: process.env.RTM_VIEW_CONFIG_ID, getQueueNames: () => loadQueueMap().map(r => r.queue),
+/** Where an org's API is. GENCLOUD_API_BASE can still move Commercial's. */
+export const orgApiBase = (org: OrgId): string => (org === "commercial" && process.env.GENCLOUD_API_BASE) || orgOf(org).apiBase;
+
+/**
+ * How an org's live feed reaches Genesys. The token check on /admin/token uses it too. The saved
+ * view (RTM_VIEW_CONFIG_ID) is a Commercial view, the fallback while its queue map is empty.
+ */
+export const gencloudConfig = (org: OrgId): GencloudConfig => ({
+  apiBase: orgApiBase(org), getToken: () => genesysToken(org),
+  viewConfigId: org === "commercial" ? process.env.RTM_VIEW_CONFIG_ID : "",
+  getQueueNames: () => queueNamesFor(loadQueueMap(), org),
   clientId: process.env.GENCLOUD_CLIENT_ID, clientSecret: process.env.GENCLOUD_CLIENT_SECRET,
 });
 
-function createGencloud(rules: Rule[]): Runtime {
+function createGencloud(rules: Rule[], org: OrgId): Runtime {
   // The shift clock reads the floor's time (US Eastern), not the server's.
   const t = floorSeconds(new Date());
-  return createRuntime("live", rules, 1, false, () => {
-    const feed = new GencloudFeed(gencloudConfig());
-    return remembering(feed);
-  }, engine => {
+  const rt = createRuntime("live", rules, 1, false, () => remembering(new GencloudFeed(gencloudConfig(org)), org), engine => {
     engine.reset({ t });
     // Loading the roster takes minutes for hundreds of queues: start from the one saved last
     // time, everyone Offline until their state arrives. The feed marks the floor as loading.
-    const saved = loadRoster();
+    const saved = loadRoster(org);
     if (saved) engine.ingest.onRoster({ org: saved.org, agents: saved.agents.map(a => ({ ...a, state: "off" })), members: saved.members });
   });
+  return { ...rt, genesysOrg: org };
 }
 
 function createSim(rules: Rule[], seed: SimSeed | undefined): Runtime {
@@ -132,58 +141,75 @@ function warm({ engine, feed }: Runtime) {
 
 interface Registry {
   rules: Rule[];
-  /** Which floor everyone is looking at. */
+  /** Which floor everyone is looking at: a Genesys org's, or the simulator. */
   source: FloorSource;
-  floors: Partial<Record<FloorSource, Runtime>>;
+  /** The org Gencloud shows. Kept while the simulator is on. */
+  org: OrgId;
+  /** The simulator, while it is on. */
+  floors: { sim?: Runtime };
+  /** Each org's floor, from its first use on. One that is not on screen keeps running. */
+  orgs: Partial<Record<OrgId, Runtime>>;
   replays: Map<string, Runtime>;
   watchers: Set<() => void>;
 }
 const g = globalThis as typeof globalThis & { __rtmRegistry?: Registry };
 const registry: Registry = (g.__rtmRegistry ??= {
-  rules: defaultRules(), source: process.env.NEXT_PUBLIC_FEED === "sim" ? "sim" : "gencloud",
-  floors: {}, replays: new Map(), watchers: new Set(),
+  rules: defaultRules(), source: process.env.NEXT_PUBLIC_FEED === "sim" ? "sim" : "gencloud", org: loadActiveOrg(),
+  floors: {}, orgs: {}, replays: new Map(), watchers: new Set(),
 });
+// A registry from before there were several orgs (a dev reload) gets the new fields.
+registry.org ??= loadActiveOrg();
+registry.orgs ??= {};
 
-/** Real names for the simulator: from the running Gencloud floor, else from the roster it last delivered. */
+/** The floor on screen, if it is running. */
+const onScreen = (): Runtime | undefined => (registry.source === "sim" ? registry.floors.sim : registry.orgs[registry.org]);
+
+/** Real names for the simulator: from the org's running floor, else from the roster it last delivered. */
 function realSeed(): SimSeed | undefined {
-  const floor = registry.floors.gencloud?.engine.S;
-  return (floor && seedFromRoster(floor)) ?? seedFromRoster(loadRoster()) ?? undefined;
+  const floor = registry.orgs[registry.org]?.engine.S;
+  return (floor && seedFromRoster(floor)) ?? seedFromRoster(loadRoster(registry.org)) ?? undefined;
 }
 
-/** The floor everyone is looking at: the Gencloud feed, or the simulator when it is switched on. */
+/** The floor everyone is looking at: the org's Gencloud feed, or the simulator when it is switched on. */
 export function liveRuntime(): Runtime {
-  const source = registry.source;
-  const running = registry.floors[source];
+  const running = onScreen();
   if (running) return running;
-  const rt = (registry.floors[source] = source === "sim" ? createSim(registry.rules, realSeed()) : createGencloud(registry.rules));
+  const rt = registry.source === "sim"
+    ? (registry.floors.sim = createSim(registry.rules, realSeed()))
+    : (registry.orgs[registry.org] = createGencloud(registry.rules, registry.org));
   // Desktop alerts reach people who have no stream open (browser minimized or closed).
-  // Only the floor on screen alerts: Gencloud keeps running behind a simulation.
-  rt.subscribe(batch => { if (registry.floors[registry.source] === rt) pushBatch(rt.engine.S, batch); });
+  // Only the floor on screen alerts: the other orgs, and Gencloud behind a simulation, keep running quietly.
+  rt.subscribe(batch => { if (onScreen() === rt) pushBatch(rt.engine.S, batch); });
   return rt;
 }
 
 /** Which data source the floor is on. */
 export const floorSource = (): FloorSource => registry.source;
 
+/** The org Gencloud shows (also while the simulator is on). */
+export const activeOrg = (): OrgId => registry.org;
+
 /**
- * Switch the floor for everyone. Gencloud keeps running behind a simulation, so its ledger
- * and strikes are there on the way back; a simulation starts fresh each time.
+ * Switch the floor for everyone: to an org's Gencloud feed, or to the simulator. An org's feed
+ * keeps running once started, so its ledger, strikes and roster are there on the way back; a
+ * simulation starts fresh each time. The org is remembered across restarts.
  */
-export function setFloorSource(source: FloorSource): Runtime {
-  if (source === registry.source) return liveRuntime();
-  if (registry.source === "sim") { registry.floors.sim?.stop(); delete registry.floors.sim; }
+export function setFloorSource(source: FloorSource, org: OrgId = registry.org): Runtime {
+  if (source === registry.source && org === registry.org) return liveRuntime();
+  if (registry.source === "sim" && source !== "sim") { registry.floors.sim?.stop(); delete registry.floors.sim; }
   registry.source = source;
+  if (org !== registry.org) { registry.org = org; saveActiveOrg(org); }
   const rt = liveRuntime();
   for (const fn of [...registry.watchers]) fn();
   return rt;
 }
 
 /**
- * Reconnect the Gencloud feed after its token was replaced. When the floor is on the simulator
- * and Gencloud is not running, the next switch back starts it with the new token anyway.
+ * Reconnect an org's Gencloud feed after its token was replaced, or every running org's after the
+ * queue map changed. An org that is not running picks the change up when it starts.
  */
-export function restartGencloud(): void {
-  registry.floors.gencloud?.restartFeed();
+export function restartGencloud(org?: OrgId): void {
+  for (const [id, rt] of Object.entries(registry.orgs)) if (!org || id === org) rt?.restartFeed();
 }
 
 /** Told after the floor's data source was switched. Returns an unsubscribe function. */

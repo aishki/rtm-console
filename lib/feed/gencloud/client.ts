@@ -199,11 +199,12 @@ export class GencloudClient {
 
   /**
    * The queues the console watches: those named in the queue map when it has any, otherwise
-   * the saved view's. A saved view belongs to the Genesys user who saved it, so another user's
-   * token gets a 404 for it; the queue map works with any token that can read the queues.
+   * the saved view's, otherwise none. A saved view belongs to the Genesys user who saved it, so
+   * another user's token gets a 404 for it; the queue map works with any token that can read the queues.
    */
   async getWatchedQueues(): Promise<WatchedQueue[]> {
-    return this.cfg.queueNames?.length ? this.getQueuesNamed(this.cfg.queueNames) : this.getViewQueues();
+    if (this.cfg.queueNames?.length) return this.getQueuesNamed(this.cfg.queueNames);
+    return this.cfg.viewConfigId ? this.getViewQueues() : [];
   }
 
   /** Queues in the token's org with one of these names (ignoring case), from one pass over every queue. */

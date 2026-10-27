@@ -8,7 +8,7 @@ type State = Record<string, any>;
 
 let toastSeq = 0;
 let state: State = {
-  status: "connecting", view: null, org: [], people: null, t: 0, mode: "live", feed: "gencloud", realNames: false, canSwitchFeed: false, staleFor: 0, agentsLoading: false, replay: null,
+  status: "connecting", view: null, org: [], people: null, t: 0, mode: "live", feed: "gencloud", realNames: false, genesysOrg: null, canSwitchFeed: false, staleFor: 0, agentsLoading: false, replay: null,
   queue: null, rules: [], agents: [], incidents: [], ledger: [], toasts: [], nudge: null,
   toast(kind: ToastKind, title: string, body: string) { setState(s => ({ toasts: [...s.toasts, { id: ++toastSeq, kind, title, body }].slice(-4) })); },
   setNudge(nudge: unknown) { setState({ nudge }); },

@@ -1,4 +1,5 @@
 import type { QueueMapRow } from "@/lib/import/queueMap";
+import type { OrgId } from "@/lib/orgs";
 export type AgentState = "oncall" | "avail" | "acw" | "auxb" | "auxp" | "outb" | "off";
 export type Role = "admin" | "senior" | "mgr" | "tl" | "agent";
 export type Stage = "nudge" | "lead" | "ops";
@@ -160,6 +161,8 @@ export interface InitMsg extends TickMsg {
   feed: FeedKind;
   /** Simulator only: the teams and agents carry real names from the Gencloud roster. */
   realNames: boolean;
+  /** The Genesys org on screen; null on the simulator and in a replay. */
+  genesysOrg: OrgId | null;
   /** The viewer may switch the floor's data source (Admin only). */
   canSwitchFeed: boolean;
 }

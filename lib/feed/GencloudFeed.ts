@@ -16,6 +16,7 @@ export interface GencloudConfig {
   token?: string;
   /** Read on every subscribe, so a resubscribe picks up a token replaced at runtime. Wins over `token`. */
   getToken?: () => string | undefined;
+  /** A saved view to watch while the queue map names no queues. Empty for none. */
   viewConfigId?: string;
   /** Read on every subscribe: the queue map's queue names. When there are any, they replace the saved view. */
   getQueueNames?: () => string[];

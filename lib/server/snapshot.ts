@@ -53,6 +53,6 @@ export function initMsg(rt: Runtime, view: View): InitMsg {
   return {
     ...tickMsg(rt, view, null, { toasts: [], nudges: waiting ? [waiting] : [] }),
     type: "init", view, people: VIEW_AS ? peopleDirectory(S) : null,
-    feed: rt.feed.kind, realNames: usesRealNames(rt), canSwitchFeed: PERMS[view.role].feed,
+    feed: rt.feed.kind, realNames: usesRealNames(rt), genesysOrg: rt.genesysOrg ?? null, canSwitchFeed: PERMS[view.role].feed,
   };
 }

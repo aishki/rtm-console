@@ -45,7 +45,7 @@ export const demo = {
   use(patch: Record<string, unknown> = {}): void {
     useConsole.setState({
       status: "ready", view: { role: "mgr", who: "Sample, Morgan" }, org, people: peopleDirectory({ org, agents }), t: 36500, mode: "live", feed: "sim",
-      realNames: false, canSwitchFeed: false, staleFor: 0, agentsLoading: false, replay: null, rules: defaultRules(), agents, incidents, ledger, toasts: [], nudge: null, ...patch,
+      realNames: false, genesysOrg: null, canSwitchFeed: false, staleFor: 0, agentsLoading: false, replay: null, rules: defaultRules(), agents, incidents, ledger, toasts: [], nudge: null, ...patch,
     });
   },
 };

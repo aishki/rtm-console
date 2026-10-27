@@ -2,6 +2,7 @@
 
 import type { CsvCols, MappedState } from "@/lib/csv/parse";
 import type { ImportSummary } from "@/lib/import/floor";
+import type { OrgId } from "@/lib/orgs";
 import type { AgentState, FeedKind, FloorSource, Incident, Instance, InvAction, QueueMapResult, ReplayMeta, Role, Rule, View } from "@/lib/types";
 import { connect, useConsole } from "./store";
 
@@ -38,9 +39,9 @@ export const api = {
     await connect();
     return view;
   },
-  /** Switch the floor's data source for everyone. The open stream follows with a fresh snapshot. */
-  async setFeed(source: FloorSource) {
-    const res = await post<{ feed: FeedKind; realNames: boolean }>("/api/feed", { source });
+  /** Switch the floor for everyone, to an org's Genesys feed or the simulator. The open stream follows with a fresh snapshot. */
+  async setFeed(source: FloorSource, org?: OrgId) {
+    const res = await post<{ feed: FeedKind; genesysOrg: OrgId | null; realNames: boolean }>("/api/feed", { source, org });
     useConsole.setState({ nudge: null });
     return res;
   },

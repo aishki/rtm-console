@@ -9,14 +9,16 @@ import { alertState, enableAlerts, pauseAlerts, syncAlerts, useAlertState } from
 import { api, attempt } from "@/lib/client/api";
 import { type DevSwitch, loadDevSettings, useDevSettings } from "@/lib/client/devSettings";
 import { useConsole } from "@/lib/client/store";
-import type { AgentState, FloorSource, Role } from "@/lib/types";
+import { ORGS, type OrgId, orgOf } from "@/lib/orgs";
+import type { AgentState, Role } from "@/lib/types";
 import { Select, type SelectOption } from "@/components/ui/Select";
 import { PersonSearch } from "./PersonSearch";
 
 const ROLE_OPTIONS: SelectOption<Role>[] = ROLES.map(([value, label]) => ({ value, label }));
-const SOURCES: { value: FloorSource; label: string; dot: string }[] = [
-  { value: "gencloud", label: "Live Genesys", dot: "var(--turquoise)" },
-  { value: "sim", label: "Simulation", dot: "var(--light-purple)" },
+/** Each Genesys org's live feed, then the simulator. */
+const SOURCES: { org: OrgId | null; label: string; hint: string; dot: string }[] = [
+  ...ORGS.map(o => ({ org: o.id, label: o.name.replace(/^Anthem /, ""), hint: `${o.name} · Genesys ${o.region}`, dot: "var(--turquoise)" })),
+  { org: null, label: "Simulation", hint: "Invented activity", dot: "var(--light-purple)" },
 ];
 const SWITCHES: { key: DevSwitch; label: string; hint: string }[] = [
   { key: "toasts", label: "Toasts", hint: "Toasts raised by the floor. Toasts from your own clicks still show." },
@@ -70,20 +72,24 @@ function ViewAs() {
   );
 }
 
-/** Live Genesys or the simulator, for everyone on this server. Only an Admin may switch it. */
+/** A Genesys org's live feed or the simulator, for everyone on this server. Only an Admin may switch it. */
 function DataSource() {
   const ready = useConsole(s => s.status === "ready");
   const source = useConsole(s => s.feed);
+  const shown = useConsole(s => s.genesysOrg);
   const canSwitch = useConsole(s => s.canSwitchFeed);
   const isReplay = useConsole(s => s.mode === "replay");
   const toast = useConsole(s => s.toast);
   if (!ready || isReplay || source === "csv") return null;
-  const pick = async (to: FloorSource) => {
-    if (to === source) return;
-    const res = await attempt(api.setFeed(to));
+  const isOn = (org: OrgId | null) => (org ? source === "gencloud" && shown === org : source === "sim");
+  const pick = async (org: OrgId | null) => {
+    if (isOn(org)) return;
+    const res = await attempt(org ? api.setFeed("gencloud", org) : api.setFeed("sim"));
     if (!res) return;
-    if (res.feed !== "sim") toast("info", "Back to the live Genesys feed", "The simulation was cleared.");
-    else if (res.realNames) toast("info", "Simulation is on", "Team and agent names are real. Every state change, call-out and incident is invented.");
+    if (res.genesysOrg) {
+      const o = orgOf(res.genesysOrg);
+      toast("info", `Live feed: ${o.name}`, `Genesys ${o.region}.${source === "sim" ? " The simulation was cleared." : ""} The first time, agent states take a few minutes to load.`);
+    } else if (res.realNames) toast("info", "Simulation is on", "Team and agent names are real. Every state change, call-out and incident is invented.");
     else toast("info", "Simulation is on", "No Genesys roster was available, so the sample teams and names are in use.");
   };
   return (
@@ -94,10 +100,10 @@ function DataSource() {
         className="inline-flex rounded-pill bg-white/10 p-0.5 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.18)]"
       >
         {SOURCES.map(s => {
-          const on = s.value === source;
+          const on = isOn(s.org);
           return (
             <button
-              key={s.value} type="button" role="radio" aria-checked={on} disabled={!canSwitch && !on} onClick={() => void pick(s.value)}
+              key={s.org ?? "sim"} type="button" role="radio" aria-checked={on} title={s.hint} disabled={!canSwitch && !on} onClick={() => void pick(s.org)}
               className={`inline-flex h-6 items-center gap-1.5 rounded-pill px-3 font-semibold transition-colors duration-200 ease-standard disabled:cursor-not-allowed disabled:opacity-50 ${on ? "bg-white text-purple-900" : "text-[#D9D2EE] enabled:hover:bg-white/10"}`}
             >
               <span className="h-[7px] w-[7px] rounded-full" style={{ background: on ? s.dot : "rgba(255,255,255,0.35)" }} />
