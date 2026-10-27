@@ -6,11 +6,11 @@ import { useOpenCounts, usePerms } from "@/lib/client/hooks";
 import { useConsole } from "@/lib/client/store";
 import { TABS } from "@/lib/ui/palette";
 import type { TabId } from "@/lib/types";
-import { CarelonLogo, CarelonMark, carelonClearSpace } from "@/components/ui/LogoLockup";
+import { CarelonLogo, CarelonMark, RtmMark, carelonClearSpace } from "@/components/ui/LogoLockup";
 
 const LOGO_HEIGHT = 22;
 
-/** Sticky white bar: logos, product name, role-filtered tabs with badges, viewer chip. */
+/** Sticky white bar: logos, RTM mark and product name, role-filtered tabs with badges, viewer chip. */
 export function Navbar({ current }: { current: TabId | undefined }) {
   const view = useConsole(s => s.view);
   const perms = usePerms();
@@ -28,9 +28,12 @@ export function Navbar({ current }: { current: TabId | undefined }) {
           <div className="h-8 w-px bg-hairline" />
         </div>
         <div className="w720:hidden"><CarelonMark size={32} /></div>
-        <div className="flex min-w-0 flex-col gap-0.5">
-          <span className="whitespace-nowrap text-lg font-semibold leading-normal tracking-[-0.01em] text-purple">RTM Console</span>
-          <span className="hidden whitespace-nowrap text-xs text-muted w900:inline">Real-Time Monitoring &amp; Escalation</span>
+        <div className="flex min-w-0 items-center gap-2.5">
+          <span className="text-purple"><RtmMark size={32} /></span>
+          <div className="flex min-w-0 flex-col gap-0.5">
+            <span className="whitespace-nowrap text-lg font-semibold leading-normal tracking-[-0.01em] text-purple">RTM Console</span>
+            <span className="hidden whitespace-nowrap text-xs text-muted w900:inline">Real-Time Monitoring &amp; Escalation</span>
+          </div>
         </div>
       </div>
 
