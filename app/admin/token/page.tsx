@@ -24,9 +24,9 @@ export default function TokenPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ secret, token }),
       });
-      const j = (await res.json().catch(() => ({}))) as { ok?: boolean; who?: string | null; error?: string };
+      const j = (await res.json().catch(() => ({}))) as { ok?: boolean; who?: string | null; queues?: number; forbidden?: number; error?: string };
       if (res.ok && j.ok) {
-        setResult({ ok: true, text: `Token accepted for ${j.who ?? "an unnamed user"}. The live feed is reconnecting.` });
+        setResult({ ok: true, text: `Token accepted for ${j.who ?? "an unnamed user"}, watching ${j.queues ?? 0} queues${j.forbidden ? ` (${j.forbidden} left out: no permission to read their statistics)` : ""}. The live feed is reconnecting.` });
         setToken("");
       } else {
         setResult({ ok: false, text: j.error ?? `Request failed (${res.status}).` });
@@ -43,7 +43,7 @@ export default function TokenPage() {
       <PageTitle eyebrow="Admin" title="Refresh Genesys token" />
       <p className="m-0 text-sm leading-normal text-strong">
         Copy the Authorization header from any api.mypurecloud.com request in the browser&apos;s DevTools Network tab and paste it below.
-        The token is checked with Genesys, kept on the server, and the live feed reconnects with it. The floor, ledger and strikes are kept.
+        The token is checked with Genesys (it must be able to see the watched queues and their statistics), kept on the server, and the live feed reconnects with it. The floor, ledger and strikes are kept.
       </p>
       <form onSubmit={submit} className="flex flex-col gap-4">
         <label className="flex flex-col gap-1.5 text-sm font-medium text-strong">

@@ -1,4 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { queueKey } from "@/lib/queueStats";
+
 type Json = any;
 
 export interface QueueObs {
@@ -48,13 +50,29 @@ export interface AgentHandle {
   handleSec: number;
 }
 
+/** A watched queue, with its Genesys division when known (analytics permissions are per division). */
+export interface WatchedQueue {
+  id: string;
+  name: string;
+  division?: { id: string; name: string };
+}
+
 export interface GencloudClientConfig {
   apiBase: string;
   token: string;
   viewConfigId: string;
+  /** Queue names to watch (the uploaded queue map). When there are any, the saved view is not read. */
+  queueNames?: string[];
 }
 
 const MAX_MEMBER_PAGES = 50;
+// The org has about 3,300 queues: seven pages.
+const QUEUE_PAGE_SIZE = 500;
+const MAX_QUEUE_PAGES = 40;
+// Genesys allows 200 predicates in an analytics query: queue IDs go 100 to a query.
+const QUERY_QUEUES = 100;
+const chunks = <T>(xs: T[]): T[][] => Array.from({ length: Math.ceil(xs.length / QUERY_QUEUES) }, (_, i) => xs.slice(i * QUERY_QUEUES, (i + 1) * QUERY_QUEUES));
+const byQueue = (ids: string[]) => ({ type: "or", predicates: ids.map((id) => ({ dimension: "queueId", value: id })) });
 const MAX_RATE_LIMIT_RETRIES = 4;
 
 const num = (v: unknown): number => {
@@ -179,7 +197,52 @@ export class GencloudClient {
     return res.json();
   }
 
-  async getWatchedQueues(): Promise<{ id: string; name: string }[]> {
+  /**
+   * The queues the console watches: those named in the queue map when it has any, otherwise
+   * the saved view's. A saved view belongs to the Genesys user who saved it, so another user's
+   * token gets a 404 for it; the queue map works with any token that can read the queues.
+   */
+  async getWatchedQueues(): Promise<WatchedQueue[]> {
+    return this.cfg.queueNames?.length ? this.getQueuesNamed(this.cfg.queueNames) : this.getViewQueues();
+  }
+
+  /** Queues in the token's org with one of these names (ignoring case), from one pass over every queue. */
+  async getQueuesNamed(names: string[]): Promise<WatchedQueue[]> {
+    const want = new Set(names.map(queueKey));
+    const found = new Map<string, WatchedQueue>();
+    for (let page = 1; page <= MAX_QUEUE_PAGES; page++) {
+      const r = await this.bulk(`/api/v2/routing/queues/divisionviews/all?pageSize=${QUEUE_PAGE_SIZE}&pageNumber=${page}`);
+      for (const e of (r?.entities ?? []) as Json[]) {
+        const key = typeof e?.name === "string" ? queueKey(e.name) : "";
+        if (e?.id && want.has(key) && !found.has(key)) found.set(key, { id: e.id, name: e.name, ...(e.division?.id && { division: { id: e.division.id, name: e.division.name ?? e.division.id } }) });
+      }
+      if (!r?.pageCount || page >= r.pageCount) break;
+    }
+    return [...found.values()];
+  }
+
+  /**
+   * The queues whose live statistics this token may read. Genesys grants that per division and
+   * fails a whole query (403) over one forbidden queue, so each division is tried once and a
+   * forbidden one is left out. Other errors are thrown.
+   */
+  async readableQueues(queues: WatchedQueue[]): Promise<{ readable: WatchedQueue[]; forbidden: WatchedQueue[] }> {
+    const byDivision = new Map<string, WatchedQueue[]>();
+    for (const q of queues) byDivision.set(q.division?.id ?? "", [...(byDivision.get(q.division?.id ?? "") ?? []), q]);
+    const readable: WatchedQueue[] = [], forbidden: WatchedQueue[] = [];
+    for (const group of byDivision.values()) {
+      try {
+        await this.getObservations(group.map((q) => q.id));
+        readable.push(...group);
+      } catch (e) {
+        if (!(e instanceof Error && e.message === "HTTP 403")) throw e;
+        forbidden.push(...group);
+      }
+    }
+    return { readable, forbidden };
+  }
+
+  private async getViewQueues(): Promise<WatchedQueue[]> {
     const vc = await this.request(
       "GET",
       `/api/v2/analytics/reporting/settings/viewconfigurations/${encodeURIComponent(this.cfg.viewConfigId)}`,
@@ -262,8 +325,12 @@ export class GencloudClient {
   }
 
   async getObservations(queueIds: string[]): Promise<QueueObs[]> {
+    return (await Promise.all(chunks(queueIds).map((ids) => this.observationsOf(ids)))).flat();
+  }
+
+  private async observationsOf(queueIds: string[]): Promise<QueueObs[]> {
     const resp = await this.request("POST", "/api/v2/analytics/queues/observations/query", {
-      filter: { type: "or", predicates: queueIds.map((id) => ({ dimension: "queueId", value: id })) },
+      filter: byQueue(queueIds),
       // NOTE: there is no service-level observation metric — the API rejects oServiceLevel here
       // (valid: oWaiting/oInteracting/oOnQueueUsers/oUserRoutingStatuses/etc). Including it 400s the
       // whole query. Service level comes from the interval aggregate instead (getAggregates), so
@@ -274,10 +341,14 @@ export class GencloudClient {
   }
 
   async getAggregates(queueIds: string[], interval: { start: string; end: string }): Promise<QueueAgg[]> {
+    return (await Promise.all(chunks(queueIds).map((ids) => this.aggregatesOf(ids, interval)))).flat();
+  }
+
+  private async aggregatesOf(queueIds: string[], interval: { start: string; end: string }): Promise<QueueAgg[]> {
     const resp = await this.request("POST", "/api/v2/analytics/conversations/aggregates/query", {
       interval: `${interval.start}/${interval.end}`,
       groupBy: ["queueId"],
-      filter: { type: "or", predicates: queueIds.map((id) => ({ dimension: "queueId", value: id })) },
+      filter: byQueue(queueIds),
       // oServiceLevel is valid here (unlike in the observation query): it is the interval SL.
       metrics: ["nOffered", "tAnswered", "tAbandon", "tHandle", "oServiceLevel"],
     });
@@ -288,13 +359,19 @@ export class GencloudClient {
    * Handle time per agent on these queues (talk, hold and after-call work). About 330 KB for the
    * watched view at midday, so it is polled once a minute, not with the queue numbers.
    */
+  /** An agent on queues in more than one query gets their calls and handle time added together. */
   async getAgentHandle(queueIds: string[], interval: { start: string; end: string }): Promise<AgentHandle[]> {
-    const resp = await this.request("POST", "/api/v2/analytics/conversations/aggregates/query", {
+    const parts = await Promise.all(chunks(queueIds).map(async (ids) => parseAgentHandle(await this.request("POST", "/api/v2/analytics/conversations/aggregates/query", {
       interval: `${interval.start}/${interval.end}`,
       groupBy: ["userId"],
-      filter: { type: "or", predicates: queueIds.map((id) => ({ dimension: "queueId", value: id })) },
+      filter: byQueue(ids),
       metrics: ["tHandle"],
-    });
-    return parseAgentHandle(resp);
+    }))));
+    const total = new Map<string, AgentHandle>();
+    for (const h of parts.flat()) {
+      const t = total.get(h.userId);
+      total.set(h.userId, t ? { userId: h.userId, handled: t.handled + h.handled, handleSec: t.handleSec + h.handleSec } : h);
+    }
+    return [...total.values()];
   }
 }

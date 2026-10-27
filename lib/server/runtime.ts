@@ -4,10 +4,11 @@ import { type Engine, createEngine } from "@/lib/engine/engine";
 import { defaultRules } from "@/lib/engine/rules";
 import type { FeedSource } from "@/lib/feed/FeedSource";
 import { CsvReplayFeed, REPLAY_SPEED, type ReplayExtras } from "@/lib/feed/CsvReplayFeed";
-import { GencloudFeed } from "@/lib/feed/GencloudFeed";
+import { type GencloudConfig, GencloudFeed } from "@/lib/feed/GencloudFeed";
 import { type SimSeed, SimFeed, seedFromRoster, simulateReplies } from "@/lib/feed/SimFeed";
 import { pushBatch } from "./push";
 import { loadRoster, saveRoster } from "./rosterCache";
+import { loadQueueMap } from "./queueMapStore";
 import { genesysToken } from "./tokenStore";
 import { floorSeconds } from "@/lib/floorTime";
 
@@ -78,13 +79,17 @@ const remembering = (feed: FeedSource): FeedSource => ({
   subscribe: h => feed.subscribe({ ...h, onRoster(r) { saveRoster(r); h.onRoster(r); } }),
 });
 
+/** How the live feed reaches Genesys. The token check on /admin/token uses it too. */
+export const gencloudConfig = (): GencloudConfig => ({
+  apiBase: process.env.GENCLOUD_API_BASE, getToken: genesysToken, viewConfigId: process.env.RTM_VIEW_CONFIG_ID, getQueueNames: () => loadQueueMap().map(r => r.queue),
+  clientId: process.env.GENCLOUD_CLIENT_ID, clientSecret: process.env.GENCLOUD_CLIENT_SECRET,
+});
+
 function createGencloud(rules: Rule[]): Runtime {
   // The shift clock reads the floor's time (US Eastern), not the server's.
   const t = floorSeconds(new Date());
   return createRuntime("live", rules, 1, false, () => {
-    const feed = new GencloudFeed({
-      apiBase: process.env.GENCLOUD_API_BASE, getToken: genesysToken, viewConfigId: process.env.RTM_VIEW_CONFIG_ID, clientId: process.env.GENCLOUD_CLIENT_ID, clientSecret: process.env.GENCLOUD_CLIENT_SECRET,
-    });
+    const feed = new GencloudFeed(gencloudConfig());
     return remembering(feed);
   }, engine => engine.reset({ t }));
 }

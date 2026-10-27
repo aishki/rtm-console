@@ -3,13 +3,14 @@ import { mergeQueueMap, parseQueueMap } from "@/lib/import/queueMap";
 import { queueKey } from "@/lib/queueStats";
 import { authorizeFor, deny } from "@/lib/server/guard";
 import { loadQueueMap, saveQueueMap } from "@/lib/server/queueMapStore";
-import { liveRuntime } from "@/lib/server/runtime";
+import { liveRuntime, restartGencloud } from "@/lib/server/runtime";
 import type { QueueMapResult } from "@/lib/types";
 import { importErrors, isWorkbook, uploadedFile } from "@/lib/server/upload";
 
 /**
  * Replace the queue-to-LOB mapping for the towers in an uploaded WFM workbook. Admin only.
- * multipart/form-data: file (.xlsx). Works on the live feed too: it does not touch the floor.
+ * multipart/form-data: file (.xlsx). The live feed watches the mapped queues, so when the set of
+ * queues changes it reconnects to watch the new set; the floor, ledger and strikes are kept.
  */
 export async function POST(req: Request) {
   const ctx = await authorizeFor("mapping");
@@ -25,10 +26,12 @@ export async function POST(req: Request) {
   const parsed = parseQueueMap(sheets);
   if (!parsed.ok) return importErrors(parsed.errors);
 
+  const before = new Set(loadQueueMap().map(r => queueKey(r.queue)));
   const merged = mergeQueueMap(loadQueueMap(), parsed.rows);
   saveQueueMap(merged);
 
   const mapped = new Set(merged.map(r => queueKey(r.queue)));
+  if (mapped.size !== before.size || [...mapped].some(q => !before.has(q))) restartGencloud();
   const unmappedWatched = liveRuntime().engine.S.org.map(t => t.team).filter(team => !mapped.has(queueKey(team)));
   const result: QueueMapResult = {
     queues: merged.length,

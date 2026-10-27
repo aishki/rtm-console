@@ -46,7 +46,7 @@ npm run dev        # http://localhost:3000
 | `RTM_ADMIN_SECRET` | Secret for `/admin/token`. While unset, the page refuses every request. |
 | `RTM_SITE_PASSWORD` | Password for the wall in front of the whole console (see "Password wall"). **While unset, nobody can get in.** Quote it in `.env.local`: an unquoted `#` starts a comment. |
 | `GENCLOUD_API_BASE` | Gencloud API base URL, e.g. `https://api.mypurecloud.com`. |
-| `RTM_VIEW_CONFIG_ID` | Saved "CSBDProviderData" view ID (default: `9c9f8fd2-acab-4282-9442-ddba152f9c18`, the 90-queue voice-floor view). |
+| `RTM_VIEW_CONFIG_ID` | Saved "CSBDProviderData" view ID (default: `9c9f8fd2-acab-4282-9442-ddba152f9c18`, the 90-queue voice-floor view). Only used while no queue map is uploaded: the live feed watches the queue map's queues (see "Queue mapping"). A saved view belongs to the Genesys user who saved it, so other users' tokens get a 404 for it. |
 | `RTM_TIME_ZONE` | The floor's time zone, an IANA name (default: `America/New_York`). Sets the shift clock, the start of "today" for the queue numbers, and snapshot file names, whatever the server's own zone. |
 | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` | Key pair for desktop alerts over Web Push. Generate with `npx web-push generate-vapid-keys`. Optional: without them, alerts only show while a console tab is open. |
 | `VAPID_SUBJECT` | Contact for the push services, `mailto:` or `https:` (optional). |
@@ -60,7 +60,7 @@ The brand logo PNGs are in `public/assets/logos/`: `carelon-global-solutions.png
 ### What you see in each mode
 
 - **Dev with `NEXT_PUBLIC_FEED=sim`:** 199 simulated agents in 10 teams, starting at 08:15 with 15 minutes of history, random repeat offenders, and one 44-second feed outage four minutes in.
-- **Dev/prod with `NEXT_PUBLIC_FEED=gencloud` and valid `GENESYS_TOKEN`:** live agents and queues from the watched view (presence/routing state and queue metrics). Bootstrap failure or an expired token keeps the feed silent until a fresh token is pasted on `/admin/token` or the server restarts.
+- **Dev/prod with `NEXT_PUBLIC_FEED=gencloud` and valid `GENESYS_TOKEN`:** live agents and queues from the queue map's queues, or the saved view while no queue map is uploaded (presence/routing state and queue metrics). Bootstrap failure or an expired token keeps the feed silent until a fresh token is pasted on `/admin/token` or the server restarts.
 
 ### The dev bar
 
@@ -134,7 +134,9 @@ Validation and the sheet contract live in `lib/import/floor.ts` (pure, tested in
 
 The agent grid groups agents **Tower → Sub-tower → LOB → Queue**, with each level's calls in queue, SL, ASA and abandon rolled up weighted by calls. The grouping comes from the WFM queue-to-LOB workbook. Until one is uploaded, every queue shows under **Unmapped**.
 
-Only an Admin can upload it: **Queue mapping** in the agent grid's header. It works on every floor, the live Genesys feed included, because it does not touch agent data.
+Only an Admin can upload it: **Queue mapping** in the agent grid's header. It works on every floor.
+
+The mapping is also **the list of queues the live feed watches**. Each mapped queue is found by name in the token's Genesys org, and queues from another org (US West, with a US East token) are skipped. When an upload changes the set of queues, the live feed reconnects to watch the new set. The floor, ledger and strikes are kept, and the roster reloads in the background. With no mapping uploaded, the feed falls back to the saved view (`RTM_VIEW_CONFIG_ID`).
 
 - The file is the `.xlsx` WFM sends. It needs a sheet named "Queue-to-LOB mapping" with the columns Tower, Sub-tower, LOB and Queue (Region and Org are read when present). Queue names match Genesys ignoring case and surrounding spaces.
 - An upload **replaces only the towers in the file** and keeps every other tower, so each tower's owner can send their own sheet.
@@ -216,8 +218,8 @@ Implemented in `lib/feed/GencloudFeed.ts`. It establishes a WebSocket connection
    - `NEXT_PUBLIC_VIEW_AS=1` (required for admin access without SSO)
    - `GENESYS_TOKEN`: hand-grabbed supervisor bearer token from the browser DevTools Network tab. Grab it from the Authorization header of any api.mypurecloud.com request. Short-lived (typically 8 hours). On bootstrap failure (e.g., expired token), the feed stays silent; paste a fresh token on `/admin/token`.
    - `GENCLOUD_API_BASE`: e.g., `https://api.mypurecloud.com`
-   - `RTM_VIEW_CONFIG_ID`: saved "CSBDProviderData" view ID (default: `9c9f8fd2-acab-4282-9442-ddba152f9c18` for the 90-queue voice-floor view)
-   - To see every queue the token can read, with its ID, run `node tools/list-queues.mjs`. It writes `.rtm/genesys-queues.csv` (queue ID, name, division, member count, and whether the view watches it; gitignored, since queue names and IDs are internal). To watch more queues, add them to the saved view in Genesys; the console picks them up at its next restart.
+   - `RTM_VIEW_CONFIG_ID`: saved "CSBDProviderData" view ID (default: `9c9f8fd2-acab-4282-9442-ddba152f9c18` for the 90-queue voice-floor view). Only used until a queue map is uploaded.
+   - To see every queue the token can read, with its ID, run `node tools/list-queues.mjs`. It writes `.rtm/genesys-queues.csv` (queue ID, name, division, member count, and whether the view watches it; gitignored, since queue names and IDs are internal). To watch more queues, add them to the queue map (or, with no queue map, to the saved view in Genesys and restart).
 
 2. **Start the dev server:**
    ```bash
@@ -319,7 +321,7 @@ All routes are under `/api`. Errors are `{ "error": string }`. Every route answe
 | `POST /import/validate` | `replay`, not on the live Genesys feed | multipart: `file` (.xlsx) | `{ summary, warnings }`, or 400 `{ error, errors[] }` |
 | `POST /feed` | `feed` | `{ source: "gencloud" \| "sim" }` | `{ feed, realNames }`. Switches the floor for everyone. |
 | `POST /unlock` | anyone (the only route open before unlocking) | `{ password, next? }` | `{ ok, next }` and the unlock cookie. 401 wrong password, 429 after ten wrong guesses, 503 if `RTM_SITE_PASSWORD` is unset. |
-| `POST /admin/token` | holder of `RTM_ADMIN_SECRET` (no session needed) | `{ secret, token }` | `{ ok, who }`. 401 wrong secret, 400 empty or rejected token, 502 Genesys unreachable. Saves the token and reconnects the Gencloud feed. |
+| `POST /admin/token` | holder of `RTM_ADMIN_SECRET` (no session needed) | `{ secret, token }` | `{ ok, who, queues }`. 401 wrong secret; 400 empty or rejected token, or a token that cannot find the watched queues or read their statistics (another user's saved view, a different org, missing permission); 502 Genesys unreachable. Saves the token and reconnects the Gencloud feed. |
 | `POST /replay` | `replay`, not on the live Genesys feed | multipart: `file` (.xlsx template, or .csv with `cols?`, `smap?` JSON strings) | `{ view, replay }`. 400 `{ error, errors[] }`, 413 over 10 MB. |
 | `DELETE /replay` | `replay` | | `{ ok: true }` |
 | `GET /push` | anyone | | `{ key }`, the public key to subscribe with, or `null` when push is not configured |
