@@ -1,7 +1,7 @@
 "use client";
 
 // TODO(prod): development only. Remove this bar (and lib/client/devSettings.ts) before production.
-// ConsoleShell renders it only when DEV_TOOLS is true, so a production build never shows it.
+// ConsoleShell renders it only when DEV_TOOLS is true, so it shows in `next dev` and in builds made with NEXT_PUBLIC_DEV_TOOLS=1.
 
 import { useEffect, useRef, useState } from "react";
 import { ROLES } from "@/lib/engine/rules";
