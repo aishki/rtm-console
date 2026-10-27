@@ -6,6 +6,7 @@ import { CallTracker } from "./gencloud/conversations";
 import { WsManager } from "./gencloud/ws";
 import { buildRoster, aggregateQueue, toCounts, activeMembers, recentMembers, unknownStateIds } from "./gencloud/mappers";
 import { floorMidnight } from "@/lib/floorTime";
+import { queueKey } from "@/lib/queueStats";
 
 // Server-only: pulls in the Node `ws` module. Never import this from a client component.
 
@@ -15,7 +16,10 @@ export interface GencloudConfig {
   token?: string;
   /** Read on every subscribe, so a resubscribe picks up a token replaced at runtime. Wins over `token`. */
   getToken?: () => string | undefined;
+  /** A saved view to watch while the queue map names no queues. Empty for none. */
   viewConfigId?: string;
+  /** Read on every subscribe: the queue map's queue names. When there are any, they replace the saved view. */
+  getQueueNames?: () => string[];
   clientId?: string;
   clientSecret?: string;
 }
@@ -35,6 +39,16 @@ const MEMBER_CONCURRENCY = 8;
 // An account with no login in this many days is left off the floor.
 const LAST_LOGIN_DAYS = 30;
 
+/** The client a feed with this config uses, for `token`: the same queues, view and API base. */
+export function gencloudClient(config: GencloudConfig, token: string): GencloudClient {
+  return new GencloudClient({
+    apiBase: config.apiBase ?? process.env.GENCLOUD_API_BASE ?? DEFAULT_API_BASE,
+    token,
+    viewConfigId: config.viewConfigId ?? process.env.RTM_VIEW_CONFIG_ID ?? DEFAULT_VIEW_CONFIG_ID,
+    queueNames: config.getQueueNames?.() ?? [],
+  });
+}
+
 /**
  * Production adapter for Genesys Cloud (Gencloud).
  *
@@ -52,6 +66,9 @@ const LAST_LOGIN_DAYS = 30;
  * US Eastern (lib/floorTime.ts). Deactivated accounts, and accounts with no login in 30 days, are
  * left out of the roster.
  *
+ * The watched queues are the uploaded queue map's, found by name in the token's org; with no
+ * queue map, the saved view's (RTM_VIEW_CONFIG_ID), which only the user who saved it can read.
+ *
  * Without a token the feed stays silent, so the console shows "Gencloud not responding". A
  * failed poll cycle (including 401) is skipped; missing heartbeats make the engine mark the
  * floor stale. The token is never logged.
@@ -64,14 +81,16 @@ export class GencloudFeed implements FeedSource {
   subscribe(handlers: FeedHandlers): () => void {
     const apiBase = this.config.apiBase ?? process.env.GENCLOUD_API_BASE ?? DEFAULT_API_BASE;
     const token = this.config.getToken?.() ?? this.config.token ?? process.env.GENESYS_TOKEN;
-    const viewConfigId = this.config.viewConfigId ?? process.env.RTM_VIEW_CONFIG_ID ?? DEFAULT_VIEW_CONFIG_ID;
 
     if (!token) {
       console.warn("GencloudFeed: no GENESYS_TOKEN set; feed is silent");
       return () => {};
     }
 
-    const client = new GencloudClient({ apiBase, token, viewConfigId });
+    const queueNames = this.config.getQueueNames?.() ?? [];
+    const client = gencloudClient(this.config, token);
+    // Until the roster and everyone's first state are in, the floor shows what it had before.
+    handlers.onAgentsLoading?.(true);
     const ws = new WsManager(apiBase, token);
     let stopped = false;
     let pollStarted = false;
@@ -197,6 +216,7 @@ export class GencloudFeed implements FeedSource {
         handlers.onRoster({ org, agents, members });
         if (Object.keys(idToName).length === 0) {
           console.warn("GencloudFeed: roster is empty (no queue members loaded)");
+          handlers.onAgentsLoading?.(false);
           return;
         }
         startHandlePoll(queues.map((q) => q.id), idToName);
@@ -269,6 +289,7 @@ export class GencloudFeed implements FeedSource {
               ? { agent: name, state }
               : { agent: name, state, elapsed: elapsedAtConnect(state, since, Date.now(), floorMidnight(new Date()).getTime()), seed: true });
           }
+          if (!stopped) handlers.onAgentsLoading?.(false);
         } catch (e) {
           console.warn("GencloudFeed: initial state snapshot failed; states fill in as agents change:", errMsg(e));
         }
@@ -281,8 +302,24 @@ export class GencloudFeed implements FeedSource {
     /** Resolve the watched queues, then start the poll immediately and load the roster in the
      *  background. Throws only on a getWatchedQueues failure (handled by the retry loop). */
     const bootstrapOnce = async (): Promise<void> => {
-      const queues = await client.getWatchedQueues();
+      const watched = await client.getWatchedQueues();
       if (stopped) return;
+      if (queueNames.length > 0) {
+        const missing = new Set(queueNames.map(queueKey)).size - watched.length;
+        if (missing > 0) console.info(`GencloudFeed: ${missing} mapped queues are not in this token's org`);
+      }
+      // One queue the token may not read fails every poll, so those are left out up front.
+      const { readable: queues, forbidden } = await client.readableQueues(watched);
+      if (stopped) return;
+      if (forbidden.length > 0) {
+        const divisions = [...new Set(forbidden.map((q) => q.division?.name ?? "unknown"))].join(", ");
+        console.warn(`GencloudFeed: left out ${forbidden.length} queues whose statistics this token may not read (division ${divisions})`);
+      }
+      console.info(`GencloudFeed: watching ${queues.length} queues${queueNames.length > 0 ? " from the queue map" : ""}`);
+      if (queues.length === 0) {
+        console.warn("GencloudFeed: no watched queues found for this token; feed is silent");
+        return;
+      }
       startPoll(queues); // queue KPIs + heartbeats go live now
       void loadRosterAndSubscribe(queues); // agents + live state load in the background
     };

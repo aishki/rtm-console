@@ -6,6 +6,7 @@ import { enableAlerts, useAlertState } from "@/lib/client/alerts";
 import { api, attempt } from "@/lib/client/api";
 import { usePerms } from "@/lib/client/hooks";
 import { useConsole } from "@/lib/client/store";
+import { orgOf } from "@/lib/orgs";
 import { PurpleButton } from "@/components/ui/buttons";
 
 /**
@@ -26,11 +27,15 @@ function useFeedPill() {
   const down = useFeedDown();
   const sim = useConsole(s => s.feed === "sim");
   const realNames = useConsole(s => s.realNames);
+  const loading = useConsole(s => s.agentsLoading);
+  const org = useConsole(s => s.genesysOrg);
+  const where = org ? `${orgOf(org).name} · ${orgOf(org).region}` : "Gencloud/NICE API";
   if (status !== "ready") return { bg: "#F5F5F5", fg: "#5C5C6F", dot: "#929299", text: status === "unauthorized" ? "Not signed in" : "Connecting…" };
   if (mode === "replay" && replay) return { bg: "#EBE4FF", fg: "#5009B5", dot: "#5009B5", text: `Data replay · ${replay.agents} agents · ${replay.events} events${replay.done ? " · complete" : ""}` };
   if (down) return { bg: "#FDF3D7", fg: "#7A5300", dot: "#F2BC35", text: sim ? `Simulation · feed stale ${staleFor}s` : `Gencloud not responding · feed stale ${staleFor}s` };
   if (sim) return { bg: "#EBE4FF", fg: "#5009B5", dot: "#5009B5", text: realNames ? "Simulation · real names, invented activity" : "Simulation · sample floor" };
-  return { bg: "#D9F5F5", fg: "#028283", dot: "#00BBBA", text: "Live feed · Gencloud/NICE API" };
+  if (loading) return { bg: "#D9F5F5", fg: "#028283", dot: "#00BBBA", text: `Live feed · ${where} · loading agent states…`, pulse: true };
+  return { bg: "#D9F5F5", fg: "#028283", dot: "#00BBBA", text: `Live feed · ${where}` };
 }
 
 /**
@@ -47,6 +52,7 @@ export function ContextBar() {
   const feed = useFeedPill();
   const source = useConsole(s => s.feed);
   const feedDown = useFeedDown();
+  const org = useConsole(s => s.genesysOrg);
   // The usual cause of a silent Gencloud feed is an expired token; Admins get a shortcut to replace it.
   const gencloudDown = ready && !isReplay && source === "gencloud" && feedDown && view?.role === "admin";
   const alerts = useAlertState();
@@ -81,9 +87,9 @@ export function ContextBar() {
       )}
       <span aria-hidden="true" className="hidden h-5 w-px bg-hairline md:block" />
       <div className="inline-flex h-8 items-center gap-2 rounded-pill px-3.5 text-[13px] font-semibold" style={{ background: feed.bg, color: feed.fg }}>
-        <span className="h-2 w-2 rounded-full" style={{ background: feed.dot }} />
+        <span className={`h-2 w-2 rounded-full ${"pulse" in feed && feed.pulse ? "animate-pulse" : ""}`} style={{ background: feed.dot }} />
         <span>{feed.text}</span>
-        {gencloudDown && <a href="/admin/token" className="underline underline-offset-2">Refresh token</a>}
+        {gencloudDown && <a href={org ? `/admin/token?org=${org}` : "/admin/token"} className="underline underline-offset-2">Refresh token</a>}
       </div>
       <div className="flex items-baseline gap-2">
         <span className="text-[13px] text-muted">Shift clock</span>

@@ -28,7 +28,7 @@ export function tickMsg(rt: Runtime, view: View, since: Since | null, batch: Bat
     members = Object.fromEntries(Object.entries(S.members ?? {}).map(([q, ids]) => [q, ids.filter(id => mine.has(id))]));
   }
   return {
-    type: "tick", t: S.t, mode: S.mode, staleFor: S.staleFor, replay: S.replay, queue: S.queue, rules: S.rules,
+    type: "tick", t: S.t, mode: S.mode, staleFor: S.staleFor, agentsLoading: S.agentsLoading, replay: S.replay, queue: S.queue, rules: S.rules,
     org: scopeTeams(S, view), agents, incidents: scopeIncidents(S, view, S.incidents),
     ledger: since === null ? ledger : ledger.filter(r => r.rev > since.rev),
     queues: S.queues ?? {}, members,
@@ -53,6 +53,6 @@ export function initMsg(rt: Runtime, view: View): InitMsg {
   return {
     ...tickMsg(rt, view, null, { toasts: [], nudges: waiting ? [waiting] : [] }),
     type: "init", view, people: VIEW_AS ? peopleDirectory(S) : null,
-    feed: rt.feed.kind, realNames: usesRealNames(rt), canSwitchFeed: PERMS[view.role].feed,
+    feed: rt.feed.kind, realNames: usesRealNames(rt), genesysOrg: rt.genesysOrg ?? null, canSwitchFeed: PERMS[view.role].feed,
   };
 }

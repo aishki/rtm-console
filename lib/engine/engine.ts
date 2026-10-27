@@ -28,7 +28,7 @@ export type Engine = ReturnType<typeof createEngine>;
 export function createEngine(hooks: EngineHooks = {}, opts: EngineOptions = {}) {
   const S: EngineState = {
     t: 0, mode: "live", replay: null, org: [], agents: [], rules: opts.rules ?? defaultRules(),
-    ledger: [], incidents: [], seq: 0, incSeq: 0, staleFor: 0, quiet: false, queue: null, queues: {}, members: {}, rosterRev: 0, floorFired: {}, rev: 0,
+    ledger: [], incidents: [], seq: 0, incSeq: 0, staleFor: 0, agentsLoading: false, quiet: false, queue: null, queues: {}, members: {}, rosterRev: 0, floorFired: {}, rev: 0,
   };
   let beat = false;
   let pending: AgentStateEvent[] = [];
@@ -64,6 +64,7 @@ export function createEngine(hooks: EngineHooks = {}, opts: EngineOptions = {}) 
     onAgentState(e) { pending.push(e); beat = true; },
     onQueue(q, byQueue) { pendingQueue = q; if (byQueue) pendingQueues = byQueue; beat = true; },
     onAgentStats(s) { pendingStats.push(...s); beat = true; },
+    onAgentsLoading(loading) { S.agentsLoading = loading; },
     onHeartbeat() { beat = true; },
   };
 
@@ -167,7 +168,7 @@ export function createEngine(hooks: EngineHooks = {}, opts: EngineOptions = {}) 
     S, ingest, tick, thr,
     /** Clear the shift (ledger, incidents, strikes) and set the clock. Rule configuration is kept. */
     reset(o: { t: number; mode?: "live" | "replay"; replay?: ReplayMeta | null }) {
-      Object.assign(S, { t: o.t, mode: o.mode ?? "live", replay: o.replay ?? null, org: [], agents: [], ledger: [], incidents: [], seq: 0, incSeq: 0, staleFor: 0, queue: null, queues: {}, members: {}, floorFired: {} });
+      Object.assign(S, { t: o.t, mode: o.mode ?? "live", replay: o.replay ?? null, org: [], agents: [], ledger: [], incidents: [], seq: 0, incSeq: 0, staleFor: 0, agentsLoading: false, queue: null, queues: {}, members: {}, floorFired: {} });
       S.rev++;
       pending = []; pendingQueue = null; pendingQueues = null; pendingStats = []; beat = false;
     },

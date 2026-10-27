@@ -287,6 +287,18 @@ describe("re-arm logic", () => {
     expect(e.S.incidents).toHaveLength(0);
   });
 
+  it("marks the agents as loading while the feed says so, and a reset clears it", () => {
+    const { e } = setup();
+    expect(e.S.agentsLoading).toBe(false);
+    e.ingest.onAgentsLoading?.(true);
+    expect(e.S.agentsLoading).toBe(true);
+    e.ingest.onAgentsLoading?.(false);
+    expect(e.S.agentsLoading).toBe(false);
+    e.ingest.onAgentsLoading?.(true);
+    e.reset({ t: 0 });
+    expect(e.S.agentsLoading).toBe(false);
+  });
+
   it("freezes state timers while the feed is silent and fires the system rule at its threshold", () => {
     const { e, set, run, agent, toasts } = setup();
     set("Amara Reyes", "acw"); run(10);

@@ -120,3 +120,75 @@ describe("rate-limit backoff", () => {
     expect(at.at(-1)! - at.at(-2)!).toBeGreaterThanOrEqual(900);
   });
 });
+
+describe("watched queues", () => {
+  const ok = (body: unknown) => new Response(JSON.stringify(body), { status: 200 });
+
+  it("finds the queue map's queues by name across every page, ignoring case", async () => {
+    const urls: string[] = [];
+    const pages: Record<string, unknown> = {
+      "1": { pageCount: 2, entities: [{ id: "q1", name: "CSBD_A" }, { id: "q2", name: "Other" }] },
+      "2": { pageCount: 2, entities: [{ id: "q3", name: "csbd_b " }] },
+    };
+    const fetchFn = (async (url: string) => {
+      urls.push(url);
+      return ok(pages[new URL(url).searchParams.get("pageNumber")!]);
+    }) as unknown as typeof fetch;
+    const client = new GencloudClient({ apiBase: "https://x", token: "t", viewConfigId: "v", queueNames: ["csbd_a", "CSBD_B", "Not in org"] }, fetchFn, 1000);
+    expect(await client.getWatchedQueues()).toEqual([{ id: "q1", name: "CSBD_A" }, { id: "q3", name: "csbd_b " }]);
+    expect(urls).toHaveLength(2);
+    expect(urls.every((u) => u.includes("/api/v2/routing/queues/divisionviews/all"))).toBe(true);
+  });
+
+  it("reads the saved view when there is no queue map", async () => {
+    const urls: string[] = [];
+    const fetchFn = (async (url: string) => {
+      urls.push(url);
+      return url.includes("viewconfigurations") ? ok({ filter: { queueIds: ["q1"] } }) : ok({ entities: [{ id: "q1", name: "Queue 1" }] });
+    }) as unknown as typeof fetch;
+    const client = new GencloudClient({ apiBase: "https://x", token: "t", viewConfigId: "v", queueNames: [] }, fetchFn, 1000);
+    expect(await client.getWatchedQueues()).toEqual([{ id: "q1", name: "Queue 1" }]);
+    expect(urls[0]).toContain("/viewconfigurations/v");
+  });
+
+  it("fails on another user's saved view", async () => {
+    const fetchFn = (async () => new Response("{}", { status: 404 })) as unknown as typeof fetch;
+    const client = new GencloudClient({ apiBase: "https://x", token: "t", viewConfigId: "v" }, fetchFn, 1000);
+    await expect(client.getWatchedQueues()).rejects.toThrow("HTTP 404");
+  });
+});
+
+describe("large queue lists", () => {
+  const ok = (body: unknown) => new Response(JSON.stringify(body), { status: 200 });
+  const queueIdsIn = (init?: RequestInit): string[] => JSON.parse(String(init?.body)).filter.predicates.map((p: { value: string }) => p.value);
+  const ids = Array.from({ length: 202 }, (_, i) => `q${i}`);
+
+  it("splits analytics queries to stay under Genesys's 200 predicates", async () => {
+    const sizes: number[] = [];
+    const fetchFn = (async (_url: string, init?: RequestInit) => {
+      sizes.push(queueIdsIn(init).length);
+      return ok({ results: queueIdsIn(init).map((id) => ({ group: { queueId: id }, data: [] })) });
+    }) as unknown as typeof fetch;
+    const client = new GencloudClient({ apiBase: "https://x", token: "t", viewConfigId: "v" }, fetchFn, 1000);
+    expect(await client.getObservations(ids)).toHaveLength(202);
+    expect(sizes).toEqual([100, 100, 2]);
+  });
+
+  it("adds an agent's handle time up across queries", async () => {
+    const fetchFn = (async () => ok({ results: [{ group: { userId: "u1" }, data: [{ metrics: [{ metric: "tHandle", stats: { count: 2, sum: 60000 } }] }] }] })) as unknown as typeof fetch;
+    const client = new GencloudClient({ apiBase: "https://x", token: "t", viewConfigId: "v" }, fetchFn, 1000);
+    expect(await client.getAgentHandle(ids, { start: "s", end: "e" })).toEqual([{ userId: "u1", handled: 6, handleSec: 180 }]);
+  });
+
+  it("leaves out the divisions whose statistics the token may not read", async () => {
+    const fetchFn = (async (_url: string, init?: RequestInit) =>
+      queueIdsIn(init).includes("q2") ? new Response("{}", { status: 403 }) : ok({ results: [] })) as unknown as typeof fetch;
+    const client = new GencloudClient({ apiBase: "https://x", token: "t", viewConfigId: "v" }, fetchFn, 1000);
+    const a = { id: "a", name: "A" }, b = { id: "b", name: "B" };
+    const { readable, forbidden } = await client.readableQueues([
+      { id: "q1", name: "Q1", division: a }, { id: "q2", name: "Q2", division: b }, { id: "q3", name: "Q3", division: a },
+    ]);
+    expect(readable.map((q) => q.id)).toEqual(["q1", "q3"]);
+    expect(forbidden.map((q) => q.id)).toEqual(["q2"]);
+  });
+});

@@ -1,4 +1,5 @@
 import type { QueueMapRow } from "@/lib/import/queueMap";
+import type { OrgId } from "@/lib/orgs";
 export type AgentState = "oncall" | "avail" | "acw" | "auxb" | "auxp" | "outb" | "off";
 export type Role = "admin" | "senior" | "mgr" | "tl" | "agent";
 export type Stage = "nudge" | "lead" | "ops";
@@ -135,6 +136,8 @@ export interface PeopleDirectory { tls: string[]; mgrs: string[]; agentsByTeam: 
 export interface TickMsg {
   type: "tick" | "init";
   t: number; mode: "live" | "replay"; staleFor: number; replay: ReplayMeta | null;
+  /** The agents are the last saved roster, or their states have not all arrived: an Offline agent may not be. */
+  agentsLoading: boolean;
   queue: Queue | null; rules: Rule[]; agents: Agent[]; incidents: Incident[];
   /** The scoped team/org model. Sent on every snapshot (not just init) so clients that
    *  connected before the roster loaded still receive it — the Gencloud feed resolves the
@@ -158,6 +161,8 @@ export interface InitMsg extends TickMsg {
   feed: FeedKind;
   /** Simulator only: the teams and agents carry real names from the Gencloud roster. */
   realNames: boolean;
+  /** The Genesys org on screen; null on the simulator and in a replay. */
+  genesysOrg: OrgId | null;
   /** The viewer may switch the floor's data source (Admin only). */
   canSwitchFeed: boolean;
 }

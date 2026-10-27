@@ -3,6 +3,7 @@
 import { create } from "zustand";
 import { alertsFor } from "@/lib/alerts";
 import type { QueueMapRow } from "@/lib/import/queueMap";
+import type { OrgId } from "@/lib/orgs";
 import type { Agent, FeedKind, Incident, InitMsg, Instance, NudgeEvent, PeopleDirectory, Queue, QueueCounts, ReplayMeta, Rule, StreamMsg, Team, ToastKind, View } from "@/lib/types";
 import { alertWhileHidden, syncAlerts } from "./alerts";
 import { devOn } from "./devSettings";
@@ -22,8 +23,12 @@ interface ConsoleState {
   feed: FeedKind;
   /** Simulator only: the floor carries real team and agent names. */
   realNames: boolean;
+  /** The Genesys org on screen; null on the simulator and in a replay. */
+  genesysOrg: OrgId | null;
   canSwitchFeed: boolean;
   staleFor: number;
+  /** Agents are the saved roster or still waiting for their first state: Offline may not be. */
+  agentsLoading: boolean;
   replay: ReplayMeta | null;
   queue: Queue | null;
   rules: Rule[];
@@ -57,7 +62,7 @@ function whenSeen(fn: () => void): void {
 }
 
 export const useConsole = create<ConsoleState>((set, get) => ({
-  status: "connecting", view: null, org: [], people: null, t: 0, mode: "live", feed: "gencloud", realNames: false, canSwitchFeed: false, staleFor: 0, replay: null,
+  status: "connecting", view: null, org: [], people: null, t: 0, mode: "live", feed: "gencloud", realNames: false, genesysOrg: null, canSwitchFeed: false, staleFor: 0, agentsLoading: false, replay: null,
   queue: null, rules: [], agents: [], queues: {}, members: {}, queueMap: [], incidents: [], ledger: [], toasts: [], nudge: null,
   toast(kind, title, body) {
     const id = ++toastSeq;
@@ -86,11 +91,11 @@ function apply(msg: StreamMsg) {
   const nudge = devOn("nudges") ? msg.nudges.filter(e => !init || e.n !== shownNudge).at(-1) : undefined;
   if (nudge) shownNudge = nudge.n;
   useConsole.setState(s => ({
-    status: "ready", t: msg.t, mode: msg.mode, staleFor: msg.staleFor, replay: msg.replay, queue: msg.queue,
+    status: "ready", t: msg.t, mode: msg.mode, staleFor: msg.staleFor, agentsLoading: msg.agentsLoading ?? false, replay: msg.replay, queue: msg.queue,
     rules: msg.rules, agents: msg.agents, incidents: msg.incidents, org: msg.org, queues: msg.queues ?? {},
     members: msg.members ?? (init ? {} : s.members), queueMap: msg.queueMap ?? (init ? [] : s.queueMap),
     ...(init
-      ? { view: init.view, people: init.people, feed: init.feed, realNames: init.realNames, canSwitchFeed: init.canSwitchFeed, ledger: msg.ledger }
+      ? { view: init.view, people: init.people, feed: init.feed, realNames: init.realNames, genesysOrg: init.genesysOrg ?? null, canSwitchFeed: init.canSwitchFeed, ledger: msg.ledger }
       : { ledger: mergeLedger(s.ledger, msg.ledger) }),
     ...(nudge ? { nudge } : null),
   }));
