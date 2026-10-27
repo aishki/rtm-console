@@ -1,0 +1,4 @@
+# Generated architecture diagrams and code graph: collapse them in diffs
+# and leave them out of GitHub's language stats.
+.archify/*.html linguist-generated=true
+graphify-out/** linguist-generated=true
