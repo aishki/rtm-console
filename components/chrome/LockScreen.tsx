@@ -2,7 +2,7 @@
 
 import { type FormEvent, useState } from "react";
 import { PurpleButton } from "@/components/ui/buttons";
-import { CarelonLogo, carelonClearSpace } from "@/components/ui/LogoLockup";
+import { CarelonLogo, RtmMark, carelonClearSpace } from "@/components/ui/LogoLockup";
 
 /** The password wall at "/". A correct password sets the unlock cookie; the console opens after. */
 export function LockScreen({ next }: { next: string }) {
@@ -36,7 +36,10 @@ export function LockScreen({ next }: { next: string }) {
         {/* The wordmark pads itself by its clear space; the card's own padding already gives it room. */}
         <div style={{ margin: -carelonClearSpace(22) }}><CarelonLogo height={22} /></div>
         <div className="flex flex-col gap-1.5">
-          <h1 className="m-0 text-2xl font-medium leading-[1.15] tracking-[-0.02em] text-purple">RTM Console</h1>
+          <div className="flex items-center gap-3 text-purple">
+            <RtmMark size={36} />
+            <h1 className="m-0 text-2xl font-medium leading-[1.15] tracking-[-0.02em]">RTM Console</h1>
+          </div>
           <p className="m-0 text-sm text-muted">Enter the console password to continue.</p>
         </div>
         <label className="flex flex-col gap-1.5 text-sm font-medium text-strong">

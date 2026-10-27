@@ -16,7 +16,7 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  // Static files the lock screen itself needs stay reachable: Next's assets, the logos and the
-  // service worker script.
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|sw.js|assets/).*)"],
+  // Static files the lock screen itself needs stay reachable: Next's assets, the logos, the
+  // tab and home-screen icons, and the service worker script.
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|icon.svg|apple-icon.png|sw.js|assets/).*)"],
 };

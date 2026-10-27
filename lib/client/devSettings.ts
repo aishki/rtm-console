@@ -3,10 +3,13 @@
 import { create } from "zustand";
 
 // TODO(prod): the dev bar and these switches exist for development only. Remove this file, components/chrome/DevBar.tsx
-// and the `devSettings` checks in lib/client/store.ts before going to production (or leave DEV_TOOLS false there).
+// and the `devSettings` checks in lib/client/store.ts before going to production (or leave NEXT_PUBLIC_DEV_TOOLS unset there).
 
-/** True in `next dev`. Production builds never show the dev bar, and every notification stays on. */
-export const DEV_TOOLS = process.env.NODE_ENV === "development";
+/**
+ * True in `next dev`, or in any build made with NEXT_PUBLIC_DEV_TOOLS=1 (read at build time, so
+ * changing it needs a rebuild). Without either, the dev bar is hidden and every notification stays on.
+ */
+export const DEV_TOOLS = process.env.NODE_ENV === "development" || process.env.NEXT_PUBLIC_DEV_TOOLS === "1";
 
 export type DevSwitch = "toasts" | "nudges" | "desktop";
 
@@ -38,7 +41,7 @@ export const useDevSettings = create<DevSettings>((set, get) => ({
 
 /**
  * Read the saved switches. Called once from the dev bar after the first render, so the server
- * render and the browser's first render agree. Outside development every notification stays on.
+ * render and the browser's first render agree. While DEV_TOOLS is off, every notification stays on.
  */
 export function loadDevSettings(): void {
   if (!DEV_TOOLS) return;
@@ -51,5 +54,5 @@ export function loadDevSettings(): void {
   } catch { /* nothing saved, or unreadable: keep the defaults */ }
 }
 
-/** Current value of one switch, for code outside React. Always true outside development. */
+/** Current value of one switch, for code outside React. Always true while DEV_TOOLS is off. */
 export const devOn = (key: DevSwitch): boolean => !DEV_TOOLS || useDevSettings.getState()[key];
