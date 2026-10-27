@@ -24,6 +24,8 @@ interface ConsoleState {
   realNames: boolean;
   canSwitchFeed: boolean;
   staleFor: number;
+  /** Agents are the saved roster or still waiting for their first state: Offline may not be. */
+  agentsLoading: boolean;
   replay: ReplayMeta | null;
   queue: Queue | null;
   rules: Rule[];
@@ -57,7 +59,7 @@ function whenSeen(fn: () => void): void {
 }
 
 export const useConsole = create<ConsoleState>((set, get) => ({
-  status: "connecting", view: null, org: [], people: null, t: 0, mode: "live", feed: "gencloud", realNames: false, canSwitchFeed: false, staleFor: 0, replay: null,
+  status: "connecting", view: null, org: [], people: null, t: 0, mode: "live", feed: "gencloud", realNames: false, canSwitchFeed: false, staleFor: 0, agentsLoading: false, replay: null,
   queue: null, rules: [], agents: [], queues: {}, members: {}, queueMap: [], incidents: [], ledger: [], toasts: [], nudge: null,
   toast(kind, title, body) {
     const id = ++toastSeq;
@@ -86,7 +88,7 @@ function apply(msg: StreamMsg) {
   const nudge = devOn("nudges") ? msg.nudges.filter(e => !init || e.n !== shownNudge).at(-1) : undefined;
   if (nudge) shownNudge = nudge.n;
   useConsole.setState(s => ({
-    status: "ready", t: msg.t, mode: msg.mode, staleFor: msg.staleFor, replay: msg.replay, queue: msg.queue,
+    status: "ready", t: msg.t, mode: msg.mode, staleFor: msg.staleFor, agentsLoading: msg.agentsLoading ?? false, replay: msg.replay, queue: msg.queue,
     rules: msg.rules, agents: msg.agents, incidents: msg.incidents, org: msg.org, queues: msg.queues ?? {},
     members: msg.members ?? (init ? {} : s.members), queueMap: msg.queueMap ?? (init ? [] : s.queueMap),
     ...(init

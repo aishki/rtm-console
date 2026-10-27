@@ -135,6 +135,8 @@ export interface PeopleDirectory { tls: string[]; mgrs: string[]; agentsByTeam: 
 export interface TickMsg {
   type: "tick" | "init";
   t: number; mode: "live" | "replay"; staleFor: number; replay: ReplayMeta | null;
+  /** The agents are the last saved roster, or their states have not all arrived: an Offline agent may not be. */
+  agentsLoading: boolean;
   queue: Queue | null; rules: Rule[]; agents: Agent[]; incidents: Incident[];
   /** The scoped team/org model. Sent on every snapshot (not just init) so clients that
    *  connected before the roster loaded still receive it — the Gencloud feed resolves the

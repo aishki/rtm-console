@@ -91,7 +91,13 @@ function createGencloud(rules: Rule[]): Runtime {
   return createRuntime("live", rules, 1, false, () => {
     const feed = new GencloudFeed(gencloudConfig());
     return remembering(feed);
-  }, engine => engine.reset({ t }));
+  }, engine => {
+    engine.reset({ t });
+    // Loading the roster takes minutes for hundreds of queues: start from the one saved last
+    // time, everyone Offline until their state arrives. The feed marks the floor as loading.
+    const saved = loadRoster();
+    if (saved) engine.ingest.onRoster({ org: saved.org, agents: saved.agents.map(a => ({ ...a, state: "off" })), members: saved.members });
+  });
 }
 
 function createSim(rules: Rule[], seed: SimSeed | undefined): Runtime {

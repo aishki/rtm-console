@@ -23,6 +23,8 @@ export interface EngineState {
   incSeq: number;
   /** Seconds since the feed last spoke. 0 while healthy. */
   staleFor: number;
+  /** The feed's roster and first states are still loading: agents may be from the saved roster, Offline until heard from. */
+  agentsLoading: boolean;
   /** Suppresses toasts and nudges (history warm-up). */
   quiet: boolean;
   queue: Queue | null;

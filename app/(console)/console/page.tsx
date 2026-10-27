@@ -64,6 +64,7 @@ function AgentGrid() {
   const org = useConsole(s => s.org);
   const agents = useConsole(s => s.agents);
   const rules = useConsole(s => s.rules);
+  const loading = useConsole(s => s.agentsLoading);
   const queues = useConsole(s => s.queues);
   const members = useConsole(s => s.members);
   const queueMap = useConsole(s => s.queueMap);
@@ -165,6 +166,12 @@ function AgentGrid() {
         resultText={view ? `${view.agentCount} of ${agents.length} agents · ${plural(view.queueCount, "queue")}` : `${agents.length} agents · ${plural(queueCount, "queue")}`}
         showExpandControls={nodes.length > 1} onExpandAll={expandAll} onCollapseAll={collapseAll}
       />
+      {loading && (
+        <div role="status" className="mx-5 mt-4 flex items-center gap-2.5 rounded-15 bg-warning-tint px-4 py-2.5 text-[13px] text-warning-text">
+          <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-warning" />
+          <span><b className="font-semibold">Loading agent states from Genesys.</b> The roster shown is the last one saved; agents read “Loading state…” until their state arrives. This takes a few minutes after a restart.</span>
+        </div>
+      )}
       <div className="flex flex-col gap-2.5 px-5 pb-5 pt-4">
         {visible.length > 0 && <TreeHeader />}
         {visible.map(node => (

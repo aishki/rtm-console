@@ -28,7 +28,7 @@ export function tickMsg(rt: Runtime, view: View, since: Since | null, batch: Bat
     members = Object.fromEntries(Object.entries(S.members ?? {}).map(([q, ids]) => [q, ids.filter(id => mine.has(id))]));
   }
   return {
-    type: "tick", t: S.t, mode: S.mode, staleFor: S.staleFor, replay: S.replay, queue: S.queue, rules: S.rules,
+    type: "tick", t: S.t, mode: S.mode, staleFor: S.staleFor, agentsLoading: S.agentsLoading, replay: S.replay, queue: S.queue, rules: S.rules,
     org: scopeTeams(S, view), agents, incidents: scopeIncidents(S, view, S.incidents),
     ledger: since === null ? ledger : ledger.filter(r => r.rev > since.rev),
     queues: S.queues ?? {}, members,

@@ -1,4 +1,5 @@
 import { memo } from "react";
+import { useConsole } from "@/lib/client/store";
 import { fmt, splitAgent } from "@/lib/engine/format";
 import { STATES, isBreach, isCrit, strikesOf } from "@/lib/engine/rules";
 import type { Agent, Rule } from "@/lib/types";
@@ -11,9 +12,13 @@ function Name({ name, query }: { name: string; query: string }) {
 
 interface Props { agent: Agent; rules: Rule[]; /** Lower-cased search text to highlight in the name. */ query: string; showMetrics: boolean }
 
+/** While states load, Offline only means "not heard from yet". */
+const UNKNOWN = { label: "Loading state…", color: "var(--border-hairline)" };
+
 /** One agent on the grid: state, time in state, strikes, and a breach glow. */
 export const AgentCard = memo(function AgentCard({ agent: a, rules, query, showMetrics }: Props) {
-  const s = STATES[a.state] ?? STATES.avail;
+  const unknown = useConsole(s => s.agentsLoading) && a.state === "off";
+  const s = unknown ? UNKNOWN : STATES[a.state] ?? STATES.avail;
   const breach = isBreach(a, rules), crit = breach && isCrit(a, rules);
   const strikes = strikesOf(a);
   const { who, id } = splitAgent(a.name);
@@ -31,9 +36,9 @@ export const AgentCard = memo(function AgentCard({ agent: a, rules, query, showM
       </div>
       <div className="flex items-center gap-2">
         <span className="h-[9px] w-[9px] shrink-0 rounded-full" style={{ background: s.color }} />
-        <span className="truncate text-[13px] font-medium">{s.label}</span>
+        <span className={`truncate text-[13px] font-medium ${unknown ? "text-muted" : ""}`}>{s.label}</span>
         {a.onHold && <span className="rounded-pill bg-warning-tint px-[7px] py-px font-ui text-[11px] font-semibold text-warning-text">Hold {fmt(a.holdTime)}</span>}
-        <span className={`num ml-auto text-[13px] font-semibold ${crit ? "text-error-text" : breach ? "text-warning-text" : "text-ink"}`}>{fmt(a.stTime)}</span>
+        <span className={`num ml-auto text-[13px] font-semibold ${crit ? "text-error-text" : breach ? "text-warning-text" : "text-ink"}`}>{unknown ? "–" : fmt(a.stTime)}</span>
       </div>
       {showMetrics && (
         // Two tidy rows in three columns that line up from card to card: handling on the first row, call quality on the second.

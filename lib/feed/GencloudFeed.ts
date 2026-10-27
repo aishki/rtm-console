@@ -88,6 +88,8 @@ export class GencloudFeed implements FeedSource {
 
     const queueNames = this.config.getQueueNames?.() ?? [];
     const client = gencloudClient(this.config, token);
+    // Until the roster and everyone's first state are in, the floor shows what it had before.
+    handlers.onAgentsLoading?.(true);
     const ws = new WsManager(apiBase, token);
     let stopped = false;
     let pollStarted = false;
@@ -213,6 +215,7 @@ export class GencloudFeed implements FeedSource {
         handlers.onRoster({ org, agents, members });
         if (Object.keys(idToName).length === 0) {
           console.warn("GencloudFeed: roster is empty (no queue members loaded)");
+          handlers.onAgentsLoading?.(false);
           return;
         }
         startHandlePoll(queues.map((q) => q.id), idToName);
@@ -285,6 +288,7 @@ export class GencloudFeed implements FeedSource {
               ? { agent: name, state }
               : { agent: name, state, elapsed: elapsedAtConnect(state, since, Date.now(), floorMidnight(new Date()).getTime()), seed: true });
           }
+          if (!stopped) handlers.onAgentsLoading?.(false);
         } catch (e) {
           console.warn("GencloudFeed: initial state snapshot failed; states fill in as agents change:", errMsg(e));
         }

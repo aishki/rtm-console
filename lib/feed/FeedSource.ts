@@ -8,6 +8,8 @@ export interface FeedHandlers {
   onQueue(queue: Queue, byQueue?: Record<string, QueueCounts>): void;
   /** Agents' figures for the day, when the feed reports them (Gencloud); they replace the engine's estimates. */
   onAgentStats?(stats: AgentStats[]): void;
+  /** True while the roster and everyone's first state are on their way (Gencloud, after connecting); false once they are in. */
+  onAgentsLoading?(loading: boolean): void;
   /** Proof of life. The engine treats a second without any feed activity as stale. */
   onHeartbeat(): void;
 }
