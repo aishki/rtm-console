@@ -1,17 +1,32 @@
 import type { Agent, Incident, Instance, NudgeEvent, Queue, QueueCounts, ReplayMeta, Route, Rule, RuleId, Stage, Team, ToastEvent } from "@/lib/types";
 import { nudgeCopy, valueOf } from "./rules";
 import { teamOf } from "./scope";
+import { wallClock } from "@/lib/floorTime";
 
 export interface EngineHooks {
   toast?: (e: ToastEvent) => void;
   nudge?: (e: NudgeEvent) => void;
 }
 
-/** Hands out incident numbers. The Genesys orgs' floors share one, so numbers never repeat across orgs. */
-export interface IncidentCounter { next(): number }
+/** Hands out incident numbers, INC-<year>-0001 on. The Genesys orgs' floors share one, so numbers never repeat across orgs. */
+export interface IncidentCounter { next(): string }
 
-/** A counter of its own, from 1. */
-export const incidentCounter = (): IncidentCounter => { let n = 0; return { next: () => ++n }; };
+/** Where a counter is: the year it numbers in and the last number it gave. */
+export interface IncidentSeq { year: number; n: number }
+
+/** The floor's year (US Eastern): numbering starts again at 0001 when it changes. */
+const floorYear = () => wallClock(new Date()).year;
+
+/** A counter over `seq` (kept by the caller when it is shared). `year` is the floor's year unless a test fixes it. */
+export function incidentCounter(seq: IncidentSeq = { year: 0, n: 0 }, year: () => number = floorYear): IncidentCounter {
+  return {
+    next() {
+      const y = year();
+      if (y !== seq.year) { seq.year = y; seq.n = 0; }
+      return `INC-${y}-${String(++seq.n).padStart(4, "0")}`;
+    },
+  };
+}
 
 export interface EngineState {
   /** Shift clock, seconds since midnight. */
@@ -65,7 +80,7 @@ export function stageFor(route: Route, strikes: number): Stage {
 
 /** Every strike from 3 on opens its own incident: strike 5 on one rule means 3 incidents to investigate. `instances` is the strike that opened it. */
 export function openIncident(S: EngineState, counter: IncidentCounter, agent: Agent, r: Rule, strikes: number): string {
-  const inc = "INC-2026-" + String(counter.next()).padStart(4, "0");
+  const inc = counter.next();
   S.incidents.unshift({ inc, t: S.t, agent: agent.name, team: agent.team, rule: r.name, ruleId: r.id, instances: strikes, status: "Open", disposition: "", closedT: null });
   return inc;
 }

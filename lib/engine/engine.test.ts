@@ -19,7 +19,7 @@ const ROSTER: RosterAgent[] = [
 
 function setup() {
   const toasts: ToastEvent[] = [], nudges: NudgeEvent[] = [];
-  const e = createEngine({ toast: t => toasts.push(t), nudge: n => nudges.push(n) });
+  const e = createEngine({ toast: t => toasts.push(t), nudge: n => nudges.push(n) }, { year: () => 2026 });
   e.reset({ t: 8 * 3600 });
   e.ingest.onRoster({ org: ORG, agents: ROSTER });
   const run = (seconds: number) => { for (let i = 0; i < seconds; i++) { e.ingest.onHeartbeat(); e.tick(); } };
@@ -115,8 +115,18 @@ describe("the 3× rule", () => {
     expect(of("Amara Reyes", "acw").map(r => r.inc)).toEqual(["INC-2026-0003", "INC-2026-0002", "INC-2026-0001", "", ""]);
   });
 
+  it("starts numbering again at 0001 when the year changes", () => {
+    let year = 2026;
+    const seq = { year: 0, n: 0 };
+    const c = incidentCounter(seq, () => year);
+    expect([c.next(), c.next()]).toEqual(["INC-2026-0001", "INC-2026-0002"]);
+    year = 2027;
+    expect([c.next(), c.next()]).toEqual(["INC-2027-0001", "INC-2027-0002"]);
+    expect(seq).toEqual({ year: 2027, n: 2 });
+  });
+
   it("numbers incidents from one counter shared between engines (the orgs' floors)", () => {
-    const shared = incidentCounter();
+    const shared = incidentCounter(undefined, () => 2026);
     const floors = [0, 1].map(() => {
       const e = createEngine({}, { incidents: shared });
       e.reset({ t: 8 * 3600 });

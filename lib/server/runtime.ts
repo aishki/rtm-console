@@ -1,7 +1,7 @@
 import type { FloorSource, NudgeEvent, Rule, ToastEvent } from "@/lib/types";
 import type { ReplayEvent } from "@/lib/csv/parse";
 import { type Engine, type EngineOptions, createEngine } from "@/lib/engine/engine";
-import type { IncidentCounter } from "@/lib/engine/escalation";
+import { type IncidentCounter, type IncidentSeq, incidentCounter } from "@/lib/engine/escalation";
 import { defaultRules } from "@/lib/engine/rules";
 import type { FeedSource } from "@/lib/feed/FeedSource";
 import { CsvReplayFeed, REPLAY_SPEED, type ReplayExtras } from "@/lib/feed/CsvReplayFeed";
@@ -159,19 +159,20 @@ interface Registry {
   orgs: Partial<Record<OrgId, Runtime>>;
   replays: Map<string, Runtime>;
   watchers: Set<() => void>;
-  /** The last incident number handed out. One counter for every org's floor, so numbers never repeat. */
-  incidentSeq: number;
+  /** The last incident number handed out, and its year. One counter for every org's floor, so numbers never repeat. */
+  incidentSeq: IncidentSeq;
 }
 const g = globalThis as typeof globalThis & { __rtmRegistry?: Registry };
 const registry: Registry = (g.__rtmRegistry ??= {
   rules: defaultRules(), source: process.env.NEXT_PUBLIC_FEED === "sim" ? "sim" : "gencloud", org: loadActiveOrg(),
-  floors: {}, orgs: {}, replays: new Map(), watchers: new Set(), incidentSeq: 0,
+  floors: {}, orgs: {}, replays: new Map(), watchers: new Set(), incidentSeq: { year: 0, n: 0 },
 });
 // A registry from before there were several orgs (a dev reload) gets the new fields.
 registry.org ??= loadActiveOrg();
 registry.orgs ??= {};
-registry.incidentSeq ??= 0;
-const sharedIncidents: IncidentCounter = { next: () => ++registry.incidentSeq };
+// A registry from before numbers carried their year (a dev reload) held a plain count.
+if (typeof registry.incidentSeq !== "object" || registry.incidentSeq === null) registry.incidentSeq = { year: 0, n: 0 };
+const sharedIncidents: IncidentCounter = incidentCounter(registry.incidentSeq);
 
 /** The floor on screen, if it is running. */
 const onScreen = (): Runtime | undefined => (registry.source === "sim" ? registry.floors.sim : registry.orgs[registry.org]);
