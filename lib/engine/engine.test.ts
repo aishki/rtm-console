@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AgentState, AgentStateEvent, NudgeEvent, QueueCounts, RosterAgent, RuleId, Team, ToastEvent, View } from "@/lib/types";
 import { createEngine } from "./engine";
-import { firstName, stageFor } from "./escalation";
+import { firstName, incidentCounter, stageFor } from "./escalation";
 import { isBreach, myTargets } from "./rules";
 import { PERMS, canAck, canComment, inScope, resolveView, scopeAgents, scopeIncidents, scopeLedger, scopeTeams } from "./scope";
 
@@ -106,12 +106,39 @@ describe("the 3× rule", () => {
     expect(nudges).toHaveLength(0);
   });
 
-  it("keeps one open incident per agent per rule and raises its instance count", () => {
+  it("opens a new incident on every strike from 3 on: strike 5 means 3 incidents", () => {
     const { e, episode, of } = setup();
     for (let i = 0; i < 5; i++) episode("Amara Reyes", "acw", 120);
-    expect(e.S.incidents).toHaveLength(1);
-    expect(e.S.incidents[0].instances).toBe(5);
-    expect(of("Amara Reyes", "acw").slice(0, 3).map(r => r.inc)).toEqual(["INC-2026-0001", "INC-2026-0001", "INC-2026-0001"]);
+    expect(e.S.incidents.map(i => [i.inc, i.instances, i.status])).toEqual([
+      ["INC-2026-0003", 5, "Open"], ["INC-2026-0002", 4, "Open"], ["INC-2026-0001", 3, "Open"],
+    ]);
+    expect(of("Amara Reyes", "acw").map(r => r.inc)).toEqual(["INC-2026-0003", "INC-2026-0002", "INC-2026-0001", "", ""]);
+  });
+
+  it("numbers incidents from one counter shared between engines (the orgs' floors)", () => {
+    const shared = incidentCounter();
+    const floors = [0, 1].map(() => {
+      const e = createEngine({}, { incidents: shared });
+      e.reset({ t: 8 * 3600 });
+      e.ingest.onRoster({ org: ORG, agents: ROSTER });
+      return e;
+    });
+    const strike = (e: (typeof floors)[number]) => {
+      e.ingest.onAgentState({ agent: "Amara Reyes", state: "acw" });
+      for (let i = 0; i < 122; i++) { e.ingest.onHeartbeat(); e.tick(); }
+      e.ingest.onAgentState({ agent: "Amara Reyes", state: "avail" });
+      e.ingest.onHeartbeat(); e.tick();
+    };
+    for (let i = 0; i < 3; i++) strike(floors[0]);
+    for (let i = 0; i < 3; i++) strike(floors[1]);
+    strike(floors[0]);
+    expect(floors[0].S.incidents.map(i => i.inc)).toEqual(["INC-2026-0003", "INC-2026-0001"]);
+    expect(floors[1].S.incidents.map(i => i.inc)).toEqual(["INC-2026-0002"]);
+    // A reset clears the floor but never reuses a shared number.
+    floors[1].reset({ t: 8 * 3600 });
+    floors[1].ingest.onRoster({ org: ORG, agents: ROSTER });
+    for (let i = 0; i < 3; i++) strike(floors[1]);
+    expect(floors[1].S.incidents.map(i => i.inc)).toEqual(["INC-2026-0004"]);
   });
 
   it("opens separate incidents per rule and per agent, and a new one after the first is closed", () => {
@@ -154,6 +181,43 @@ describe("the 3× rule", () => {
     expect([1, 2, 3, 9].map(n => stageFor("nudgeonly", n))).toEqual(["nudge", "nudge", "nudge", "nudge"]);
     expect([1, 2, 3, 9].map(n => stageFor("leadonly", n))).toEqual(["lead", "lead", "lead", "lead"]);
     expect(stageFor("lead", 0)).toBe("lead");
+  });
+});
+
+describe("a new day at midnight Eastern", () => {
+  it("starts strikes again at zero and keeps yesterday's call-outs and incidents", () => {
+    const { e, episode, agent, of } = setup();
+    for (let i = 0; i < 3; i++) episode("Amara Reyes", "acw", 120);
+    episode("Joshua Lim", "acw", 120);
+    episode("Joshua Lim", "acw", 120);
+    e.ack(of("Joshua Lim", "acw")[1].n);
+    const before = e.S.ledger.length;
+
+    e.newDay(0);
+    expect(e.S.t).toBe(0);
+    expect(agent("Joshua Lim").strikes).toEqual({});
+    expect(agent("Amara Reyes").strikes).toEqual({});
+    // Nothing is dropped: the unacknowledged call-out from yesterday is still open, the incident still open.
+    expect(e.S.ledger).toHaveLength(before);
+    expect(of("Joshua Lim", "acw")[0].status).toBe("open");
+    expect(e.S.incidents.map(i => [i.inc, i.status])).toEqual([["INC-2026-0001", "Open"]]);
+
+    // Strike 2 at 23:59 means the next breach after midnight is strike 1.
+    episode("Joshua Lim", "acw", 120);
+    expect(of("Joshua Lim", "acw").map(r => r.strikes)).toEqual([1, 2, 1]);
+    expect(of("Joshua Lim", "acw")[0].stage).toBe("nudge");
+  });
+
+  it("starts the day's counters again and raises nothing for a breach already running at midnight", () => {
+    const { e, set, run, agent, of } = setup();
+    set("Bea Santos", "oncall"); run(61); set("Bea Santos", "avail", { callEnded: { transferred: true } }); run(1);
+    set("Amara Reyes", "acw"); run(130);
+    expect(of("Amara Reyes", "acw")).toHaveLength(1);
+    e.newDay(0);
+    expect(agent("Bea Santos")).toMatchObject({ calls: 0, transfers: 0, shortCalls: 0 });
+    run(30);
+    expect(of("Amara Reyes", "acw")).toHaveLength(1);
+    expect(agent("Amara Reyes").strikes).toEqual({});
   });
 });
 

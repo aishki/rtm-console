@@ -22,6 +22,12 @@ export function floorSeconds(at: Date, timeZone = FLOOR_TIME_ZONE): number {
   return w.hour * 3600 + w.minute * 60 + w.second;
 }
 
+/** The floor's date at `at`, as YYYY-MM-DD. It changes at midnight Eastern: a new day for strikes and KPIs. */
+export function floorDate(at: Date, timeZone = FLOOR_TIME_ZONE): string {
+  const w = wallClock(at, timeZone);
+  return `${w.year}-${String(w.month).padStart(2, "0")}-${String(w.day).padStart(2, "0")}`;
+}
+
 /** The instant the floor's day containing `at` began (its midnight), correct across daylight-saving changes. */
 export function floorMidnight(at: Date, timeZone = FLOOR_TIME_ZONE): Date {
   const w = wallClock(at, timeZone);

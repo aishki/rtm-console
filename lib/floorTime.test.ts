@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { floorMidnight, floorSeconds, wallClock } from "./floorTime";
+import { floorDate, floorMidnight, floorSeconds, wallClock } from "./floorTime";
 
 const NY = "America/New_York";
 
@@ -21,6 +21,13 @@ describe("floor time", () => {
     expect(floorMidnight(new Date("2026-11-01T18:00:00Z"), NY).toISOString()).toBe("2026-11-01T04:00:00.000Z");
     // 2026-03-08: EDT starts at 02:00. Midnight was EST (05:00 UTC).
     expect(floorMidnight(new Date("2026-03-08T18:00:00Z"), NY).toISOString()).toBe("2026-03-08T05:00:00.000Z");
+  });
+
+  it("gives the Eastern date, which turns over at Eastern midnight, not Manila's", () => {
+    expect(floorDate(new Date("2026-10-08T03:59:59Z"), NY)).toBe("2026-10-07");
+    expect(floorDate(new Date("2026-10-08T04:00:00Z"), NY)).toBe("2026-10-08");
+    // Manila midnight (16:00 UTC) is mid-afternoon on the floor: still the same day.
+    expect(floorDate(new Date("2026-10-08T16:00:00Z"), NY)).toBe("2026-10-08");
   });
 
   it("counts a just-after-midnight moment as the new day", () => {
