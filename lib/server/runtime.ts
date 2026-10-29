@@ -1,6 +1,7 @@
 import type { FloorSource, NudgeEvent, Rule, ToastEvent } from "@/lib/types";
 import type { ReplayEvent } from "@/lib/csv/parse";
-import { type Engine, createEngine } from "@/lib/engine/engine";
+import { type Engine, type EngineOptions, createEngine } from "@/lib/engine/engine";
+import type { IncidentCounter } from "@/lib/engine/escalation";
 import { defaultRules } from "@/lib/engine/rules";
 import type { FeedSource } from "@/lib/feed/FeedSource";
 import { CsvReplayFeed, REPLAY_SPEED, type ReplayExtras } from "@/lib/feed/CsvReplayFeed";
@@ -11,7 +12,7 @@ import { loadRoster, saveRoster } from "./rosterCache";
 import { loadQueueMap } from "./queueMapStore";
 import { genesysToken, loadActiveOrg, saveActiveOrg } from "./tokenStore";
 import { type OrgId, orgOf, queueNamesFor } from "@/lib/orgs";
-import { floorSeconds } from "@/lib/floorTime";
+import { floorDate, floorSeconds } from "@/lib/floorTime";
 
 // Server-side home of the rules engine. One live runtime serves the whole floor; a CSV
 // replay gets its own runtime per session so reviewing history never disturbs the live feed.
@@ -41,11 +42,11 @@ export interface Runtime {
 const WARM_SECONDS = 900;
 const MAX_REPLAYS = 8;
 
-function createRuntime(kind: Runtime["kind"], rules: Rule[], speed: number, deriveAdh: boolean, makeFeed: (engine: Engine) => FeedSource, prepare: (engine: Engine, feed: FeedSource) => void, afterTick?: (engine: Engine) => void): Runtime {
+function createRuntime(kind: Runtime["kind"], rules: Rule[], speed: number, engineOpts: Omit<EngineOptions, "rules">, makeFeed: (engine: Engine) => FeedSource, prepare: (engine: Engine, feed: FeedSource) => void, afterTick?: (engine: Engine) => void): Runtime {
   const listeners = new Set<Listener>();
   const lastNudge = new Map<string, NudgeEvent>();
   let batch: Batch = { toasts: [], nudges: [] };
-  const engine = createEngine({ toast: e => batch.toasts.push(e), nudge: e => batch.nudges.push(e) }, { rules, deriveAdh });
+  const engine = createEngine({ toast: e => batch.toasts.push(e), nudge: e => batch.nudges.push(e) }, { rules, ...engineOpts });
   const feed = makeFeed(engine);
   prepare(engine, feed);
   let unsubscribe = feed.subscribe(engine.ingest);
@@ -96,21 +97,28 @@ export const gencloudConfig = (org: OrgId): GencloudConfig => ({
   clientId: process.env.GENCLOUD_CLIENT_ID, clientSecret: process.env.GENCLOUD_CLIENT_SECRET,
 });
 
-function createGencloud(rules: Rule[], org: OrgId): Runtime {
+function createGencloud(rules: Rule[], org: OrgId, incidents: IncidentCounter): Runtime {
   // The shift clock reads the floor's time (US Eastern), not the server's.
   const t = floorSeconds(new Date());
-  const rt = createRuntime("live", rules, 1, false, () => remembering(new GencloudFeed(gencloudConfig(org)), org), engine => {
+  let day = floorDate(new Date());
+  // At midnight Eastern a new day starts: strikes and the day's counters go back to zero; call-outs and incidents stay.
+  const rollover = (engine: Engine) => {
+    const now = new Date();
+    const today = floorDate(now);
+    if (today !== day) { day = today; engine.newDay(floorSeconds(now)); }
+  };
+  const rt = createRuntime("live", rules, 1, { incidents }, () => remembering(new GencloudFeed(gencloudConfig(org)), org), engine => {
     engine.reset({ t });
     // Loading the roster takes minutes for hundreds of queues: start from the one saved last
     // time, everyone Offline until their state arrives. The feed marks the floor as loading.
     const saved = loadRoster(org);
     if (saved) engine.ingest.onRoster({ org: saved.org, agents: saved.agents.map(a => ({ ...a, state: "off" })), members: saved.members });
-  });
+  }, rollover);
   return { ...rt, genesysOrg: org };
 }
 
 function createSim(rules: Rule[], seed: SimSeed | undefined): Runtime {
-  const rt = createRuntime("live", rules, 1, true,
+  const rt = createRuntime("live", rules, 1, { deriveAdh: true },
     engine => new SimFeed({ thr: engine.thr, strikes: (name, id) => engine.S.agents.find(a => a.name === name)?.strikes[id] ?? 0 }, Math.random, seed),
     engine => engine.reset({ t: 8 * 3600 }), // 08:00 shift start
     engine => simulateReplies(engine.S, engine.comment),
@@ -151,15 +159,19 @@ interface Registry {
   orgs: Partial<Record<OrgId, Runtime>>;
   replays: Map<string, Runtime>;
   watchers: Set<() => void>;
+  /** The last incident number handed out. One counter for every org's floor, so numbers never repeat. */
+  incidentSeq: number;
 }
 const g = globalThis as typeof globalThis & { __rtmRegistry?: Registry };
 const registry: Registry = (g.__rtmRegistry ??= {
   rules: defaultRules(), source: process.env.NEXT_PUBLIC_FEED === "sim" ? "sim" : "gencloud", org: loadActiveOrg(),
-  floors: {}, orgs: {}, replays: new Map(), watchers: new Set(),
+  floors: {}, orgs: {}, replays: new Map(), watchers: new Set(), incidentSeq: 0,
 });
 // A registry from before there were several orgs (a dev reload) gets the new fields.
 registry.org ??= loadActiveOrg();
 registry.orgs ??= {};
+registry.incidentSeq ??= 0;
+const sharedIncidents: IncidentCounter = { next: () => ++registry.incidentSeq };
 
 /** The floor on screen, if it is running. */
 const onScreen = (): Runtime | undefined => (registry.source === "sim" ? registry.floors.sim : registry.orgs[registry.org]);
@@ -176,7 +188,7 @@ export function liveRuntime(): Runtime {
   if (running) return running;
   const rt = registry.source === "sim"
     ? (registry.floors.sim = createSim(registry.rules, realSeed()))
-    : (registry.orgs[registry.org] = createGencloud(registry.rules, registry.org));
+    : (registry.orgs[registry.org] = createGencloud(registry.rules, registry.org, sharedIncidents));
   // Desktop alerts reach people who have no stream open (browser minimized or closed).
   // Only the floor on screen alerts: the other orgs, and Gencloud behind a simulation, keep running quietly.
   rt.subscribe(batch => { if (onScreen() === rt) pushBatch(rt.engine.S, batch); });
@@ -227,7 +239,7 @@ export function runtimeFor(sid: string): Runtime {
 export function startReplay(sid: string, events: ReplayEvent[], extras: ReplayExtras = {}): Runtime {
   exitReplay(sid);
   if (registry.replays.size >= MAX_REPLAYS) exitReplay(registry.replays.keys().next().value!);
-  const rt = createRuntime("replay", registry.rules, REPLAY_SPEED, true, () => new CsvReplayFeed(events, extras), (engine, feed) => {
+  const rt = createRuntime("replay", registry.rules, REPLAY_SPEED, { deriveAdh: true }, () => new CsvReplayFeed(events, extras), (engine, feed) => {
     const csv = feed as CsvReplayFeed;
     engine.reset({ t: csv.startT, mode: "replay", replay: csv.meta });
   });

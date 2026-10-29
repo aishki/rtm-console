@@ -1,7 +1,7 @@
 import type { Agent, AgentStateEvent, AgentStats, Incident, Instance, InvAction, Queue, QueueCounts, ReplayMeta, Roster, Route, Rule, RuleId, Severity, View } from "@/lib/types";
 import type { FeedHandlers } from "@/lib/feed/FeedSource";
 import { DISPOSITIONS, ONCE_PER_SHIFT, canClose, ROUTE_IDS, defaultRules, evaluateAgents, ruleApplies, ruleOf, thrOf } from "./rules";
-import { type EngineHooks, type EngineState, fire as fireRule } from "./escalation";
+import { type EngineHooks, type EngineState, type IncidentCounter, fire as fireRule, incidentCounter } from "./escalation";
 import { scopeLedger } from "./scope";
 
 export interface EngineOptions {
@@ -9,6 +9,8 @@ export interface EngineOptions {
   rules?: Rule[];
   /** Model adherence drift from state time when the feed does not supply adherence. */
   deriveAdh?: boolean;
+  /** Incident numbers shared with other engines (the Genesys orgs' floors). Without it, the engine numbers its own from 1 and a reset starts again. */
+  incidents?: IncidentCounter;
 }
 
 /** A new state episode re-arms every rule except the once-per-shift ones. */
@@ -28,18 +30,19 @@ export type Engine = ReturnType<typeof createEngine>;
 export function createEngine(hooks: EngineHooks = {}, opts: EngineOptions = {}) {
   const S: EngineState = {
     t: 0, mode: "live", replay: null, org: [], agents: [], rules: opts.rules ?? defaultRules(),
-    ledger: [], incidents: [], seq: 0, incSeq: 0, staleFor: 0, agentsLoading: false, quiet: false, queue: null, queues: {}, members: {}, rosterRev: 0, floorFired: {}, rev: 0,
+    ledger: [], incidents: [], seq: 0, staleFor: 0, agentsLoading: false, quiet: false, queue: null, queues: {}, members: {}, rosterRev: 0, floorFired: {}, rev: 0,
   };
   let beat = false;
   let pending: AgentStateEvent[] = [];
   let pendingQueue: Queue | null = null;
   let pendingQueues: Record<string, QueueCounts> | null = null;
   let pendingStats: AgentStats[] = [];
+  let counter = opts.incidents ?? incidentCounter();
 
   const thr = (id: RuleId) => thrOf(S.rules, id);
   const rule = (id: RuleId) => ruleOf(S.rules, id);
   const toast: NonNullable<EngineHooks["toast"]> = e => { if (!S.quiet) hooks.toast?.(e); };
-  const fire = (r: Rule, a: Agent | null, detail?: string) => fireRule(S, { toast, nudge: hooks.nudge }, r, a, detail);
+  const fire = (r: Rule, a: Agent | null, detail?: string) => fireRule(S, { toast, nudge: hooks.nudge }, counter, r, a, detail);
 
   const ingest: FeedHandlers = {
     /** A roster resent mid-shift (the feed reconnected) keeps each known agent's shift counters and strikes. */
@@ -168,9 +171,23 @@ export function createEngine(hooks: EngineHooks = {}, opts: EngineOptions = {}) 
     S, ingest, tick, thr,
     /** Clear the shift (ledger, incidents, strikes) and set the clock. Rule configuration is kept. */
     reset(o: { t: number; mode?: "live" | "replay"; replay?: ReplayMeta | null }) {
-      Object.assign(S, { t: o.t, mode: o.mode ?? "live", replay: o.replay ?? null, org: [], agents: [], ledger: [], incidents: [], seq: 0, incSeq: 0, staleFor: 0, agentsLoading: false, queue: null, queues: {}, members: {}, floorFired: {} });
+      Object.assign(S, { t: o.t, mode: o.mode ?? "live", replay: o.replay ?? null, org: [], agents: [], ledger: [], incidents: [], seq: 0, staleFor: 0, agentsLoading: false, queue: null, queues: {}, members: {}, floorFired: {} });
       S.rev++;
       pending = []; pendingQueue = null; pendingQueues = null; pendingStats = []; beat = false;
+      if (!opts.incidents) counter = incidentCounter();
+    },
+    /**
+     * Midnight on the floor's clock: a new day. Strikes and the day's counters start again at zero
+     * and the clock is set to `t`. Call-outs and incidents carry over, open ones included, until
+     * someone acknowledges or closes them. A breach still running at midnight raises nothing new.
+     */
+    newDay(t: number) {
+      S.t = t;
+      for (const a of S.agents) {
+        a.strikes = {}; a.calls = 0; a.shortCalls = 0; a.transfers = 0; a.fired = {};
+        for (const r of S.rules) if (ruleApplies(r, a)) a.fired[r.id] = true;
+      }
+      S.rev++;
     },
     /** After a quiet warm-up: arm exactly the rules that are in breach right now. */
     rearm() {

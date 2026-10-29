@@ -7,6 +7,12 @@ export interface EngineHooks {
   nudge?: (e: NudgeEvent) => void;
 }
 
+/** Hands out incident numbers. The Genesys orgs' floors share one, so numbers never repeat across orgs. */
+export interface IncidentCounter { next(): number }
+
+/** A counter of its own, from 1. */
+export const incidentCounter = (): IncidentCounter => { let n = 0; return { next: () => ++n }; };
+
 export interface EngineState {
   /** Shift clock, seconds since midnight. */
   t: number;
@@ -20,7 +26,6 @@ export interface EngineState {
   /** Newest first. */
   incidents: Incident[];
   seq: number;
-  incSeq: number;
   /** Seconds since the feed last spoke. 0 while healthy. */
   staleFor: number;
   /** The feed's roster and first states are still loading: agents may be from the saved roster, Offline until heard from. */
@@ -58,21 +63,19 @@ export function stageFor(route: Route, strikes: number): Stage {
   return first;
 }
 
-/** At most one open incident per agent per rule; later strikes raise its instance count. */
-export function openIncident(S: EngineState, agent: Agent, r: Rule, strikes: number): string {
-  const ex = S.incidents.find(i => i.agent === agent.name && i.ruleId === r.id && i.status !== "Closed");
-  if (ex) { ex.instances = strikes; return ex.inc; }
-  const inc = "INC-2026-" + String(++S.incSeq).padStart(4, "0");
+/** Every strike from 3 on opens its own incident: strike 5 on one rule means 3 incidents to investigate. `instances` is the strike that opened it. */
+export function openIncident(S: EngineState, counter: IncidentCounter, agent: Agent, r: Rule, strikes: number): string {
+  const inc = "INC-2026-" + String(counter.next()).padStart(4, "0");
   S.incidents.unshift({ inc, t: S.t, agent: agent.name, team: agent.team, rule: r.name, ruleId: r.id, instances: strikes, status: "Open", disposition: "", closedT: null });
   return inc;
 }
 
 /** Log a call-out, count the strike, climb the ladder and notify. `agent` is null for queue and system rules. */
-export function fire(S: EngineState, hooks: EngineHooks, r: Rule, agent: Agent | null, detail?: string): Instance {
+export function fire(S: EngineState, hooks: EngineHooks, counter: IncidentCounter, r: Rule, agent: Agent | null, detail?: string): Instance {
   let strikes = 0, inc = "";
   if (agent) { agent.strikes[r.id] = (agent.strikes[r.id] ?? 0) + 1; strikes = agent.strikes[r.id]!; }
   const stage = stageFor(r.route, strikes);
-  if (agent && stage === "ops") inc = openIncident(S, agent, r, strikes);
+  if (agent && stage === "ops") inc = openIncident(S, counter, agent, r, strikes);
   const val = detail ?? (agent ? valueOf(r.id, agent) : "");
   const rec: Instance = {
     n: ++S.seq, t: S.t, agent: agent ? agent.name : "Queue", isFloor: !agent, team: agent ? agent.team : "Floor",
