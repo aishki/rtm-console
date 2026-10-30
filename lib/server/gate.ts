@@ -1,4 +1,5 @@
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
+import { env } from "@/lib/env";
 
 // The password wall in front of the whole console. One shared password (RTM_SITE_PASSWORD)
 // unlocks a browser for GATE_MAX_AGE; proxy.ts turns every other request away until then.
@@ -9,7 +10,7 @@ export const GATE_COOKIE = "rtm_gate";
 /** One shift: a browser stays unlocked for 12 hours. */
 export const GATE_MAX_AGE = 12 * 60 * 60;
 
-const sitePassword = (): string => process.env.RTM_SITE_PASSWORD ?? "";
+const sitePassword = (): string => env().RTM_SITE_PASSWORD ?? "";
 
 export const gateConfigured = (): boolean => sitePassword().length > 0;
 

@@ -42,9 +42,9 @@ const LAST_LOGIN_DAYS = 30;
 /** The client a feed with this config uses, for `token`: the same queues, view and API base. */
 export function gencloudClient(config: GencloudConfig, token: string): GencloudClient {
   return new GencloudClient({
-    apiBase: config.apiBase ?? process.env.GENCLOUD_API_BASE ?? DEFAULT_API_BASE,
+    apiBase: config.apiBase ?? DEFAULT_API_BASE,
     token,
-    viewConfigId: config.viewConfigId ?? process.env.RTM_VIEW_CONFIG_ID ?? DEFAULT_VIEW_CONFIG_ID,
+    viewConfigId: config.viewConfigId ?? DEFAULT_VIEW_CONFIG_ID,
     queueNames: config.getQueueNames?.() ?? [],
   });
 }
@@ -79,11 +79,11 @@ export class GencloudFeed implements FeedSource {
   constructor(private readonly config: GencloudConfig = {}) {}
 
   subscribe(handlers: FeedHandlers): () => void {
-    const apiBase = this.config.apiBase ?? process.env.GENCLOUD_API_BASE ?? DEFAULT_API_BASE;
-    const token = this.config.getToken?.() ?? this.config.token ?? process.env.GENESYS_TOKEN;
+    const apiBase = this.config.apiBase ?? DEFAULT_API_BASE;
+    const token = this.config.getToken?.() ?? this.config.token;
 
     if (!token) {
-      console.warn("GencloudFeed: no GENESYS_TOKEN set; feed is silent");
+      console.warn("GencloudFeed: no Genesys token for this org; feed is silent");
       return () => {};
     }
 

@@ -2,6 +2,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { timingSafeEqual } from "node:crypto";
 import path from "node:path";
 import { DEFAULT_ORG, type OrgId, isOrgId } from "@/lib/orgs";
+import { env } from "@/lib/env";
 
 // Each org's Genesys bearer token, as an admin pasted it on /admin/token, and which org the
 // floor watches. Kept on this machine so they outlive a restart; the folder is gitignored.
@@ -10,7 +11,8 @@ import { DEFAULT_ORG, type OrgId, isOrgId } from "@/lib/orgs";
 const DIR = () => path.join(process.cwd(), ".rtm");
 
 /** The env variable that seeds each org's token. */
-export const TOKEN_ENV: Record<OrgId, string> = { commercial: "GENESYS_TOKEN", gbd: "GBD_TOKEN", specialty: "SPECIALTY_TOKEN" };
+type TokenVar = "GENESYS_TOKEN" | "GBD_TOKEN" | "SPECIALTY_TOKEN";
+export const TOKEN_ENV: Record<OrgId, TokenVar> = { commercial: "GENESYS_TOKEN", gbd: "GBD_TOKEN", specialty: "SPECIALTY_TOKEN" };
 
 /** Commercial keeps the file it had before there were several orgs. */
 export const tokenFile = (org: OrgId, dir = DIR()): string => path.join(dir, org === "commercial" ? "genesys-token" : `genesys-token.${org}`);
@@ -22,11 +24,11 @@ function stored(file: string): string | null {
 }
 
 /** The token an org's feed should use: the last one pasted, else its env variable (TOKEN_ENV). */
-export function genesysToken(org: OrgId = DEFAULT_ORG, dir?: string): string | undefined {
+export function genesysToken(org: OrgId = DEFAULT_ORG, dir?: string, seeds: Partial<Record<TokenVar, string>> = env()): string | undefined {
   const file = tokenFile(org, dir);
   if (!dir && !cached.has(file)) cached.set(file, stored(file));
   const token = dir ? stored(file) : cached.get(file);
-  return token ?? (process.env[TOKEN_ENV[org]]?.trim().replace(/^Bearer\s+/i, "") || undefined);
+  return token ?? (seeds[TOKEN_ENV[org]]?.trim().replace(/^Bearer\s+/i, "") || undefined);
 }
 
 export function saveGenesysToken(org: OrgId, token: string, dir?: string): void {
@@ -53,7 +55,7 @@ export function saveActiveOrg(org: OrgId, dir?: string): void {
 }
 
 /** True when `secret` matches the configured admin secret. An unset secret matches nothing. */
-export function validAdminSecret(secret: string, configured = process.env.RTM_ADMIN_SECRET ?? ""): boolean {
+export function validAdminSecret(secret: string, configured = env().RTM_ADMIN_SECRET ?? ""): boolean {
   if (!configured) return false;
   const a = Buffer.from(secret), b = Buffer.from(configured);
   return a.length === b.length && timingSafeEqual(a, b);

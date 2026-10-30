@@ -17,7 +17,7 @@ This README is the developer handoff. It covers what is built, what is stubbed, 
 | Floor simulator | Done, dev and production |
 | **Gencloud/NiceIEX feed adapter** | **Implemented (v1).** Live: agent presence/routing and queue metrics. See [Backend work 1](#1-gencloud-feed-adapter) for env and run instructions. |
 | **SSO (role and span from the session)** | **Not wired.** See [Backend work 2](#2-sso) |
-| **Persistence** | **None, all state is in memory.** See [Backend work 3](#3-persistence) |
+| **Persistence** | **Phase 0 done:** rules survive a restart in PostgreSQL (`PERSISTENCE_MODE=postgres`). The shift, ledger and incidents are still in memory. See [Backend work 3](#3-persistence) |
 | Incident-report form ("Open incident draft") | Stub, shows a toast only |
 | Elevance Sans font | Files not supplied; system UI font renders instead |
 
@@ -35,21 +35,32 @@ npm run dev        # http://localhost:3000
 | `npm run build` / `npm start` | Production build and server |
 | `npm test` | Engine unit tests (Vitest) |
 | `npm run lint` / `npm run typecheck` | ESLint / `tsc --noEmit` |
+| `npm run db:up` | Starts the local PostgreSQL container (Docker, port 5435) |
+| `npm run db:migrate` | Brings the database up to date. Run before every deploy |
+| `npm run db:make -- name` | Creates a new migration file in `lib/db/migrations/` |
+| `npm run db:status` | Lists migrations and which have run |
+| `npm run db:rollback` | Undoes the last migration. Local only: refused for staging and production |
+| `npm run db:types` | Regenerates `lib/db/schema.ts` from a migrated database |
 
 ### Environment
 
+`lib/env.ts` checks every setting when the server starts and stops with one message listing every problem. `.env.example` is the full list; copied as it is, it fails the check on purpose until `APP_ENV` and `PERSISTENCE_MODE` are filled in.
+
 | Variable | Meaning |
 | --- | --- |
+| `APP_ENV` | Required: `development`, `test`, `staging` or `production`. Not `NODE_ENV`. |
+| `PERSISTENCE_MODE` | Required: `postgres`, or `memory` (development and test only; nothing survives a restart). |
+| `DATABASE_URL` or `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD` | The database, for `postgres` mode and the `db:*` scripts. `DATABASE_URL` wins. The local container's values are in `.env.example`. |
+| `DB_SSLMODE`, `DB_CA_CERT` | TLS to the database. `verify-full` by default; `disable` for the local container. `DB_CA_CERT` adds a certificate authority, such as the RDS bundle. |
 | `NEXT_PUBLIC_FEED=sim` | Start on the floor simulator. Set to a non-"sim" value (e.g., `gencloud`) to start on the Gencloud adapter. An admin can switch between the two while the server runs (see "Switching the data source"). |
 | `NEXT_PUBLIC_VIEW_AS=1` | Dev/admin flag for the "View as" role selector. **Without it every API route answers 401**, because no SSO exists yet. Required for Gencloud development. |
 | `GENESYS_TOKEN` | Hand-grabbed supervisor bearer token for **Anthem Commercial** from the browser DevTools Network tab (Authorization header of an api.mypurecloud.com request). Short-lived. Seeds Commercial's first start only: a token pasted on `/admin/token` replaces it (see "Refreshing the Genesys token"). `GBD_TOKEN` and `SPECIALTY_TOKEN` do the same for Anthem GBD and Anthem Specialty. |
-| `RTM_ADMIN_SECRET` | Secret for `/admin/token`. While unset, the page refuses every request. |
+| `RTM_ADMIN_SECRET` | Secret for `/admin/token`, at least 16 characters. While unset, the page refuses every request. |
 | `RTM_SITE_PASSWORD` | Password for the wall in front of the whole console (see "Password wall"). **While unset, nobody can get in.** Quote it in `.env.local`: an unquoted `#` starts a comment. |
 | `GENCLOUD_API_BASE` | Overrides Anthem Commercial's API address (default `https://api.mypurecloud.com`). The other orgs' addresses are in `lib/orgs.ts`. |
 | `RTM_VIEW_CONFIG_ID` | Saved "CSBDProviderData" view ID (default: `9c9f8fd2-acab-4282-9442-ddba152f9c18`, the 90-queue voice-floor view). Only used while no queue map is uploaded: the live feed watches the queue map's queues (see "Queue mapping"). A saved view belongs to the Genesys user who saved it, so other users' tokens get a 404 for it. |
 | `RTM_TIME_ZONE` | The floor's time zone, an IANA name (default: `America/New_York`). Sets the shift clock, the start of "today" for the queue numbers, and snapshot file names, whatever the server's own zone. |
-| `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` | Key pair for desktop alerts over Web Push. Generate with `npx web-push generate-vapid-keys`. Optional: without them, alerts only show while a console tab is open. |
-| `VAPID_SUBJECT` | Contact for the push services, `mailto:` or `https:` (optional). |
+| `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | Desktop alerts over Web Push: the key pair (`npx web-push generate-vapid-keys`) and a `mailto:` or `https:` contact. All three or none. Without them, alerts only show while a console tab is open. |
 
 `.env*` files are gitignored except `.env.example`.
 
@@ -206,6 +217,12 @@ lib/
   client/store.ts                 Zustand store and the EventSource connection
   client/api.ts                   Fetch wrappers for every mutation
   ui/palette.ts                   Status colors and the tab list
+  env.ts                          The only reader of process.env: checks every setting at start-up
+  db/                             Kysely client, connection URL, generated schema, migrations
+  store/                          Store interface: memory and PostgreSQL (rule versions)
+  server/store.ts                 Opens the store at boot and loads the rules
+instrumentation.ts                Runs boot() once before the server takes a request
+tools/db/                         Scripts behind the db:* commands
 components/
   ui/                             Buttons, FilterChip, LogoLockup, DataTable, KpiTile, Toggle, StatusPill
   chrome/                         ConsoleShell, Navbar, ContextBar, ToastStack, NudgePopup, CsvImportDialog
@@ -295,11 +312,10 @@ To wire SSO, replace the body of `readSession()` in `lib/server/session.ts` so i
 
 ### 3. Persistence
 
-All state lives in one object per engine (`EngineState` in `lib/engine/escalation.ts`): rules, ledger, incidents, agents with their strikes. A restart clears the shift and resets rules to defaults.
+All state lives in one object per engine (`EngineState` in `lib/engine/escalation.ts`): rules, ledger, incidents, agents with their strikes. With `PERSISTENCE_MODE=postgres`, rules are loaded from PostgreSQL at start-up and every edit is saved as a new `rule_version`; a restart still clears the shift. The plan for the rest is in `docs/backend-guide.pdf` and `docs/data-architecture.md`.
 
 - Run it as **one long-lived Node process**. Serverless or multi-instance hosting will not work as is: each instance would run its own engine.
 - Every state change goes through a small set of functions, which are the places to add writes: `fire()` and `openIncident()` in `escalation.ts`, and `ack`, `ackAll`, `comment`, `invAction`, `setThr`, `setSev`, `setRoute`, `setOn` in `engine.ts`.
-- Rules are the first thing worth persisting. They are a single shared array created in the registry in `runtime.ts` (`defaultRules()`); load them from storage there.
 - To scale out, keep one engine process and fan the stream out through a broker, or move engine state to a shared store.
 
 ### 4. Smaller items
@@ -408,6 +424,6 @@ The engine is a TypeScript port of the design prototype's `rtm-engine.js`.
 
 ## Tests
 
-`npm test` runs the unit tests. `lib/engine/engine.test.ts` covers strike counting, the 3× rule, capped routes, re-arm logic, feed staleness, scoping, the permission table, acknowledge and comment. `lib/import/floor.test.ts` covers the import validation and runs the downloadable template through the engine end to end.
+`npm test` runs the unit tests. `lib/engine/engine.test.ts` covers strike counting, the 3× rule, capped routes, re-arm logic, feed staleness, scoping, the permission table, acknowledge and comment. `lib/import/floor.test.ts` covers the import validation and runs the downloadable template through the engine end to end. `lib/env.test.ts` covers the settings check. `lib/store/postgres.integration.test.ts` runs the migrations and the PostgreSQL store against a real database; it is skipped unless database settings are given, and refuses any database not named `*_test` (the local container creates `rtm_console_test`).
 
 Tests drive the engine through the same `ingest` handlers a feed uses, one `tick()` per second, so they are also the best reference for how a feed adapter should behave. There are no API route or component tests yet.
