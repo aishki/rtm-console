@@ -11,6 +11,8 @@ export interface EngineOptions {
   deriveAdh?: boolean;
   /** Incident numbers shared with other engines (the Genesys orgs' floors). Without it, the engine numbers its own from 1 and a reset starts again. */
   incidents?: IncidentCounter;
+  /** The year an engine's own incident numbers use. The floor's year unless a test fixes it. */
+  year?: () => number;
 }
 
 /** A new state episode re-arms every rule except the once-per-shift ones. */
@@ -37,7 +39,7 @@ export function createEngine(hooks: EngineHooks = {}, opts: EngineOptions = {}) 
   let pendingQueue: Queue | null = null;
   let pendingQueues: Record<string, QueueCounts> | null = null;
   let pendingStats: AgentStats[] = [];
-  let counter = opts.incidents ?? incidentCounter();
+  let counter = opts.incidents ?? incidentCounter(undefined, opts.year);
 
   const thr = (id: RuleId) => thrOf(S.rules, id);
   const rule = (id: RuleId) => ruleOf(S.rules, id);
@@ -174,7 +176,7 @@ export function createEngine(hooks: EngineHooks = {}, opts: EngineOptions = {}) 
       Object.assign(S, { t: o.t, mode: o.mode ?? "live", replay: o.replay ?? null, org: [], agents: [], ledger: [], incidents: [], seq: 0, staleFor: 0, agentsLoading: false, queue: null, queues: {}, members: {}, floorFired: {} });
       S.rev++;
       pending = []; pendingQueue = null; pendingQueues = null; pendingStats = []; beat = false;
-      if (!opts.incidents) counter = incidentCounter();
+      if (!opts.incidents) counter = incidentCounter(undefined, opts.year);
     },
     /**
      * Midnight on the floor's clock: a new day. Strikes and the day's counters start again at zero
