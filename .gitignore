@@ -51,6 +51,7 @@ next-env.d.ts
 
 # reference material used for the docs design, not ours to publish
 /docs/vrs-admin-manual.pdf
+/docs/admin-manual.*
 
 # real roster (team and agent names) cached for the simulator, never commit
 /.rtm
