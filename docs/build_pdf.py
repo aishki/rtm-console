@@ -1,6 +1,7 @@
-"""Build docs/RTM_Console_Simulation_Guide.pdf from docs/src/simulation-guide.html.
+"""Build a guide's PDF from its HTML source in docs/src.
 
-    python docs/build_pdf.py
+    python docs/build_pdf.py              # the Simulation Guide
+    python docs/build_pdf.py backend      # the Backend Implementation Guide
 
 Needs Chrome or Edge (set CHROME to its path if it is not found) and `pip install pypdf`.
 The page is printed twice: once to find out which page each section lands on, and again with
@@ -18,8 +19,10 @@ from pathlib import Path
 from pypdf import PdfReader
 
 DOCS = Path(__file__).resolve().parent
-SOURCE = DOCS / "src" / "simulation-guide.html"
-OUTPUT = DOCS / "RTM_Console_Simulation_Guide.pdf"
+GUIDES = {
+    "simulation": ("simulation-guide.html", "RTM_Console_Simulation_Guide.pdf"),
+    "backend": ("backend-guide.html", "RTM_Console_Backend_Guide.pdf"),
+}
 
 BROWSERS = [
     os.environ.get("CHROME", ""),
@@ -67,7 +70,7 @@ def print_pdf(html: str, out: Path) -> None:
 def section_pages(pdf: Path, html: str) -> dict[str, int]:
     """Page number of every numbered section heading, keyed by its number."""
     titles = {n: re.sub(r"<[^>]+>|&\w+;", "", t).strip()
-              for n, t in re.findall(r'<h1 class="sec" id="s(\d+)"[^>]*><span class="n">\d+</span>(.*?)</h1>', html)}
+              for n, t in re.findall(r'<h1 class="sec[^"]*" id="s(\d+)"[^>]*><span class="n">\d+</span>(.*?)</h1>', html)}
     flat = lambda s: re.sub(r"\s+", "", s)
     pages = [flat(p.extract_text() or "") for p in PdfReader(str(pdf)).pages]
     found = {}
@@ -81,6 +84,11 @@ def section_pages(pdf: Path, html: str) -> dict[str, int]:
 
 
 def main() -> None:
+    name = sys.argv[1] if len(sys.argv) > 1 else "simulation"
+    if name not in GUIDES:
+        sys.exit(f"Unknown guide {name!r}. Choose one of: {', '.join(GUIDES)}.")
+    source, output = GUIDES[name]
+    SOURCE, OUTPUT = DOCS / "src" / source, DOCS / output
     html = SOURCE.read_text(encoding="utf-8")
     fill = lambda pages: re.sub(r"\{\{p(\d+)\}\}", lambda m: str(pages.get(m.group(1), "")), html)
     print_pdf(fill({}), OUTPUT)

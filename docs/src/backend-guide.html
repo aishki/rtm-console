@@ -1,0 +1,823 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>RTM Console - Backend Implementation Guide</title>
+<meta name="author" content="Arielle Jimera (BITS Automation Team)">
+<meta name="subject" content="PostgreSQL on AWS, Kysely migrations and persistence for the RTM Console">
+<style>
+  :root {
+    --purple: #5009B5; --deep: #2E1A5E; --ink: #231E33; --strong: #303044; --muted: #6B6B7E; --subtle: #8A8A9A;
+    --tint: #F4EFFC; --tint-2: #EDE6FA; --line: #E4DEEF; --row: #ECECF1;
+    --red: #C8102E; --red-bg: #FDECEF; --amber: #B97D00; --amber-bg: #FFF6E0; --amber-line: #E6A700;
+    --green: #2F6E29; --green-bg: #E5F2E3; --turq: #00BBBA; --turq-text: #028283; --turq-bg: #D9F5F5;
+  }
+  @page {
+    size: A4; margin: 19mm 17mm 18mm;
+    @top-left { content: "RTM Console \00B7  Backend Implementation Guide"; font: 600 7.6pt "Segoe UI", Arial, sans-serif; color: #5009B5; vertical-align: bottom; padding-bottom: 5mm; }
+    @bottom-left { content: "Backend Implementation Guide"; font: 7.6pt "Segoe UI", Arial, sans-serif; color: #9A9AA8; vertical-align: top; padding-top: 6mm; }
+    @bottom-right { content: "Page " counter(page); font: 7.6pt "Segoe UI", Arial, sans-serif; color: #9A9AA8; vertical-align: top; padding-top: 6mm; }
+  }
+  @page cover { margin: 17mm 17mm 16mm; @top-left { content: none; } @bottom-left { content: none; } @bottom-right { content: none; } }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: #fff; }
+  body { font: 9.6pt/1.55 "Segoe UI", Arial, sans-serif; color: var(--ink); -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  b, strong { font-weight: 700; }
+  a { color: var(--purple); font-weight: 600; text-decoration: underline; text-underline-offset: 2px; }
+  p { margin: 0 0 7pt; }
+  ul, ol { margin: 0 0 8pt; padding-left: 15pt; }
+  li { margin-bottom: 3pt; }
+
+  /* ---------- cover ---------- */
+  .cover { page: cover; break-after: page; }
+  .hero { background: linear-gradient(135deg, #4A0CA8 0%, #33107A 45%, #26094F 100%); border-radius: 16pt; padding: 34pt 32pt 30pt; color: #fff; }
+  .eyebrow { font: 600 6.6pt "Consolas", monospace; letter-spacing: 0.26em; text-transform: uppercase; color: #BCA6E8; }
+  .hero h1 { margin: 16pt 0 0; font-size: 27pt; line-height: 1.12; font-weight: 600; letter-spacing: -0.01em; }
+  .hero h1 span { display: block; color: #C7A9FF; }
+  .hero .desc { margin: 12pt 0 0; max-width: 380pt; font-size: 11.2pt; line-height: 1.45; color: #E3D8F8; }
+  .hero .tag { margin: 14pt 0 0; font-size: 9.6pt; font-weight: 600; color: #C7A9FF; }
+  .meta { display: grid; grid-template-columns: 1.2fr 1.5fr 1.3fr 1fr; gap: 14pt; margin-top: 24pt; padding-top: 14pt; border-top: 1px solid rgba(255,255,255,0.22); }
+  .meta div span { display: block; font: 600 5.8pt "Consolas", monospace; letter-spacing: 0.24em; text-transform: uppercase; color: #BCA6E8; margin-bottom: 4pt; }
+  .meta div b { font-size: 9.2pt; font-weight: 600; line-height: 1.35; display: block; }
+  .prepared { margin: 22pt 0 0; padding-left: 12pt; border-left: 3pt solid var(--purple); }
+  .prepared span { font: 600 5.8pt "Consolas", monospace; letter-spacing: 0.24em; text-transform: uppercase; color: var(--subtle); }
+  .prepared b { display: block; margin-top: 5pt; font-size: 10.6pt; color: var(--deep); }
+  .prepared i { display: block; font-style: normal; font-size: 8.6pt; color: var(--muted); }
+  .contents-title { margin: 24pt 0 8pt; font-size: 11.5pt; font-weight: 700; color: var(--deep); }
+  .toc { columns: 2; column-gap: 26pt; }
+  .toc a { display: flex; gap: 10pt; padding: 6.2pt 0; border-bottom: 1px dotted #C9C4D6; font-size: 8.6pt; font-weight: 400; color: var(--strong); text-decoration: none; break-inside: avoid; }
+  .toc a .n { width: 12pt; color: var(--muted); }
+  .toc a .t { flex: 1; }
+  .toc a .pg { font-weight: 700; color: var(--purple); }
+
+  /* ---------- body ---------- */
+  h1.sec { margin: 22pt 0 10pt; padding-bottom: 6pt; border-bottom: 1.6pt solid var(--purple); font-size: 17.5pt; line-height: 1.2; font-weight: 600; color: var(--deep); break-after: avoid; }
+  h1.sec .n { color: var(--purple); margin-right: 4pt; }
+  h1.sec.newpage { break-before: page; margin-top: 0; }
+  h2 { margin: 15pt 0 6pt; font-size: 11.4pt; font-weight: 700; color: var(--deep); break-after: avoid; }
+  h3 { margin: 12pt 0 4pt; font-size: 9.8pt; font-weight: 700; color: var(--deep); break-after: avoid; }
+  .lead { font-size: 10.4pt; line-height: 1.55; color: var(--muted); margin-bottom: 10pt; }
+  .small { font-size: 8.4pt; color: var(--muted); }
+  .ui { display: inline-block; padding: 0 5pt; margin: 0 1pt; border-radius: 3pt; background: var(--tint-2); color: var(--purple); font-size: 8.2pt; font-weight: 600; line-height: 1.6; white-space: nowrap; }
+  code { font: 8.4pt "Consolas", monospace; background: #F3F3F6; border-radius: 3pt; padding: 1pt 4pt; color: var(--strong); }
+  pre { font: 7.9pt/1.5 "Consolas", monospace; background: #F7F5FB; border: 1px solid var(--line); border-left: 3pt solid var(--purple); border-radius: 6pt; padding: 8pt 11pt; margin: 4pt 0 10pt; white-space: pre-wrap; color: var(--strong); break-inside: avoid; }
+  pre .c { color: var(--subtle); }
+  .badge { display: inline-block; padding: 0 5pt; border-radius: 3pt; font-size: 6.6pt; font-weight: 700; letter-spacing: 0.08em; line-height: 1.75; vertical-align: 1pt; color: #fff; background: var(--purple); margin-left: 3pt; white-space: nowrap; }
+  .badge.chg { background: var(--turq-text); }
+  .badge.fix { background: var(--green); }
+  .badge.wait { background: var(--amber); }
+  .pill { display: inline-block; padding: 0 6pt; border-radius: 20pt; font-size: 7.4pt; font-weight: 700; line-height: 1.8; white-space: nowrap; }
+  .pill.go { background: var(--green-bg); color: var(--green); }
+  .pill.wait { background: #FDF3D7; color: #7A5300; }
+  .pill.no { background: var(--red-bg); color: var(--red); }
+  .pill.info { background: var(--tint-2); color: var(--purple); }
+
+  ol.steps { list-style: none; padding: 0; counter-reset: s; }
+  ol.steps > li { counter-increment: s; position: relative; padding-left: 21pt; margin-bottom: 6pt; break-inside: avoid; }
+  ol.steps > li::before { content: counter(s); position: absolute; left: 0; top: 1pt; width: 13.5pt; height: 13.5pt; border-radius: 50%; background: var(--purple); color: #fff; font-size: 7.4pt; font-weight: 700; line-height: 13.5pt; text-align: center; }
+  ul.check { list-style: none; padding: 0; }
+  ul.check li { padding-left: 17pt; position: relative; margin-bottom: 5pt; break-inside: avoid; }
+  ul.check li::before { content: ""; position: absolute; left: 0; top: 2.5pt; width: 9pt; height: 9pt; border: 1.3pt solid var(--purple); border-radius: 2.5pt; }
+
+  table { width: 100%; border-collapse: collapse; margin: 4pt 0 11pt; font-size: 8.7pt; line-height: 1.5; }
+  thead { display: table-header-group; }
+  tr { break-inside: avoid; }
+  th { text-align: left; padding: 6.5pt 9pt; background: var(--tint-2); color: var(--deep); font-weight: 700; font-size: 8.4pt; }
+  td { padding: 6pt 9pt; border-bottom: 1px solid var(--row); vertical-align: top; color: var(--strong); }
+  td:first-child { font-weight: 700; color: var(--ink); }
+  table.plain td:first-child { font-weight: 400; }
+  .w22 td:first-child { width: 22%; } .w28 td:first-child { width: 28%; } .w34 td:first-child { width: 34%; }
+  td code { font-size: 7.9pt; }
+
+  .note, .warn, .imp, .ok { border-radius: 8pt; padding: 10pt 14pt 4pt; margin: 8pt 0 12pt; break-inside: avoid; }
+  .note > b:first-child, .warn > b:first-child, .imp > b:first-child, .ok > b:first-child { display: block; margin-bottom: 4pt; font-size: 7.2pt; letter-spacing: 0.11em; text-transform: uppercase; }
+  .note { background: var(--tint); border-left: 3pt solid var(--purple); } .note > b:first-child { color: var(--purple); }
+  .warn { background: var(--amber-bg); border-left: 3pt solid var(--amber-line); } .warn > b:first-child { color: var(--amber); }
+  .imp { background: var(--red-bg); border: 1.2pt solid var(--red); padding: 12pt 15pt 6pt; } .imp > b:first-child { color: var(--red); font-size: 8pt; }
+  .ok { background: var(--green-bg); border-left: 3pt solid var(--green); } .ok > b:first-child { color: var(--green); }
+
+  figure { margin: 8pt 0 12pt; break-inside: avoid; }
+  figcaption { margin-top: 6pt; text-align: center; font-size: 7.6pt; font-style: italic; color: var(--subtle); }
+  .flow { display: flex; align-items: stretch; justify-content: center; gap: 5pt; }
+  .flow .box { flex: 1; border: 1.2pt solid #CDB3FD; border-radius: 7pt; padding: 7pt 8pt; text-align: center; background: #FBF9FE; }
+  .flow .box b { display: block; font-size: 9pt; color: var(--purple); }
+  .flow .box span { display: block; margin-top: 3pt; font-size: 7.4pt; line-height: 1.35; color: var(--muted); }
+  .flow .box.hl { border-color: var(--purple); background: var(--tint-2); }
+  .flow .box.db { border-color: var(--turq-text); background: var(--turq-bg); } .flow .box.db b { color: var(--turq-text); }
+  .flow .box.stop { border-color: var(--red); background: var(--red-bg); } .flow .box.stop b { color: var(--red); }
+  .flow .arr { align-self: center; color: var(--purple); font-size: 11pt; font-weight: 700; }
+
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 14pt; }
+  .two > div { break-inside: avoid; }
+  .three { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10pt; }
+  .card { border: 1px solid var(--line); border-radius: 9pt; padding: 10pt 11pt; break-inside: avoid; }
+  .card .t { font: 600 6.6pt "Consolas", monospace; letter-spacing: 0.16em; text-transform: uppercase; color: var(--purple); margin-bottom: 4pt; }
+  .card p { margin: 0; font-size: 8.4pt; line-height: 1.45; }
+  .phase { border: 1px solid var(--line); border-top: 3pt solid var(--purple); border-radius: 8pt; padding: 9pt 11pt; break-inside: avoid; }
+  .phase.wait { border-top-color: var(--amber-line); }
+  .phase h3 { margin-top: 0; }
+  .phase p { font-size: 8.4pt; }
+  .faq dt { font-weight: 700; color: var(--deep); margin-top: 9pt; break-after: avoid; }
+  .faq dd { margin: 2pt 0 0; }
+</style>
+</head>
+<body>
+
+<!-- ============================ COVER ============================ -->
+<section class="cover">
+  <div class="hero">
+    <div class="eyebrow">Carelon Global Solutions &nbsp;&middot;&nbsp; BITS</div>
+    <h1>RTM Console <span>Backend Implementation Guide</span></h1>
+    <p class="desc">The changes we will make to give the console a database: PostgreSQL on AWS, migrations with Kysely run by a single <b>db:migrate</b> command, a validated configuration, and how the rules engine saves and recovers its work.</p>
+    <p class="tag">Real-Time Monitoring &amp; Escalation</p>
+    <div class="meta">
+      <div><span>For</span><b>Backend engineers &middot; BITS</b></div>
+      <div><span>Covers</span><b>Database, migrations, configuration, deployment</b></div>
+      <div><span>Builds on</span><b>PostgreSQL Schema (12 Oct)</b></div>
+      <div><span>Edition</span><b>27 October 2026</b></div>
+    </div>
+  </div>
+
+  <div class="prepared">
+    <span>Prepared by</span>
+    <b>Arielle Jimera</b>
+    <i>UI/UX Designer / Developer &middot; BITS Automation Team</i>
+  </div>
+
+  <div class="contents-title">Contents</div>
+  <nav class="toc">
+    <a href="#s1"><span class="n">1</span><span class="t">Before we start</span><span class="pg">{{p1}}</span></a>
+    <a href="#s2"><span class="n">2</span><span class="t">What changes, at a glance</span><span class="pg">{{p2}}</span></a>
+    <a href="#s3"><span class="n">3</span><span class="t">What gets saved, and when</span><span class="pg">{{p3}}</span></a>
+    <a href="#s4"><span class="n">4</span><span class="t">Hosting on AWS</span><span class="pg">{{p4}}</span></a>
+    <a href="#s5"><span class="n">5</span><span class="t">Configuration: one validated environment</span><span class="pg">{{p5}}</span></a>
+    <a href="#s6"><span class="n">6</span><span class="t">Connecting to PostgreSQL</span><span class="pg">{{p6}}</span></a>
+    <a href="#s7"><span class="n">7</span><span class="t">Migrations with Kysely</span><span class="pg">{{p7}}</span></a>
+    <a href="#s8"><span class="n">8</span><span class="t">Running db:migrate before a deployment</span><span class="pg">{{p8}}</span></a>
+    <a href="#s9"><span class="n">9</span><span class="t">Changes to the proposed schema</span><span class="pg">{{p9}}</span></a>
+    <a href="#s10"><span class="n">10</span><span class="t">How the engine saves and recovers</span><span class="pg">{{p10}}</span></a>
+    <a href="#s11"><span class="n">11</span><span class="t">Local development and tests</span><span class="pg">{{p11}}</span></a>
+    <a href="#s12"><span class="n">12</span><span class="t">Delivery plan and acceptance checks</span><span class="pg">{{p12}}</span></a>
+    <a href="#s13"><span class="n">13</span><span class="t">Frequently asked questions</span><span class="pg">{{p13}}</span></a>
+    <a href="#s14"><span class="n">14</span><span class="t">Quick reference card</span><span class="pg">{{p14}}</span></a>
+  </nav>
+</section>
+
+<!-- ============================ 1 ============================ -->
+<h1 class="sec newpage" id="s1"><span class="n">1</span>Before we start</h1>
+<p class="lead">Today the console saves nothing: rules, call-outs, strikes and incidents are lost every time it restarts. This guide adds a database. The first part of the work can start now. The questions that shape the tables are all answered below.</p>
+
+<h2>Can start now</h2>
+<ul class="check">
+  <li>Check all settings when the app starts, and stop with a clear message if one is missing (Section 5).</li>
+  <li>Set up the database and the <code>npm run db:migrate</code> command (Sections 4, 7 and 8).</li>
+  <li>Save the rules, so rule changes survive a restart (Section 3).</li>
+</ul>
+
+<h2>Questions</h2>
+<table class="w22">
+  <thead><tr><th>Question</th><th>Details</th><th>Who answers</th><th>Needed by</th></tr></thead>
+  <tbody>
+    <tr><td><b>1. What is a shift, and when do strikes start again at zero?</b><br><span class="small">Decision 7</span></td><td><span class="pill go">Answered</span> A shift is one day on US Eastern time, midnight to midnight. Strikes start again at zero at Eastern midnight. The floor works within one Eastern day, so no shift crosses midnight; the overlap only appeared when counted in Philippine time.</td><td>Floor lead</td><td>Phase 2</td></tr>
+    <tr><td><b>2. When is an incident opened?</b></td><td><span class="pill go">Answered</span> On every strike from 3 on. Each one opens its own incident to investigate, so an agent who reaches strike 5 on the same rule in a day has 3 incidents. Incidents never merge, and one left open from an earlier day is not touched.</td><td>Floor lead</td><td>Phase 2</td></tr>
+    <tr><td><b>3. How long do we keep raw Genesys events?</b><br><span class="small">Decisions 8 and 9</span></td><td><span class="pill go">Answered</span> One day. Raw updates from Genesys ("went on break", "took a call") are saved in <code>source_event_stream</code> so the day's KPIs survive a restart. At midnight Eastern the table is emptied and the KPIs start again at zero, like strikes. Call-outs and incidents are kept separately and are not affected.</td><td>Team lead</td><td>Phase 3</td></tr>
+  </tbody>
+</table>
+
+<div class="note">
+  <b>Also needed: IDs instead of names</b>
+  <p>The console links agents and teams by name, so two people with the same name, or a renamed team, would mix up their records. Before people are saved (Phase 1), the console switches to Genesys IDs, which never change. This is coding work we already know about (backlog item 4), not a question.</p>
+</div>
+
+<h2>Setup checklist</h2>
+<ul class="check">
+  <li><b>Confirm the app's server</b>: most likely the existing EC2 instance (Section 4).</li>
+  <li><b>Create the database and its two logins</b> on <code>van-reservation-prod</code>, once, in pgAdmin (Section 4).</li>
+  <li><b>Note the PostgreSQL version</b> (step 1 of the pgAdmin steps), so local development uses the same one (Section 11).</li>
+  <li><b>Write the deploy script</b> that runs <code>db:migrate</code> before restarting the app (Section 8).</li>
+</ul>
+
+<!-- ============================ 2 ============================ -->
+<h1 class="sec" id="s2"><span class="n">2</span>What changes, at a glance</h1>
+<p class="lead">Every change in this guide, in one table. New pieces are marked <span class="badge">NEW</span>, changes to existing code <span class="badge chg">CHANGE</span>, corrections to the proposed schema <span class="badge fix">FIX</span>, and pieces that wait on a decision <span class="badge wait">WAITS</span>.</p>
+
+<table class="w28">
+  <thead><tr><th>Change</th><th>What it means</th></tr></thead>
+  <tbody>
+    <tr><td>Typed environment <span class="badge">NEW</span></td><td>One module, <code>lib/env.ts</code>, validates every setting with Zod and is the only place that reads <code>process.env</code>. A missing or invalid setting stops the server at start-up with one message listing every problem (Section 5).</td></tr>
+    <tr><td>Validation at boot <span class="badge">NEW</span></td><td><code>instrumentation.ts</code> parses the environment in its <code>register()</code> hook, which Next.js runs once before the server accepts requests.</td></tr>
+    <tr><td>Database URL module <span class="badge">NEW</span></td><td><code>lib/db/url.ts</code> builds the connection string: an explicit <code>DATABASE_URL</code> wins, otherwise it is composed from <code>DB_HOST</code>, <code>DB_PORT</code>, <code>DB_NAME</code>, <code>DB_USER</code> and <code>DB_PASSWORD</code> (Section 6).</td></tr>
+    <tr><td>Kysely and <code>db:migrate</code> <span class="badge">NEW</span></td><td>Kysely is the type-safe query builder; <code>kysely-ctl</code> runs the migrations. <code>npm run db:migrate</code> brings any database up to date (Sections 7 and 8).</td></tr>
+    <tr><td>Reference data in migrations <span class="badge">NEW</span></td><td>The 4 routes, the 14 default rules, the status mapping and the Genesys regions are written by migrations, so a freshly migrated database is ready to use with no separate seed step.</td></tr>
+    <tr><td>Storage layer <span class="badge">NEW</span></td><td>A <code>Store</code> interface with two implementations: in memory (development, tests, replays) and PostgreSQL. <code>PERSISTENCE_MODE</code> picks one; memory is refused outside development and test (Section 10).</td></tr>
+    <tr><td>Rules survive a restart <span class="badge chg">CHANGE</span></td><td><code>registry.rules</code> in <code>lib/server/runtime.ts</code> is loaded from the database instead of <code>defaultRules()</code>, and every rule edit writes a new <code>rule_version</code>.</td></tr>
+    <tr><td>Write-behind queue <span class="badge chg">CHANGE</span></td><td>The engine stays in charge, in memory. What it records is queued and written to PostgreSQL in batches, so the one-second tick never waits on the database (Section 10).</td></tr>
+    <tr><td>Shared RDS instance <span class="badge">NEW</span></td><td>A new database, <code>rtm_console</code>, on the existing <code>van-reservation-prod</code> instance: no added cost, with its own roles and capped connections so it cannot touch or slow down Van Reservation (Section 4).</td></tr>
+    <tr><td>Local PostgreSQL <span class="badge">NEW</span></td><td><code>docker-compose.yml</code> runs a pinned PostgreSQL on port 5433, with the same names as <code>.env.example</code> (Section 11).</td></tr>
+    <tr><td>Partitions never missing <span class="badge fix">FIX</span></td><td><code>notification_log</code>, partitioned by month, gets a default partition and the next three months, so an insert can never fail for want of a partition (Section 9).</td></tr>
+    <tr><td>Fewer writes for strike state <span class="badge fix">FIX</span></td><td><code>agent_rule_state</code> stores strikes only, not the <code>fired</code> flag that flips at every status change (Section 9).</td></tr>
+    <tr><td>Live floor only <span class="badge fix">FIX</span></td><td>Only the Gencloud floor is saved. CSV replays stay in memory, and the simulator is saved only when asked for, so simulated call-outs never mix with real ones in reports (Section 9).</td></tr>
+    <tr><td>Call-outs, incidents, strikes <span class="badge wait">WAITS</span></td><td>Phase 2: both questions are answered (Section 1); waits on real IDs and the Phase 1 tables (Section 12).</td></tr>
+    <tr><td>Raw event log <span class="badge">NEW</span></td><td>Phase 3: holds today's Genesys events only, so the KPIs survive a restart. Emptied at midnight Eastern (Section 9).</td></tr>
+  </tbody>
+</table>
+
+<!-- ============================ 3 ============================ -->
+<h1 class="sec newpage" id="s3"><span class="n">3</span>What gets saved, and when</h1>
+<p class="lead">The console keeps working the way it does today: it checks the floor every second and updates the screen straight away. The database is its record and its memory across restarts. Every time something happens on the floor or someone acts in the console, a record is also saved.</p>
+
+<h2>How a record is saved</h2>
+<ol class="steps">
+  <li><b>The console acts first.</b> The call-out, acknowledgement or rule change shows on screen at once, as today.</li>
+  <li><b>A record joins a queue.</b> Records wait in the order they happened.</li>
+  <li><b>About once a second, the queue is written in one go.</b> Either the whole batch is saved or none of it is; a failed write is tried again with the same records in the same order. If the database is down, the floor keeps running and records wait in the queue (Section 10).</li>
+</ol>
+<p>Most events <b>add a new row</b> (a call-out, a rule version, an audit entry). Actions on something that already exists, such as acknowledging a call-out or closing an incident, <b>update its row</b>, so it always shows its latest state. Nothing is deleted.</p>
+
+<h2>Scenarios</h2>
+<table class="w28">
+  <thead><tr><th>When</th><th>What is saved</th><th>Table</th><th>From</th></tr></thead>
+  <tbody>
+    <tr><td><b>The database is first set up</b> (<code>db:migrate</code>)</td><td>New rows: the 14 default rules, the 4 alert routes and their steps, the Genesys status names and regions. Once, so a new database is ready to use.</td><td><code>rules_master</code>, <code>rule_version</code>, <code>notification_route</code>, <code>notification_route_step</code>, <code>status_mapping</code>, <code>genesys_region</code></td><td><span class="pill go">Phase 0</span></td></tr>
+    <tr><td><b>An admin changes a rule</b>: threshold, severity, route, or on/off</td><td>A new version of the rule, with who changed it and when. The rule then points at that version. Older versions are kept, so every call-out shows the rule as it was when it fired. Quick edits in a row become one version.</td><td><code>rule_version</code>, <code>rules_master</code></td><td><span class="pill go">Phase 0</span></td></tr>
+    <tr><td><b>The app starts</b></td><td>Nothing is written. It reads the rules and, from Phase 2, today's shift, strike counts, open call-outs and open incidents, so it carries on where it stopped.</td><td>(reads only)</td><td><span class="pill go">Phase 0</span></td></tr>
+    <tr><td><b>Agents, teams and queues come in from Genesys</b></td><td>New rows for new people, teams and queues; updated rows when a name, team or queue membership changes.</td><td><code>person</code>, <code>team</code>, <code>queue</code>, <code>queue_member</code></td><td><span class="pill wait">Phase 1</span></td></tr>
+    <tr><td><b>Someone turns on desktop alerts</b></td><td>A new row for that browser, removed from use when they turn alerts off.</td><td><code>push_subscription</code></td><td><span class="pill wait">Phase 1</span></td></tr>
+    <tr><td><b>A new day starts</b> (midnight, US Eastern)</td><td>A new shift row for that Eastern date. Every call-out and incident that day links to it, and strike counts start again at zero. From Phase 3, the raw events table is emptied, so the KPIs start again at zero. That is the only data removed: open call-outs and incidents carry over and stay on screen until someone acknowledges or closes them.</td><td><code>shift</code></td><td><span class="pill wait">Phase 2</span></td></tr>
+    <tr><td><b>An agent breaks a rule</b> (strikes 1 and 2)</td><td>A new call-out row: agent, rule and its version, the value that broke it, the strike number and who it went to (team lead, then lead). The agent's strike count for that rule is updated.</td><td><code>monitoring_instance</code>, <code>agent_rule_state</code></td><td><span class="pill wait">Phase 2</span></td></tr>
+    <tr><td><b>Third strike</b></td><td>As above, plus a new incident with the next incident number (for example INC-2026-0042), saved together with the call-out so neither exists without the other.</td><td>+ <code>incident_log</code>, <code>incident_counter</code></td><td><span class="pill wait">Phase 2</span></td></tr>
+    <tr><td><b>Fourth strike and later</b></td><td>The same as the third strike: a new call-out row and a <b>new</b> incident with the next number, saved together. Strike 5 means 3 incidents. Earlier incidents are not changed.</td><td><code>monitoring_instance</code>, <code>incident_log</code>, <code>incident_counter</code></td><td><span class="pill wait">Phase 2</span></td></tr>
+    <tr><td><b>A floor-wide call-out</b> (queue numbers, no single agent)</td><td>A new call-out row with no agent and no strike.</td><td><code>monitoring_instance</code></td><td><span class="pill wait">Phase 2</span></td></tr>
+    <tr><td><b>An alert is sent</b> (desktop or in the console)</td><td>A new row: who it went to, when, and whether it was delivered.</td><td><code>notification_log</code></td><td><span class="pill wait">Phase 2</span></td></tr>
+    <tr><td><b>A team lead acknowledges a call-out</b></td><td>The call-out row is updated: acknowledged, and when.</td><td><code>monitoring_instance</code></td><td><span class="pill wait">Phase 2</span></td></tr>
+    <tr><td><b>Acknowledge all</b></td><td>Each open call-out in view is updated as above, plus one audit entry for the bulk action.</td><td><code>monitoring_instance</code>, <code>audit_event</code></td><td><span class="pill wait">Phase 2</span></td></tr>
+    <tr><td><b>A reason is added</b> to a call-out</td><td>The call-out row is updated with the reason (and acknowledged, if sent from the nudge).</td><td><code>monitoring_instance</code></td><td><span class="pill wait">Phase 2</span></td></tr>
+    <tr><td><b>An incident moves</b>: Open, Investigating, Closed</td><td>The incident row is updated with its status, outcome and closing time, plus an audit entry for each move.</td><td><code>incident_log</code>, <code>audit_event</code></td><td><span class="pill wait">Phase 2</span></td></tr>
+    <tr><td><b>Every raw Genesys update</b></td><td>New rows, many per write, about once a second. The table only ever holds the current Eastern day; on start-up the console rebuilds the day's KPIs from it.</td><td><code>source_event_stream</code></td><td><span class="pill wait">Phase 3</span></td></tr>
+  </tbody>
+</table>
+
+<div class="note">
+  <b>Not saved</b>
+  <p>CSV replays and simulator runs stay in memory, so practice data never mixes with real call-outs. Live timers (time in state, hold time) are not saved either: Genesys sends them again when the console reconnects. The Genesys token is a secret and never goes in a table.</p>
+</div>
+
+<h2>Example: one agent's afternoon</h2>
+<p>An agent goes over the hold-time limit several times. This is what the database holds after each step.</p>
+<table class="w22">
+  <thead><tr><th>Time</th><th>What happens</th><th>What is saved</th></tr></thead>
+  <tbody>
+    <tr><td>14:05</td><td>Over the limit: strike 1, call-out to the team lead.</td><td>Call-out #1 added (strike 1, to team lead, open). Strike count set to 1.</td></tr>
+    <tr><td>14:07</td><td>The team lead acknowledges and adds a reason.</td><td>Call-out #1 updated: acknowledged at 14:07, with the reason.</td></tr>
+    <tr><td>15:20</td><td>Over the limit again: strike 2, to the lead.</td><td>Call-out #2 added (strike 2, to lead). Strike count set to 2.</td></tr>
+    <tr><td>16:10</td><td>Strike 3: an incident is opened and the manager is notified.</td><td>Call-out #3 added, strike count set to 3, incident INC-2026-0042 added (Open), all in one write. Alert to the manager logged.</td></tr>
+    <tr><td>16:30</td><td>Operations starts investigating.</td><td>INC-2026-0042 updated to Investigating; audit entry added.</td></tr>
+    <tr><td>17:00</td><td>Operations closes it as coached.</td><td>INC-2026-0042 updated to Closed, outcome "Coached", closed at 17:00; audit entry added.</td></tr>
+    <tr><td>17:05</td><td>The console restarts for an update.</td><td>Nothing lost. On start it reads strike count 3 and the closed incident, and carries on.</td></tr>
+  </tbody>
+</table>
+
+<h2>How it fits together</h2>
+
+<figure>
+  <div class="flow">
+    <div class="box"><b>Genesys Cloud</b><span>presence, routing, call events, queue numbers</span></div>
+    <div class="arr">&rarr;</div>
+    <div class="box"><b>Feed adapter</b><span>GencloudFeed</span></div>
+    <div class="arr">&rarr;</div>
+    <div class="box hl"><b>Rules engine</b><span>in memory, ticks every second</span></div>
+    <div class="arr">&rarr;</div>
+    <div class="box"><b>Write-behind queue</b><span>ordered, flushed in batches</span></div>
+    <div class="arr">&rarr;</div>
+    <div class="box db"><b>PostgreSQL</b><span>rtm_console on van-reservation-prod</span></div>
+  </div>
+  <figcaption>While running, the engine writes forward. At start-up the arrow reverses: the engine loads rules, strikes, open call-outs and incidents from PostgreSQL.</figcaption>
+</figure>
+
+<h2>Three rules for the design</h2>
+<table class="w28">
+  <thead><tr><th>Rule</th><th>Why</th></tr></thead>
+  <tbody>
+    <tr><td>The engine never waits on the database</td><td>A slow query or a failover would freeze every timer on the floor. Writes go into a queue and are flushed together, about once a second.</td></tr>
+    <tr><td>One engine process</td><td>The engine's state is in memory, so two copies behind a load balancer would disagree. The console runs as <b>one</b> long-lived task. With one writer, two strikes can never be numbered at the same time; a unique key on the incident's call-out stays as a safety net.</td></tr>
+    <tr><td>The database enforces the business rules</td><td>One incident per strike from 3 on, call-outs pointing at real rules and people, and the version of a rule that fired, are all checked by keys and indexes, not by our code.</td></tr>
+  </tbody>
+</table>
+
+<h2>For developers: where the engine writes today</h2>
+<p>These are the functions behind the scenarios above. Each one will hand a record to the store as well as changing memory.</p>
+<table class="w34 plain">
+  <thead><tr><th>Code</th><th>Becomes</th></tr></thead>
+  <tbody>
+    <tr><td><code>fire()</code>, <code>lib/engine/escalation.ts</code></td><td>A <code>monitoring_instance</code> row and a strike in <code>agent_rule_state</code></td></tr>
+    <tr><td><code>openIncident()</code>, same file</td><td>An <code>incident_log</code> row numbered from <code>incident_counter</code>, in the same transaction as the call-out</td></tr>
+    <tr><td><code>ack</code>, <code>ackAll</code>, <code>comment</code>, <code>lib/engine/engine.ts</code></td><td>Updates to <code>monitoring_instance</code>; <code>ackAll</code> also writes an <code>audit_event</code></td></tr>
+    <tr><td><code>invAction</code></td><td>An <code>incident_log</code> update and an <code>audit_event</code></td></tr>
+    <tr><td><code>setThr</code>, <code>setSev</code>, <code>setRoute</code>, <code>setOn</code></td><td>A new <code>rule_version</code>, and <code>rules_master.current_version</code> moved to it</td></tr>
+    <tr><td><code>pushBatch()</code>, saving a subscription, <code>lib/server/push.ts</code></td><td><code>notification_log</code> and <code>push_subscription</code> rows</td></tr>
+    <tr><td><code>engine.reset()</code> in <code>createGencloud()</code></td><td>Opening or resuming the active <code>shift</code></td></tr>
+  </tbody>
+</table>
+
+<!-- ============================ 4 ============================ -->
+<h1 class="sec" id="s4"><span class="n">4</span>Hosting on AWS</h1>
+<p class="lead">For now the console reuses what is already running: the app on an EC2 instance, and its data in a <b>new database on the existing RDS instance <code>van-reservation-prod</code></b>. Same instance, so no added cost. The console can move to an instance of its own later by changing one connection string.</p>
+
+<table class="w22">
+  <thead><tr><th>Piece</th><th>Choice</th><th>Notes</th></tr></thead>
+  <tbody>
+    <tr><td>App</td><td>An EC2 instance, <b>one Node process</b></td><td>Most likely the current host; to be confirmed. Runs <code>next start</code> under a process manager (systemd or pm2) that restarts it if it stops. Not Lambda or Amplify server rendering: they stop the process between requests.</td></tr>
+    <tr><td>Database</td><td>A new database, <code>rtm_console</code>, on the RDS instance <code>van-reservation-prod</code></td><td>Its own database, not a schema inside the Van Reservation one, with its own roles (Section 6). Backups, maintenance window and PostgreSQL version are the instance's.</td></tr>
+    <tr><td>Secrets</td><td>AWS Secrets Manager</td><td>One secret per RTM database role, plus the Genesys and VAPID secrets. Read at start-up through the EC2 instance profile, or written to an environment file only root can read.</td></tr>
+    <tr><td>Network</td><td>Security groups</td><td>The RDS security group already admits the Van Reservation app. Add the RTM EC2 instance's security group on port 5432, and nothing else.</td></tr>
+    <tr><td>Logs</td><td>The process manager, or CloudWatch Logs</td><td>A failed start-up check (Section 5) appears as one readable message.</td></tr>
+  </tbody>
+</table>
+
+<div class="imp">
+  <b>&#9888; Sharing a production instance: ground rules</b>
+  <p>Van Reservation is live on this instance. The console must never be able to read its data or slow it down.</p>
+  <ul>
+    <li><b>Separate database, separate roles.</b> <code>rtm_migrator</code> and <code>rtm_app</code> can connect to <code>rtm_console</code> only; <code>CONNECT</code> on it is revoked from <code>PUBLIC</code>, and the RTM roles are granted nothing on the Van Reservation database (see the note after the setup steps below).</li>
+    <li><b>Capped connections.</b> Each RTM role gets a <code>CONNECTION LIMIT</code> (for example 15 for the app, 3 for the migrator), so the console can never use up the instance's connection slots.</li>
+    <li><b>No instance-wide changes.</b> No parameter-group edits, no extensions that need <code>shared_preload_libraries</code>, no reboots for RTM's sake. Anything like that waits for a dedicated instance.</li>
+    <li><b>Only deployed environments connect.</b> Developers work against the local Docker database (Section 11), never against this instance.</li>
+    <li><b>Batched writes.</b> The write-behind queue (Section 10) keeps the console's load to one small transaction about once a second.</li>
+  </ul>
+</div>
+
+<h2>Creating the database and roles in pgAdmin (once)</h2>
+<p>This is done once, by someone with the master login for <code>van-reservation-prod</code>, in pgAdmin. It creates only RTM objects: two roles, one database and its grants. Nothing on the Van Reservation database changes. From then on, <code>db:migrate</code> creates and changes the tables.</p>
+
+<table class="w22">
+  <thead><tr><th>Object</th><th>Type</th><th>Settings</th></tr></thead>
+  <tbody>
+    <tr><td><code>rtm_migrator</code></td><td>Login role</td><td>Connection limit 3. Owns <code>rtm_console</code>. Used only by <code>db:migrate</code>.</td></tr>
+    <tr><td><code>rtm_app</code></td><td>Login role</td><td>Connection limit 15. Reads and writes rows; cannot create or change tables.</td></tr>
+    <tr><td><code>rtm_console</code></td><td>Database</td><td>Owner <code>rtm_migrator</code>. <code>CONNECT</code> for the two RTM roles only.</td></tr>
+  </tbody>
+</table>
+
+<div class="warn">
+  <b>Before you start in pgAdmin</b>
+  <ul>
+    <li><b>Run one step at a time.</b> In the Query Tool, highlight the statements for a step and press <b>F5</b>: pgAdmin then runs only the highlighted text. Step 4 (<code>CREATE DATABASE</code>) must run on its own; PostgreSQL refuses it when it is sent together with other statements.</li>
+    <li><b>Passwords go through the role dialog, not the Query Tool</b> (step 3), so they never land in the Query Tool's history.</li>
+    <li><b>Check the server name</b> in the Query Tool's title bar before each step: it must be <code>van-reservation-prod</code>, and the database must be the one the step names.</li>
+  </ul>
+</div>
+
+<ol class="steps">
+  <li><b>Open a Query Tool on the <code>postgres</code> database.</b> In the Object Explorer, expand the <code>van-reservation-prod</code> server, then <i>Databases</i>, right-click <code>postgres</code> and choose <i>Query Tool</i>. Roles belong to the whole instance, so this database is the right place for steps 1 to 5, and it keeps you out of the Van Reservation database. First, record what the instance is running:
+<pre>SELECT version();          <span class="c">-- the PostgreSQL version: the local Docker image must match it (Section 11)</span>
+SELECT current_user;       <span class="c">-- the master user you are logged in as</span>
+SELECT datname FROM pg_database WHERE NOT datistemplate;   <span class="c">-- existing databases; rtm_console must not be listed yet</span></pre></li>
+
+  <li><b>Create the two roles.</b> They are created without passwords, so nobody can log in as them until step 3. The <code>GRANT</code> lets the master user create a database owned by <code>rtm_migrator</code> and set its default privileges in step 6.
+<pre>CREATE ROLE rtm_migrator LOGIN CONNECTION LIMIT 3;
+CREATE ROLE rtm_app      LOGIN CONNECTION LIMIT 15;
+GRANT rtm_migrator TO CURRENT_USER;</pre></li>
+
+  <li><b>Set the passwords in the role dialog.</b> Right-click <i>Login/Group Roles</i> and choose <i>Refresh</i>. For each RTM role: right-click it, <i>Properties</i>, <i>Definition</i> tab, enter a long generated password (from a password manager, at least 32 characters), and <i>Save</i>. Store each password in AWS Secrets Manager straight away, one secret per role, and never in a file, chat or ticket.</li>
+
+  <li><b>Create the database</b>, highlighting this statement on its own:
+<pre>CREATE DATABASE rtm_console OWNER rtm_migrator;</pre></li>
+
+  <li><b>Close the database to everyone else.</b> By default every role may connect to a new database; this limits <code>rtm_console</code> to the RTM roles and the master user. (<code>rtm_migrator</code> connects as the owner.)
+<pre>REVOKE CONNECT, TEMPORARY ON DATABASE rtm_console FROM PUBLIC;
+GRANT CONNECT ON DATABASE rtm_console TO rtm_app;
+GRANT CONNECT ON DATABASE rtm_console TO CURRENT_USER;</pre></li>
+
+  <li><b>Set the grants inside <code>rtm_console</code>.</b> Right-click <i>Databases</i>, <i>Refresh</i>, then right-click <code>rtm_console</code> and open a <b>new</b> Query Tool on it: these grants apply only to the database the Query Tool is connected to. The default privileges give <code>rtm_app</code> read and write access to every table and sequence that <code>rtm_migrator</code> creates later, so no migration has to grant them one by one.
+<pre>REVOKE CREATE ON SCHEMA public FROM PUBLIC;    <span class="c">-- already the default on PostgreSQL 15 and later</span>
+GRANT USAGE, CREATE ON SCHEMA public TO rtm_migrator;
+GRANT USAGE ON SCHEMA public TO rtm_app;
+
+ALTER DEFAULT PRIVILEGES FOR ROLE rtm_migrator IN SCHEMA public
+  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO rtm_app;
+ALTER DEFAULT PRIVILEGES FOR ROLE rtm_migrator IN SCHEMA public
+  GRANT USAGE, SELECT ON SEQUENCES TO rtm_app;</pre>
+  If any of these fails with <i>permission denied</i>, stop and note the version from step 1: instances older than PostgreSQL 15 handle the <code>public</code> schema differently, and the statements need adjusting.</li>
+
+  <li><b>Check the result.</b> In the Query Tool on <code>postgres</code>:
+<pre>SELECT rolname, rolcanlogin, rolconnlimit
+FROM pg_roles WHERE rolname LIKE 'rtm\_%';     <span class="c">-- two rows: limits 3 and 15</span>
+
+SELECT datname, pg_get_userbyid(datdba) AS owner
+FROM pg_database WHERE datname = 'rtm_console';  <span class="c">-- owner rtm_migrator</span></pre></li>
+
+  <li><b>Test the app login.</b> In pgAdmin, <i>Register &rarr; Server</i>: the same host and port as <code>van-reservation-prod</code>, maintenance database <code>rtm_console</code>, user <code>rtm_app</code>, SSL mode <i>require</i>, and <b>Save password</b> left off. In a Query Tool on that connection:
+<pre>SELECT current_user, current_database();    <span class="c">-- rtm_app, rtm_console</span>
+CREATE TABLE should_fail (x int);           <span class="c">-- must fail: permission denied for schema public</span></pre>
+  Then remove the test server registration. A successful login from your PC only works if the RDS security group admits it; the deployed app connects from the EC2 instance.</li>
+</ol>
+
+<div class="note">
+  <b>The Van Reservation database</b>
+  <p>PostgreSQL lets every role connect to an existing database unless <code>CONNECT</code> was revoked from <code>PUBLIC</code> there, so <code>rtm_app</code> may be able to open the Van Reservation database. It still cannot read any of its tables unless they were granted to <code>PUBLIC</code>. To confirm, open a Query Tool on the Van Reservation database and run:</p>
+<pre>SELECT table_schema, table_name, privilege_type
+FROM information_schema.role_table_grants
+WHERE grantee = 'PUBLIC'
+  AND table_schema NOT IN ('pg_catalog', 'information_schema');   <span class="c">-- expect no rows</span></pre>
+  <p>Revoking <code>CONNECT</code> from <code>PUBLIC</code> on the Van Reservation database would close this fully, but it is a change to Van Reservation: do it only with its owner's agreement, after checking which roles its app uses.</p>
+</div>
+
+<div class="ok">
+  <b>Undoing it</b>
+  <p>Until the console has stored real data, the whole setup can be removed without touching anything else. On the <code>postgres</code> database, one statement at a time: <code>DROP DATABASE rtm_console;</code> then <code>DROP ROLE rtm_app;</code> then <code>DROP ROLE rtm_migrator;</code></p>
+</div>
+
+<h2>Moving out later</h2>
+<p>When the console needs its own instance (more load, its own maintenance window, an extension that needs a parameter change), dump <code>rtm_console</code> with <code>pg_dump</code>, restore it on the new instance, and change <code>DATABASE_URL</code>. Nothing in the code depends on sharing.</p>
+
+<div class="note">
+  <b>AWS credentials in the app</b>
+  <p>On EC2 the app uses the <b>instance profile</b> through the AWS SDK's default credential chain: no access keys in the environment. Explicit keys are accepted only for local work, and the environment check refuses half a set: a key without its secret, or a temporary <code>ASIA…</code> key without its session token.</p>
+</div>
+
+<!-- ============================ 5 ============================ -->
+<h1 class="sec newpage" id="s5"><span class="n">5</span>Configuration: one validated environment</h1>
+<p class="lead">Today eight files read <code>process.env</code> directly, and a missing value shows up only when a feature first needs it. After this change the application reads one parsed, typed object, and a broken deployment fails at start-up with a message that names every problem.</p>
+
+<h2>How it works</h2>
+<ol class="steps">
+  <li><code>lib/env.ts</code> exports <code>parseEnv(raw)</code>, a pure function that checks a set of variables against a Zod schema and returns a typed object. It is what the tests call.</li>
+  <li>The same file exports <code>env()</code>, which parses <code>process.env</code> once and caches the result. Everything else in the app imports <code>env()</code>; nothing else reads <code>process.env</code>.</li>
+  <li><code>instrumentation.ts</code> calls <code>env()</code> in <code>register()</code>, on the Node.js runtime. If anything is wrong the server stops before it accepts a request, and the log lists <b>every</b> failing variable with its reason, not just the first.</li>
+</ol>
+
+<h2>The rules every variable follows</h2>
+<table class="w28">
+  <thead><tr><th>Rule</th><th>In practice</th></tr></thead>
+  <tbody>
+    <tr><td>No silent default for a secret</td><td>Passwords, tokens and keys are required where they are needed and never filled in for you.</td></tr>
+    <tr><td>Empty is not missing</td><td><code>KEY=</code> sets an empty string, which fails validation. A commented-out <code># KEY=</code> means the variable is absent, which is allowed for optional settings.</td></tr>
+    <tr><td>Safe values may default</td><td>For example <code>DB_PORT</code> (5432), <code>DB_POOL_MAX</code> (10), <code>RTM_TIME_ZONE</code> (America/New_York).</td></tr>
+    <tr><td>Pairs are checked together</td><td>Both Genesys OAuth values or neither; all three VAPID values or none; <code>PERSISTENCE_MODE=postgres</code> requires database settings. These checks live in the schema, not in the code that uses them.</td></tr>
+    <tr><td>Stubs only where safe</td><td><code>PERSISTENCE_MODE=memory</code> is accepted only when <code>APP_ENV</code> is <code>development</code> or <code>test</code>. It is an allowlist, so a new environment name is refused by default.</td></tr>
+  </tbody>
+</table>
+
+<div class="warn">
+  <b>Why APP_ENV and not NODE_ENV</b>
+  <p>Every <code>next build</code> runs with <code>NODE_ENV=production</code>, including staging and a developer's production build. <code>APP_ENV</code> says which environment the server is really in.</p>
+</div>
+
+<h2>New and existing variables</h2>
+<table class="w28">
+  <thead><tr><th>Variable</th><th>Required</th><th>What it does</th></tr></thead>
+  <tbody>
+    <tr><td><code>APP_ENV</code> <span class="badge">NEW</span></td><td>Yes</td><td><code>development</code>, <code>test</code>, <code>staging</code> or <code>production</code>.</td></tr>
+    <tr><td><code>PERSISTENCE_MODE</code> <span class="badge">NEW</span></td><td>Yes</td><td><code>postgres</code> or <code>memory</code> (development and test only).</td></tr>
+    <tr><td><code>DATABASE_URL</code> <span class="badge">NEW</span></td><td>Either this&hellip;</td><td>Full connection string. Always wins over the <code>DB_*</code> values.</td></tr>
+    <tr><td><code>DB_HOST</code>, <code>DB_PORT</code>, <code>DB_NAME</code>, <code>DB_USER</code>, <code>DB_PASSWORD</code> <span class="badge">NEW</span></td><td>&hellip;or these</td><td>Composed into a URL when <code>DATABASE_URL</code> is not set. The password is URL-encoded for you.</td></tr>
+    <tr><td><code>DB_SCHEMA</code> <span class="badge">NEW</span></td><td>No</td><td>A PostgreSQL schema to work in, set through <code>search_path</code>. Lets several developers share one database.</td></tr>
+    <tr><td><code>DB_SSLMODE</code> <span class="badge">NEW</span></td><td>No</td><td><code>verify-full</code> by default. <code>disable</code> for the local container; <code>no-verify</code> refused outside development.</td></tr>
+    <tr><td><code>DB_CA_CERT</code> <span class="badge">NEW</span></td><td>No</td><td>Path to an extra certificate authority, for PCs behind corporate TLS inspection. Added to the trusted list, never a replacement for it.</td></tr>
+    <tr><td><code>DB_POOL_MAX</code> <span class="badge">NEW</span></td><td>No</td><td>Connections in the pool; default 10.</td></tr>
+    <tr><td><code>TEST_DATABASE_URL</code> <span class="badge">NEW</span></td><td>No</td><td>Database for integration tests (Section 11).</td></tr>
+    <tr><td><code>NEXT_PUBLIC_FEED</code>, <code>NEXT_PUBLIC_VIEW_AS</code>, <code>NEXT_PUBLIC_DEV_TOOLS</code></td><td>As today</td><td>Read at build time and inlined into the browser bundle, so they are checked at build as well.</td></tr>
+    <tr><td><code>RTM_SITE_PASSWORD</code>, <code>RTM_ADMIN_SECRET</code> <span class="badge chg">CHANGE</span></td><td>As today</td><td>Now also given a minimum length, and known placeholder values are refused. Unset still means "page locked"; set but wrong still means "unauthorized".</td></tr>
+    <tr><td><code>GENESYS_TOKEN</code>, <code>GENCLOUD_API_BASE</code>, <code>RTM_VIEW_CONFIG_ID</code>, <code>GENCLOUD_CLIENT_ID</code>, <code>GENCLOUD_CLIENT_SECRET</code></td><td>For the live feed</td><td>Unchanged in meaning; read through <code>env()</code>.</td></tr>
+    <tr><td><code>VAPID_PUBLIC_KEY</code>, <code>VAPID_PRIVATE_KEY</code>, <code>VAPID_SUBJECT</code></td><td>All or none</td><td>Desktop alerts, as today.</td></tr>
+  </tbody>
+</table>
+<p class="small"><code>.env.example</code> is the contract: every variable carries a comment saying what it does, whether it is required, what breaks if it is wrong and how to keep it safe. Copied as it is, it must fail the start-up check rather than run with an unsafe value.</p>
+
+<!-- ============================ 6 ============================ -->
+<h1 class="sec" id="s6"><span class="n">6</span>Connecting to PostgreSQL</h1>
+<p class="lead">One connection pool per process, created only when the first query needs it. The URL logic is a small pure module with its own tests, kept apart from Next.js.</p>
+
+<h2>How the URL is chosen</h2>
+<figure>
+  <div class="flow">
+    <div class="box hl"><b>DATABASE_URL set?</b><span>use it as it is</span></div>
+    <div class="arr">&rarr;</div>
+    <div class="box"><b>Otherwise DB_*</b><span>host, port, name, user, password</span></div>
+    <div class="arr">&rarr;</div>
+    <div class="box"><b>+ DB_SCHEMA</b><span>options=-c search_path=&lt;schema&gt;</span></div>
+    <div class="arr">&rarr;</div>
+    <div class="box db"><b>Pool</b><span>pg, created lazily</span></div>
+  </div>
+  <figcaption>A <code>DATABASE_URL</code> exported in the shell beats the one in <code>.env.local</code>: the loader never overwrites a variable that is already set.</figcaption>
+</figure>
+<p><code>schemaFromUrl(url)</code> reads the schema a URL points at from its <code>search_path</code> option. The tests use it to make sure they never run against the main schema.</p>
+
+<h2>Two roles, least privilege</h2>
+<table class="w22">
+  <thead><tr><th>Role</th><th>Can</th><th>Used by</th></tr></thead>
+  <tbody>
+    <tr><td><code>rtm_migrator</code></td><td>Owns the schema: create, alter and drop tables, indexes and partitions.</td><td><code>db:migrate</code> only, in the deploy script.</td></tr>
+    <tr><td><code>rtm_app</code></td><td>Select, insert, update and delete rows. Cannot change the schema. Granted through default privileges, so new tables are covered automatically.</td><td>The running console.</td></tr>
+  </tbody>
+</table>
+<p>If the app is ever compromised it cannot drop a table, and a typo in app code cannot alter the schema.</p>
+
+<h2>Encryption in transit</h2>
+<ul>
+  <li>Whether the instance insists on TLS is set in its parameter group, which belongs to Van Reservation. The console uses TLS either way.</li>
+  <li>The app verifies the server against the <b>RDS certificate bundle</b>, kept on the EC2 instance with the app (<code>DB_SSLMODE=verify-full</code>).</li>
+  <li>On a PC behind corporate TLS inspection, <code>DB_CA_CERT</code> adds the company's certificate to the trusted list. Turning verification off is never the fix.</li>
+</ul>
+
+<div class="note">
+  <b>Why pg is kept out of the bundle</b>
+  <p><code>pg</code> is added to <code>serverExternalPackages</code> in <code>next.config.ts</code>, next to <code>exceljs</code> and <code>web-push</code>, so Next.js loads it from <code>node_modules</code> at run time instead of bundling it.</p>
+</div>
+
+<!-- ============================ 7 ============================ -->
+<h1 class="sec newpage" id="s7"><span class="n">7</span>Migrations with Kysely</h1>
+<p class="lead">Kysely is a type-safe SQL query builder, not an ORM: queries read like SQL and are checked by TypeScript. Its migrator applies numbered TypeScript files in order and records each one in the database. <code>kysely-ctl</code> is its command-line tool.</p>
+
+<h2>The commands</h2>
+<table class="w28">
+  <thead><tr><th>Command</th><th>Does</th><th>Needs the database</th></tr></thead>
+  <tbody>
+    <tr><td><code>npm run db:migrate</code></td><td>Applies every migration not yet applied, oldest first. Does nothing when up to date.</td><td>Yes, as <code>rtm_migrator</code></td></tr>
+    <tr><td><code>npm run db:make -- &lt;name&gt;</code></td><td>Creates an empty, timestamped migration file to fill in.</td><td>No</td></tr>
+    <tr><td><code>npm run db:status</code></td><td>Lists the migrations and which are applied.</td><td>Yes</td></tr>
+    <tr><td><code>npm run db:rollback</code></td><td>Undoes the last migration. <b>Local only</b>: refused when <code>APP_ENV</code> is staging or production.</td><td>Yes</td></tr>
+    <tr><td><code>npm run db:types</code></td><td>Regenerates <code>lib/db/schema.ts</code>, the TypeScript description of every table, from a migrated database (<code>kysely-codegen</code>).</td><td>Yes, local</td></tr>
+    <tr><td><code>npm run db:up</code></td><td>Starts the local PostgreSQL container.</td><td>No</td></tr>
+  </tbody>
+</table>
+
+<h2>Files</h2>
+<pre><span class="c"># configuration, read by kysely-ctl; uses lib/env.ts for the connection</span>
+kysely.config.ts
+<span class="c"># one file per change, applied in name order</span>
+lib/db/migrations/
+  &lt;timestamp&gt;_reference_data.ts       <span class="c"># Phase 0: regions, org, routes, rules, status mapping, audit</span>
+  &lt;timestamp&gt;_people_and_queues.ts    <span class="c"># Phase 1</span>
+  &lt;timestamp&gt;_shift_records.ts        <span class="c"># Phase 2</span>
+lib/db/schema.ts                      <span class="c"># generated by db:types, committed</span>
+lib/db/client.ts                      <span class="c"># the lazily created Kysely instance</span>
+lib/db/url.ts                         <span class="c"># DATABASE_URL composition, schemaFromUrl()</span></pre>
+
+<h2>A migration, in outline</h2>
+<pre>import { type Kysely, sql } from "kysely";
+
+export async function up(db: Kysely&lt;unknown&gt;): Promise&lt;void&gt; {
+  await db.schema.createTable("notification_route")
+    .addColumn("route_id", "text", c =&gt; c.primaryKey())
+    .addColumn("route_name", "text", c =&gt; c.notNull())
+    .addColumn("enabled", "boolean", c =&gt; c.notNull().defaultTo(true))
+    .execute();
+  <span class="c">// ...then insert the four routes</span>
+}
+
+export async function down(db: Kysely&lt;unknown&gt;): Promise&lt;void&gt; {
+  await db.schema.dropTable("notification_route").execute();
+}</pre>
+<p>The schema builder covers almost all of the design: identity columns, generated columns, check constraints, partial indexes and deferrable foreign keys. The rest, such as <code>PARTITION BY RANGE</code>, is written with Kysely's <code>sql</code> template inside the same migration.</p>
+
+<h2>The migrations, by phase</h2>
+<p>What each migration creates, with the decisions in Section 1 built in. <code>db:make</code> adds a timestamp to each file name, so they always run in this order.</p>
+<table class="w22">
+  <thead><tr><th>Migration</th><th>Creates</th><th>Built in from the decisions</th></tr></thead>
+  <tbody>
+    <tr><td><code>reference</code><br><span class="pill go">Phase 0</span></td><td><code>genesys_region</code>, <code>genesys_org</code>, <code>notification_route</code>, <code>notification_route_step</code>, <code>rules_master</code>, <code>rule_version</code>, <code>status_mapping</code>, <code>audit_event</code>, with their rows</td><td>The three Genesys orgs the console watches and their regions; the 14 default rules as version 1; the 4 routes. <code>changed_by</code> and <code>updated_by</code> have no foreign key yet.</td></tr>
+    <tr><td><code>people</code><br><span class="pill info">Phase 1</span></td><td><code>team</code>, <code>person</code>, <code>queue</code>, <code>queue_member</code>, <code>push_subscription</code></td><td>People keyed by Genesys user ID, each with their org. Adds the <code>person</code> foreign keys left out in Phase 0.</td></tr>
+    <tr><td><code>shifts</code><br><span class="pill info">Phase 2</span></td><td><code>shift</code>, <code>agent_rule_state</code></td><td>A shift is <b>one US Eastern day per org</b>: <code>org_id</code> and <code>shift_date</code>, unique together, starting and ending at Eastern midnight. One active shift per org. Strike rows are per shift, so strikes start at zero each day with nothing deleted. <code>agent_rule_state</code> keeps <code>strikes</code> only, not <code>fired</code>.</td></tr>
+    <tr><td><code>callouts_and_incidents</code><br><span class="pill info">Phase 2</span></td><td><code>monitoring_instance</code>, <code>incident_counter</code>, <code>incident_log</code>, <code>notification_log</code></td><td><b>One incident per strike</b> from 3 on: <code>incident_log</code> gets <code>instance_id</code>, the call-out that opened it, unique, and <code>strike</code> (3 or more). No <code>one_open_incident</code> index. <b>One incident counter for every org</b>, one row per year, so numbers start again at 0001 each January. Call-outs and incidents carry over midnight. <code>source</code> no longer allows <code>csv</code>: replays are never saved. <code>notification_log</code> is split by month, with a default partition and three months ahead.</td></tr>
+    <tr><td><code>events</code><br><span class="pill info">Phase 3</span></td><td><code>source_event_stream</code></td><td><b>Holds the current Eastern day only</b>, for the KPIs. Not partitioned; emptied with <code>TRUNCATE</code> at midnight Eastern, for every org at once. Each event carries its <code>org_id</code>. Grants <code>TRUNCATE</code> on this table to <code>rtm_app</code>.</td></tr>
+  </tbody>
+</table>
+
+<h2>Rules for writing migrations</h2>
+<table class="w28">
+  <thead><tr><th>Rule</th><th>Why</th></tr></thead>
+  <tbody>
+    <tr><td>Never edit a migration that has run outside your machine</td><td>It will not run again anywhere it already ran. Write a new one.</td></tr>
+    <tr><td>Production goes forward only</td><td><code>down()</code> is for local work. A bad change in production is fixed by a new migration.</td></tr>
+    <tr><td>Reference data belongs in migrations</td><td>Routes, default rules, status mapping and regions are written once, by the migration that creates their table. A later rule edit by an Admin is never overwritten.</td></tr>
+    <tr><td>One concern per file</td><td>A failed migration is rolled back as a whole and is easy to read in review.</td></tr>
+    <tr><td>Regenerate types and commit them</td><td>After a new migration, run <code>db:types</code> and commit <code>lib/db/schema.ts</code> with it, so queries are checked against the real columns.</td></tr>
+  </tbody>
+</table>
+
+<div class="ok">
+  <b>Safe to run twice, safe to run together</b>
+  <p>Kysely records applied migrations in <code>kysely_migration</code> and holds a lock in <code>kysely_migration_lock</code> while it works. Running <code>db:migrate</code> again does nothing, and two runs at once wait for each other. It also refuses to apply an older file after a newer one has run, which catches a branch merged out of order.</p>
+</div>
+
+<!-- ============================ 8 ============================ -->
+<h1 class="sec" id="s8"><span class="n">8</span>Running db:migrate before a deployment</h1>
+<p class="lead">The RDS instance has no public address, so <code>db:migrate</code> has to run from inside the VPC: from a laptop it cannot connect. The EC2 instance that runs the console is inside the VPC, so the deployment runs it there, after the new code is built and before the app is restarted.</p>
+
+<figure>
+  <div class="flow">
+    <div class="box"><b>New code on EC2</b><span>npm ci, npm run build</span></div>
+    <div class="arr">&rarr;</div>
+    <div class="box hl"><b>npm run db:migrate</b><span>as rtm_migrator</span></div>
+    <div class="arr">&rarr;</div>
+    <div class="box"><b>Exit code 0?</b><span>otherwise stop here</span></div>
+    <div class="arr">&rarr;</div>
+    <div class="box db"><b>Restart the app</b><span>systemd or pm2</span></div>
+  </div>
+  <figcaption>The new code starts only after the database has been migrated for it.</figcaption>
+</figure>
+
+<h2>Step by step</h2>
+<ol class="steps">
+  <li>On the EC2 instance, get the new code into a <b>new release folder</b> and run <code>npm ci</code> and <code>npm run build</code> there. The running version keeps serving the floor from its own folder; building over it would replace the <code>.next</code> folder it is using.</li>
+  <li>Run <code>npm run db:migrate</code> with the <b><code>rtm_migrator</code></b> credentials, set for that one command only (for example read from Secrets Manager into <code>DATABASE_URL</code>). The app's own environment holds only <code>rtm_app</code>.</li>
+  <li><b>Exit code 0:</b> point the process manager at the new release folder and restart the console. On start-up it validates its settings and loads its rules from the new schema. The previous folder stays for a quick rollback of the code.</li>
+  <li><b>Anything else:</b> stop. Do not restart: the running console is untouched, because a failed migration is rolled back inside its transaction. Read the error, fix it with a new commit, and deploy again.</li>
+</ol>
+<p>These steps go into a deploy script in the repository (for example <code>scripts/deploy.sh</code>), so a deployment is one command and the migration can never be skipped.</p>
+
+<div class="note">
+  <b>The migrator touches only rtm_console</b>
+  <p><code>rtm_migrator</code> owns <code>rtm_console</code> and has no rights on the Van Reservation database, so a migration cannot change anything but the console's own tables, however it is written.</p>
+</div>
+
+<div class="warn">
+  <b>Write migrations the old code can live with</b>
+  <p>For a short time the old app runs against the new schema. Add columns and tables freely. To rename or remove one, use two releases: first stop using it, then drop it.</p>
+</div>
+
+<h2>Running it by hand</h2>
+<p>To run a migration from a laptop, for example to check a new one against a copy of the data, open an SSM port-forwarding session to the database through the EC2 instance, point <code>DATABASE_URL</code> at the forwarded local port with the migrator's credentials, and run <code>npm run db:migrate</code>. Keep this for emergencies; the deploy script is the normal route.</p>
+
+<!-- ============================ 9 ============================ -->
+<h1 class="sec newpage" id="s9"><span class="n">9</span>Changes to the proposed schema</h1>
+<p class="lead">The 20 tables in the PostgreSQL Schema doc are kept. These are the corrections found in review, each to match how the engine actually runs. Each one is made in the first migration of its table.</p>
+
+<table class="w22">
+  <thead><tr><th>Area</th><th>In the schema doc</th><th>Change</th></tr></thead>
+  <tbody>
+    <tr><td>Strike 3 and later <span class="badge fix">FIX</span></td><td>The incident number is taken from <code>incident_counter</code> inside the transaction; a race is retried.</td><td>The engine numbers incidents in memory, from one counter shared by every org (<code>registry.incidentSeq</code>), and cannot wait mid-tick. At start-up the counter continues from <code>incident_counter</code>; the flush writes the counter, incident and call-out in one transaction. With one engine process there is no race.</td></tr>
+    <tr><td>Data sources <span class="badge fix">FIX</span></td><td><code>shift.source</code> allows gencloud and sim; <code>monitoring_instance.source</code> also allows csv. Sim agents have no Genesys ID or org.</td><td>Only the Gencloud floor is saved. CSV replays are private to a session and stay in memory. The simulator is saved only behind a setting, under its own org and people.</td></tr>
+    <tr><td>Partitions <span class="badge fix">FIX</span></td><td><code>notification_log</code> and <code>source_event_stream</code> are partitioned by month.</td><td><code>notification_log</code> stays monthly, with a <code>DEFAULT</code> partition and the next three months at creation, and a monthly job keeping three months ahead. Not <code>pg_partman</code> for now: it would mean changing the shared instance's parameter group.</td></tr>
+    <tr><td>Raw events <span class="badge fix">FIX</span></td><td><code>source_event_stream</code> is kept by month.</td><td>It holds <b>one day</b>. It is not partitioned: at midnight Eastern it is emptied with <code>TRUNCATE</code>, which is instant and gives the space back at once, unlike deleting rows. The emptying goes through the same ordered write queue as the events, so an event from 23:59:59 can never land after it. The migration grants <code>TRUNCATE</code> on this one table to <code>rtm_app</code>.</td></tr>
+    <tr><td>Orgs <span class="badge fix">FIX</span></td><td><code>shift</code> has no org; <code>shift_id</code> is a name such as <code>'2026-10-07-day'</code>, with one active shift per source.</td><td>The console runs one floor per Genesys org. <code>shift</code> gets <code>org_id</code> and <code>shift_date</code> (the Eastern date), unique together, and one active shift <b>per org</b>. Call-outs, incidents and strikes reach their org through the shift; raw events carry <code>org_id</code> themselves.</td></tr>
+    <tr><td>Incident numbers <span class="badge fix">FIX</span></td><td><code>incident_counter</code> has one row per year.</td><td>Kept, and <b>shared by every org</b>, so numbers never repeat across orgs. Numbering starts again at <code>0001</code> each January (on the Eastern date): <code>INC-2027-0001</code> follows <code>INC-2026-…</code>. The engine already does this (#37): one shared counter that keeps its year and last number (<code>{ year, n }</code>), the same pair this table stores. At start-up it continues from this table.</td></tr>
+    <tr><td>Strike state <span class="badge fix">FIX</span></td><td><code>agent_rule_state</code> stores <code>strikes</code> and <code>fired</code>.</td><td>Store <code>strikes</code> only. <code>fired</code> flips at every status change for about 1,600 agents. After a restart the engine already marks rules an agent is past as fired, without a call-out.</td></tr>
+    <tr><td>Event volume <span class="badge fix">FIX</span></td><td>Tens of thousands of raw events per shift.</td><td>Plan for hundreds of thousands in a day. Events are buffered and inserted many rows per statement, once a second. The table never holds more than one day.</td></tr>
+    <tr><td>Times <span class="badge fix">FIX</span></td><td><code>timestamptz</code> everywhere.</td><td>Kept. Every record is stamped with the real date and time at the moment it happens. The engine's seconds since midnight only drive the screen and are not stored.</td></tr>
+    <tr><td>Incidents <span class="badge fix">FIX</span></td><td>One open incident per agent per rule (<code>one_open_incident</code>); later strikes raise its count.</td><td><b>One incident per strike</b> from strike 3 on. The <code>one_open_incident</code> index is dropped; instead each incident points at the call-out that opened it, and that link is unique, so one strike can never open two incidents. Each incident stores its strike number. The engine's <code>openIncident()</code> changes to match: today it reuses an open incident; it will always open a new one.</td></tr>
+    <tr><td>Rule edits</td><td>Every edit is a new <code>rule_version</code>.</td><td>Kept. Edits to the same rule by the same person within a few seconds are folded into one version, so typing a threshold does not leave a version per keystroke.</td></tr>
+  </tbody>
+</table>
+
+<h2>Tables by phase</h2>
+<table class="w22">
+  <thead><tr><th>Phase</th><th>Tables</th><th>Status</th></tr></thead>
+  <tbody>
+    <tr><td>0 &middot; Reference</td><td><code>genesys_region</code>, <code>genesys_org</code>, <code>notification_route</code>, <code>notification_route_step</code>, <code>rules_master</code>, <code>rule_version</code>, <code>status_mapping</code>, <code>audit_event</code></td><td><span class="pill go">Can start</span></td></tr>
+    <tr><td>1 &middot; People</td><td><code>person</code>, <code>team</code>, <code>queue</code>, <code>queue_member</code>, <code>push_subscription</code></td><td><span class="pill wait">Needs real IDs</span></td></tr>
+    <tr><td>2 &middot; Shift records</td><td><code>shift</code>, <code>agent_rule_state</code>, <code>monitoring_instance</code>, <code>incident_log</code>, <code>incident_counter</code>, <code>notification_log</code></td><td><span class="pill info">After Phase 1</span></td></tr>
+    <tr><td>3 &middot; Raw events</td><td><code>source_event_stream</code></td><td><span class="pill info">After Phase 2</span></td></tr>
+  </tbody>
+</table>
+<p class="small"><code>rule_version.changed_by</code> and <code>status_mapping.updated_by</code> point at <code>person</code>. In Phase 0 they are created without that foreign key, which Phase 1 adds once <code>person</code> exists.</p>
+
+<!-- ============================ 10 ============================ -->
+<h1 class="sec" id="s10"><span class="n">10</span>How the engine saves and recovers</h1>
+<p class="lead">The engine keeps working exactly as it does today. What changes is that every record it makes is also handed to a store, and that on start-up it begins from what the store remembers instead of from nothing.</p>
+
+<h2>The store</h2>
+<div class="two">
+  <div class="card"><div class="t">Memory store</div><p>Keeps nothing beyond the process. Used in development without a database, in unit tests, and always for CSV replays. Refused in staging and production.</p></div>
+  <div class="card"><div class="t">PostgreSQL store</div><p>Queues each record in order and flushes the queue in one transaction about once a second. A failed flush is retried with the same records in the same order; the console raises a notice if the queue keeps growing.</p></div>
+</div>
+
+<h2>On start-up</h2>
+<ol class="steps">
+  <li>Validate the environment (Section 5). Stop if anything is wrong.</li>
+  <li>Load the rules at their current version. In Phase 0 this is the only step.</li>
+  <li>From Phase 2: find or open the shift for today's Eastern date, then load today's strike counts, every open call-out and incident from any day, and the incident counter.</li>
+  <li>From Phase 3: rebuild today's KPIs from the events in <code>source_event_stream</code>.</li>
+  <li>Connect the feed. Genesys gives each agent's time already in state; rules an agent is past are marked fired without a call-out, as today.</li>
+</ol>
+
+<h2>What is never stored</h2>
+<table class="w28 plain">
+  <thead><tr><th>Data</th><th>Why not</th></tr></thead>
+  <tbody>
+    <tr><td>Live timers (time in state, hold time)</td><td>Taken again from Genesys at connect.</td></tr>
+    <tr><td>The <code>fired</code> flag per rule episode</td><td>Rebuilt at connect (Section 9).</td></tr>
+    <tr><td>CSV replays</td><td>Private to the session that started them.</td></tr>
+    <tr><td>The Genesys token</td><td>A secret: it stays in the environment or Secrets Manager, never in a table.</td></tr>
+  </tbody>
+</table>
+
+<div class="warn">
+  <b>If the database is down</b>
+  <p>The floor keeps running: timers, call-outs and alerts carry on from memory, and records wait in the queue. A start-up with the database unreachable fails, because the engine cannot know the current rules or strikes.</p>
+</div>
+
+<!-- ============================ 11 ============================ -->
+<h1 class="sec newpage" id="s11"><span class="n">11</span>Local development and tests</h1>
+<p class="lead">A developer can work with no database at all, as today, or against a local PostgreSQL in Docker that behaves like RDS. Developers never connect to <code>van-reservation-prod</code>.</p>
+
+<h2>First run with a local database</h2>
+<ol class="steps">
+  <li>Copy <code>.env.example</code> to <code>.env.local</code> and set <code>APP_ENV=development</code>, <code>PERSISTENCE_MODE=postgres</code> and the <code>DB_*</code> values given for the container.</li>
+  <li><code>npm run db:up</code> starts PostgreSQL in Docker on <b>port 5433</b>, so it never clashes with a PostgreSQL already installed on 5432.</li>
+  <li><code>npm run db:migrate</code> creates every table and the reference data.</li>
+  <li><code>npm run dev</code> as usual. Rule edits now survive a restart.</li>
+</ol>
+<p>To work without a database, set <code>PERSISTENCE_MODE=memory</code>. Nothing else changes.</p>
+
+<h2>The container</h2>
+<table class="w28 plain">
+  <thead><tr><th>Setting</th><th>Value</th></tr></thead>
+  <tbody>
+    <tr><td>Image</td><td>A pinned <code>postgres</code> release with the same major version as <code>van-reservation-prod</code></td></tr>
+    <tr><td>Container name</td><td><code>rtm-console-db</code></td></tr>
+    <tr><td>Host port</td><td>5433</td></tr>
+    <tr><td>Data</td><td>A named volume, <code>rtm-console-pgdata</code>, kept between restarts</td></tr>
+    <tr><td>Health check</td><td><code>pg_isready</code>, so scripts can wait for it</td></tr>
+    <tr><td>Credentials</td><td>The same local-only values as <code>.env.example</code></td></tr>
+  </tbody>
+</table>
+
+<h2>Tests</h2>
+<table class="w28">
+  <thead><tr><th>Kind</th><th>How</th></tr></thead>
+  <tbody>
+    <tr><td>Unit (most)</td><td>As today, with Vitest and the memory store. No database needed.</td></tr>
+    <tr><td>Environment</td><td><code>parseEnv()</code> with crafted inputs: missing, empty, commented out, half pairs, stubs outside the allowlist, partial AWS keys, a temporary key without its session token.</td></tr>
+    <tr><td>Database URL</td><td><code>DATABASE_URL</code> precedence, composition from <code>DB_*</code>, special characters in passwords, <code>schemaFromUrl()</code>.</td></tr>
+    <tr><td>Integration</td><td>Migrations and the PostgreSQL store against a real database. Skipped when no test database is configured.</td></tr>
+  </tbody>
+</table>
+<p>The test database is chosen in this order: <code>TEST_DATABASE_URL</code> if set; otherwise the main URL with the schema <code>&lt;schema&gt;_test</code> if a schema is in use; otherwise the database <code>&lt;database&gt;_test</code>. Integration tests refuse to run against anything that is not a test database.</p>
+
+<!-- ============================ 12 ============================ -->
+<h1 class="sec" id="s12"><span class="n">12</span>Delivery plan and acceptance checks</h1>
+<p class="lead">Four phases, ordered by what each is waiting for. Each phase is its own pull request, and its migration is final once merged.</p>
+
+<div class="two">
+  <div class="phase"><h3>Phase 0 &middot; Foundation <span class="pill go">Can start</span></h3><p>Typed environment and boot check, database URL module, Kysely and <code>db:migrate</code>, local PostgreSQL, reference-data migration, the store, and <b>rules that survive a restart</b>.</p></div>
+  <div class="phase wait"><h3>Phase 1 &middot; People and queues <span class="pill wait">Needs real IDs</span></h3><p>The engine carries Genesys user IDs. <code>person</code>, <code>team</code>, <code>queue</code> and <code>queue_member</code> are synced from the roster; push subscriptions move into the database.</p></div>
+  <div class="phase"><h3>Phase 2 &middot; Shift records <span class="pill info">After Phase 1</span></h3><p>Shifts, call-outs, incidents, strikes and delivery records, with the write-behind queue and recovery after a restart.</p></div>
+  <div class="phase"><h3>Phase 3 &middot; Raw events <span class="pill info">After Phase 2</span></h3><p>Today's Genesys events with batched inserts, emptied at midnight Eastern. The day's KPIs survive a restart.</p></div>
+</div>
+
+<h2>Phase 0 is done when</h2>
+<ul class="check">
+  <li><code>.env.example</code> copied as it is fails the start-up check, safely and readably.</li>
+  <li>One run of the check reports every failing variable, not only the first.</li>
+  <li>Commented-out optional variables work; empty strings are refused; the pair rules are tested.</li>
+  <li><code>DATABASE_URL</code> precedence, <code>DB_*</code> composition and <code>schemaFromUrl()</code> are tested.</li>
+  <li>The memory store is refused outside development and test; partial or temporary AWS keys without a session token are refused.</li>
+  <li>The Docker database matches <code>.env.example</code>, and <code>db:make</code> works with no database settings.</li>
+  <li><code>db:migrate</code> on an empty database creates the Phase 0 tables and reference data; a second run does nothing.</li>
+  <li>An edited threshold is still there after a restart, with its old value kept as an earlier version.</li>
+  <li><code>npm run typecheck</code>, <code>npm run lint</code> and <code>npm test</code> pass.</li>
+</ul>
+
+<!-- ============================ 13 ============================ -->
+<h1 class="sec" id="s13"><span class="n">13</span>Frequently asked questions</h1>
+<dl class="faq">
+  <dt>Why Kysely and not an ORM such as Prisma?</dt>
+  <dd>The schema leans on PostgreSQL features (partial unique indexes, partitions, deferrable keys, generated columns) that ORMs hide or do not support. Kysely writes plain SQL with TypeScript checking, and its migrations are ordinary TypeScript files in the repository.</dd>
+  <dt>Do I need a database to work on the console?</dt>
+  <dd>No. <code>PERSISTENCE_MODE=memory</code> runs it exactly as it runs today.</dd>
+  <dt>Can I run db:migrate from my laptop against AWS?</dt>
+  <dd>Not directly: the database has no public address. Use the deploy script on the EC2 instance, or in an emergency an SSM port-forward (Section 8).</dd>
+  <dt>What happens if a migration fails halfway?</dt>
+  <dd>It runs in a transaction, so PostgreSQL rolls it back and the database is as it was. The deploy script stops before restarting the app, and the running console is untouched.</dd>
+  <dt>Can sharing van-reservation-prod affect Van Reservation?</dt>
+  <dd>Only through load, and that is capped: connection limits on the RTM roles, batched writes, and no changes to the instance itself. The RTM roles cannot read or change Van Reservation's data. If the console's load ever matters, it moves to its own instance (Section 4).</dd>
+  <dt>Should developers point at the shared instance?</dt>
+  <dd>No. It is a production instance. Develop against the local Docker database; only the deployed console connects to <code>rtm_console</code>.</dd>
+  <dt>Can we run two copies of the console for resilience?</dt>
+  <dd>Not yet. Two engines would disagree. A second web tier needs the engine to publish each tick through a broker such as Redis (data architecture document, Section 9).</dd>
+  <dt>Will an Admin's rule edits be overwritten by a later migration?</dt>
+  <dd>No. Default rules are inserted once, by the migration that creates the table. Changing a default for new installs means a new migration that touches only rules nobody has edited.</dd>
+  <dt>Where do the real passwords go?</dt>
+  <dd>In AWS Secrets Manager for deployed environments and in <code>.env.local</code> on a developer's PC. Neither is ever committed: the repository is public.</dd>
+</dl>
+
+<!-- ============================ 14 ============================ -->
+<h1 class="sec newpage" id="s14"><span class="n">14</span>Quick reference card</h1>
+<div class="three">
+  <div class="card"><div class="t">First local run</div><p>Copy <code>.env.example</code> &rarr; <code>.env.local</code> &rarr; <code>npm run db:up</code> &rarr; <code>npm run db:migrate</code> &rarr; <code>npm run dev</code>.</p></div>
+  <div class="card"><div class="t">New migration</div><p><code>npm run db:make -- add_x</code> &rarr; write <code>up</code> and <code>down</code> &rarr; <code>db:migrate</code> &rarr; <code>db:types</code> &rarr; commit both.</p></div>
+  <div class="card"><div class="t">Deploy (EC2)</div><p><code>npm ci</code> &rarr; <code>npm run build</code> &rarr; <code>npm run db:migrate</code> as <code>rtm_migrator</code> &rarr; exit 0 &rarr; restart the app.</p></div>
+  <div class="card"><div class="t">Which URL wins</div><p><code>DATABASE_URL</code> &rarr; else <code>DB_*</code>. A shell export beats <code>.env.local</code>. <code>DB_SCHEMA</code> sets <code>search_path</code>.</p></div>
+  <div class="card"><div class="t">No database</div><p><code>PERSISTENCE_MODE=memory</code>, development and test only.</p></div>
+  <div class="card"><div class="t">Never</div><p>Edit an applied migration &middot; roll back in production &middot; change the shared instance's settings &middot; turn off TLS verification &middot; commit a secret.</p></div>
+</div>
+
+<h2>Packages added</h2>
+<table class="w28 plain">
+  <thead><tr><th>Package</th><th>Purpose</th></tr></thead>
+  <tbody>
+    <tr><td><code>kysely</code>, <code>pg</code></td><td>Query builder and PostgreSQL driver (dependencies)</td></tr>
+    <tr><td><code>zod</code></td><td>Environment validation (dependency)</td></tr>
+    <tr><td><code>kysely-ctl</code>, <code>kysely-codegen</code>, <code>@types/pg</code></td><td>Migration commands and type generation (development only)</td></tr>
+  </tbody>
+</table>
+
+<div class="ok">
+  <b>Settled for Phase 2</b>
+  <p>A shift is one US Eastern day, midnight to midnight, and strikes start again at zero at Eastern midnight. Every strike from 3 on opens its own incident, so strike 5 on the same rule means 3 incidents to investigate. These answers go into the first Phase 2 migration, which cannot be edited once it has run.</p>
+</div>
+
+</body>
+</html>

@@ -5,8 +5,8 @@ How data enters the console, what the console does with it, where it should be s
 | | |
 | --- | --- |
 | **Audience** | Backend developers, and stakeholders reviewing the design |
-| **Status** | Proposal for review. PostgreSQL is recommended (see [Section 7](#7-choosing-the-database)); nothing is stored yet |
-| **Reflects** | The application as it is on `main`, 12 October 2026 |
+| **Status** | PostgreSQL chosen (see [Section 7](#7-choosing-the-database)); nothing is stored yet. The build plan is the [Backend Implementation Guide](RTM_Console_Backend_Guide.pdf) |
+| **Reflects** | The application as it is on `main`, 30 October 2026 |
 | **Owner** | BITS Automation Team |
 
 ---
@@ -29,18 +29,18 @@ How data enters the console, what the console does with it, where it should be s
 
 ## 1. Summary
 
-RTM Console watches what agents are doing, checks it against rules, and escalates repeat breaches. It now runs on **live Genesys Cloud data for one org** (`anthem-commercial`, 90 watched queues), or on the simulator or an imported day. It still **stores nothing**: everything is held in memory and lost when the server restarts.
+RTM Console watches what agents are doing, checks it against rules, and escalates repeat breaches. It now runs on **live Genesys Cloud data for one org at a time** (Anthem Commercial, Anthem GBD or Anthem Specialty), or on the simulator or an imported day. It still **stores nothing**: everything is held in memory and lost when the server restarts.
 
 Three things were missing to go live. One is built; this document is the brief for the other two.
 
 | # | What is missing | In one line | Status |
 | --- | --- | --- | --- |
-| 1 | **A live data feed** | Connect to Genesys Cloud ("Gencloud") so real agent statuses arrive as they happen | **Built (v1)** for one org, on a pasted supervisor token |
-| 2 | **A database** | Save rules, call-outs and incidents so they survive a restart and can be reported on | Designed (20 tables), not built |
+| 1 | **A live data feed** | Connect to Genesys Cloud ("Gencloud") so real agent statuses arrive as they happen | **Built (v1)** for one org at a time, on a pasted supervisor token |
+| 2 | **A database** | Save rules, call-outs and incidents so they survive a restart and can be reported on | Designed (20 tables), not built. Build plan in the Backend Implementation Guide |
 | 3 | **Real identities** | Link everything by ID instead of by name, and take the signed-in user from SSO | Not built |
 
 > [!IMPORTANT]
-> **The short answer on the database:** the data is relational. Orgs have queues, queues have agents, agents generate call-outs, call-outs roll up into incidents, and every screen filters and counts across those links. **We recommend PostgreSQL.** MongoDB can work, but it would mean doing by hand what a relational database does for free. The reasoning is in [Section 7](#7-choosing-the-database).
+> **The short answer on the database:** the data is relational. Orgs have queues, queues have agents, agents generate call-outs, call-outs roll up into incidents, and every screen filters and counts across those links. **We chose PostgreSQL.** MongoDB could work, but it would mean doing by hand what a relational database does for free. The reasoning is in [Section 7](#7-choosing-the-database).
 
 ---
 
@@ -166,11 +166,9 @@ The **org** is the unit the console connects to: each has its own token, users, 
 
 ```mermaid
 flowchart TD
-    R1["US East · us-east-1<br/>api.mypurecloud.com"] --> O1["anthem-commercial<br/><b>watched today</b>"]
-    R1 --> O2["anthem-gbd"]
-    R1 --> O3["caremore"]
-    R1 --> O4["more orgs, to be supplied"]
-    R2["US West · us-west-2<br/>api.usw2.pure.cloud"] --> O5["orgs to be supplied"]
+    R1["US East · us-east-1<br/>api.mypurecloud.com"] --> O1["Anthem Commercial<br/><b>counted below</b>"]
+    R2["US West · us-west-2<br/>api.usw2.pure.cloud"] --> O2["Anthem GBD"]
+    R2 --> O3["Anthem Specialty"]
     O1 --> V["Saved view CSBDProviderData<br/>90 of 1,378 readable queues<br/>1,629 active agents"]
     V --> D1["Division CSBD_PROV_PRD<br/>82 queues"]
     V --> D2["Division CSBD_PROV_CONCENTRIX_PRD<br/>8 queues"]
@@ -288,9 +286,9 @@ erDiagram
 | **Agent** | A person on the floor, with their live status and today's counters | Queue members, then the feed | Every second |
 | **Rule** | One thing the console watches for, with its threshold and who to tell | Seeded with 14 defaults | When an Admin or Manager edits it |
 | **Instance** | One call-out: a rule fired for an agent (or for the queue) at a moment | The rules engine | When acknowledged or commented on |
-| **Incident** | An investigation, opened at an agent's third strike on one rule | The rules engine | Open → Investigating → Closed |
-| **Status event** | A raw fact from the feed: a status change, call end, hold or after-call work | The feed | Never (append-only) |
-| **Shift** | One working day's worth of data | To be designed (decision 7) | Once at start, once at end |
+| **Incident** | An investigation. Every strike from the third on, for one agent on one rule, opens its own | The rules engine | Open → Investigating → Closed |
+| **Status event** | A raw fact from the feed: a status change, call end, hold or after-call work | The feed | Never (append-only); kept for the current day only |
+| **Shift** | One US Eastern calendar day, midnight to midnight, for one org | The engine, at midnight Eastern | Once at start, once at end |
 
 ### How they connect, in words
 
@@ -299,7 +297,7 @@ erDiagram
 - A **Manager** oversees several **Teams**. A **Team Lead** leads exactly one. This is what decides who can see what, and it has no live source yet.
 - When an agent breaks a **Rule**, the engine writes an **Instance**. Each instance records the strike number for that agent and that rule.
 - On the full ladder, strike 1 is a private nudge to the agent, strike 2 goes to the Team Lead, and strike 3 and later go to Ops and open or update an **Incident**.
-- An **Incident** belongs to one agent and one rule. There is at most one open incident per agent per rule; later strikes add to its count.
+- An **Incident** belongs to one agent and one rule, and is opened by one call-out. Every strike from the third on opens a new incident, so strike 5 on one rule means three incidents to investigate. Incidents never merge.
 - Queue-level rules (backlog, service level, abandon) and the feed rule write instances against **the floor**, not an agent, and never open incidents.
 
 > [!CAUTION]
@@ -323,10 +321,10 @@ The full definitions are in [`lib/types.ts`](../lib/types.ts). This section maps
 | `state` | One of seven console states | Genesys presence + routing + call events, mapped (below) | ✅ |
 | `stTime` | Seconds in the current state | At connect, Genesys's own start time (from Eastern midnight at most, except calls); then the engine timer | ✅ / ⚙️ |
 | `onHold`, `holdTime` | On hold, and for how long | `held` and `startHoldTime` on the queue conversation topic; engine timer | ✅ / ⚙️ |
-| `calls`, `shortCalls`, `transfers` | Today's counters | Counted by the engine from call ends on the queue topic | ⚠️ only since the last restart |
+| `calls`, `shortCalls`, `transfers` | Today's counters | Counted by the engine from call ends on the queue topic | ⚠️ only since the last restart; start again at zero at midnight Eastern |
 | `aht` | Average handle time, seconds | Genesys `tHandle` per agent since Eastern midnight (talk, hold, ACW); an estimate until the agent's first handled call | ✅ |
 | `adh` | Shift adherence % | NiceIEX | ❓ a default 96% |
-| `strikes` | Strike count per rule | Engine | ⚙️ since the last restart |
+| `strikes` | Strike count per rule | Engine | ⚙️ since the last restart; start again at zero at midnight Eastern |
 
 ### The seven console states
 
@@ -366,9 +364,9 @@ These are produced and owned by the console; nothing comes from Genesys.
 | --- | --- | --- |
 | **Rule** | `id`, `name`, `type`, `cond`, `thr`, `unit`, `sev`, `route`, `on` | 14 defaults. Only threshold, severity, route and on/off are editable |
 | **Instance** | `n`, `t`, `agent`, `isFloor`, `team`, `rule`, `ruleId`, `val`, `stage`, `sev`, `status`, `ackT`, `strikes`, `inc`, `cmt`, `cond`, `rev` | `cond` is a snapshot of the rule's threshold at the moment it fired, so later rule edits do not rewrite history |
-| **Incident** | `inc`, `t`, `agent`, `team`, `rule`, `ruleId`, `instances`, `status`, `disposition`, `closedT` | Numbered `INC-2026-NNNN` |
+| **Incident** | `inc`, `t`, `agent`, `team`, `rule`, `ruleId`, `instances`, `status`, `disposition`, `closedT` | Numbered `INC-<year>-NNNN` from one counter shared by all orgs, starting again at 0001 each January (Eastern). `instances` is the strike that opened it |
 
-Times (`t`, `ackT`, `closedT`) are **seconds since midnight US Eastern** (`lib/floorTime.ts`, `RTM_TIME_ZONE`), with no date. That must become a full timestamp once data is stored across days.
+Times (`t`, `ackT`, `closedT`) are **seconds since midnight US Eastern** (`lib/floorTime.ts`, `RTM_TIME_ZONE`), with no date. Stored records use full timestamps (`timestamptz`). At midnight Eastern the engine starts a new day (`engine.newDay()`): strikes and the day's counters go back to zero, while open call-outs and incidents carry over until they are dealt with.
 
 ### The 14 rules
 
@@ -416,14 +414,14 @@ Not everything belongs in a database. Agent timers change every second and can b
 | **Regions, orgs, queues** | Yes, as a synced copy | Which queues are watched, their division and queue group | 2 regions; 1,378 queues readable in one org |
 | **Queue membership** | Yes, as a synced copy | Who is on the floor; an agent's queues | 44,386 rows in the watched view |
 | **Teams, agents, org structure** | Yes, as a synced copy | Needed for history even after someone leaves or moves team | About 1,600 agents |
-| **Strike counts** | Yes, or rebuild from instances | Lets the engine resume mid-shift after a restart | – |
-| **Raw status and call events** | Optional but recommended | Lets a past day be replayed, disputes be checked, and call counts survive a restart | **Largest by far**: tens of thousands per shift |
+| **Strike counts** | Yes, for the current day | Lets the engine resume mid-shift after a restart; reset at midnight Eastern | – |
+| **Raw status and call events** | **Yes, for the current day only** | Lets the day's call counts and KPIs survive a restart. Emptied at midnight Eastern (decisions 8 and 9) | **Largest by far**: tens of thousands a day, never more than one day |
 | **Live timers** (`stTime`, `holdTime`) | No | Taken from Genesys's start times at connect | – |
 | **Queue numbers, AHT** | Optional | Useful for trend charts; re-read from Genesys at any time | Low |
 
 ### The restart problem
 
-Today a restart wipes the shift's call-outs, strikes, incidents and call counts. Part of the recovery is already built: at connect the console reads when each agent's current presence and routing began, so timers carry over, and rules an agent is already past are marked fired without raising a call-out. With a database the engine should also reload today's rules, strike counts, open instances and incidents, and rebuild call counts from stored call events. Strike counts and "which rules have already fired this episode" are why that state needs to be recoverable.
+Today a restart wipes the shift's call-outs, strikes, incidents and call counts. Part of the recovery is already built: at connect the console reads when each agent's current presence and routing began, so timers carry over, and rules an agent is already past are marked fired without raising a call-out. With a database the engine should also reload the rules, today's strike counts, open instances and incidents, and rebuild call counts from today's stored events. Strike counts and "which rules have already fired this episode" are why that state needs to be recoverable.
 
 ---
 
@@ -438,8 +436,8 @@ The open question is whether this data "can be passed as relational". **It can, 
 | Filter by a chain of ownership | "Call-outs for agents in teams under this Manager" | A join | Duplicate manager and team onto every call-out, and update them all when someone moves |
 | Count and group | "Call-outs per rule, split by stage" for the dashboards | `GROUP BY` | Aggregation pipeline |
 | Model many-to-many | An agent on 16 queues; a queue with 1,400 agents | A join table | Arrays on one side, kept in sync by hand |
-| Enforce a business rule | "At most one open incident per agent per rule" | A unique index does it | Possible with a partial unique index; easier to get wrong |
-| Change several things at once | Strike 3: write the instance **and** open the incident | One transaction | Multi-document transactions exist but need a replica set and more care |
+| Enforce a business rule | "Each call-out opens at most one incident" | A unique index does it | Possible with a unique index; nothing checks the call-out exists |
+| Change several things at once | Strike 3 and later: write the instance **and** open its incident | One transaction | Multi-document transactions exist but need a replica set and more care |
 | Keep history honest | Show an old call-out with the agent's team *at the time* | Foreign keys plus a snapshot column | Natural: embed the snapshot |
 | Store irregular raw payloads | Raw Genesys events, which vary by type | A `JSONB` column | Natural |
 | Export to CSV | Ledger and incident register | Straightforward | Straightforward |
@@ -451,21 +449,21 @@ The open question is whether this data "can be passed as relational". **It can, 
 | **Fit for this data** | Strong. The model is a set of linked entities | Workable, but the links are maintained in application code |
 | **Role scoping** (who sees what) | Joins and indexes | Denormalised fields that must be kept in sync |
 | **Dashboards and exports** | Plain SQL | Aggregation pipelines |
-| **Guarantees** (no duplicate open incident, no orphan call-outs) | Enforced by the database | Enforced mostly by our code |
+| **Guarantees** (one incident per call-out, no orphan call-outs) | Enforced by the database | Enforced mostly by our code |
 | **Raw Genesys events** | Good, via `JSONB` | Very good |
 | **Reporting tools** (Power BI, Excel, etc.) | Connect directly | Usually need a connector or an export step |
 | **Changing the shape later** | Migrations required | More flexible |
 | **Hosting** | AWS RDS, Azure, on-prem; widely supported | Atlas or self-hosted |
 | **Team familiarity** | Used on other BITS projects | To be confirmed |
 
-### Recommendation
+### Decision
 
 > [!IMPORTANT]
-> **Use PostgreSQL.** The console's data is a small, stable set of linked records, and almost every screen is a filter or a count across those links. PostgreSQL enforces the rules we care about (one open incident per agent per rule, every call-out belongs to a real agent and rule) so they cannot be broken by a bug.
+> **PostgreSQL, hosted on AWS, with Kysely for the migrations.** The console's data is a small, stable set of linked records, and almost every screen is a filter or a count across those links. PostgreSQL enforces the rules we care about (one incident per call-out, every call-out belongs to a real agent and rule) so they cannot be broken by a bug.
 >
 > The one area where a document store is the more natural fit is the **raw Genesys event log**, and PostgreSQL's `JSONB` column type handles that well. We get both in one system.
 
-**Choose MongoDB instead if** the team that will run the service already operates MongoDB and not PostgreSQL, or if the plan is mainly to archive raw Genesys payloads and do little reporting. Neither appears to be the case, but both are worth confirming.
+**MongoDB would have been the better fit if** the team running the service operated MongoDB and not PostgreSQL, or if the plan were mainly to archive raw Genesys payloads and do little reporting. Neither is the case.
 
 Either way, the data shapes in [Section 4](#4-the-data-model) stay the same. The engine does not talk to the database directly, so the choice is isolated to one storage layer.
 
@@ -473,9 +471,9 @@ Either way, the data shapes in [Section 4](#4-the-data-model) stay the same. The
 
 ## 8. Proposed schema
 
-A starting point for review, not a final design. The full PostgreSQL design, with every column, check, index and the strike-3 transaction, is in the **RTM Console PostgreSQL Schema** doc. This section summarises it and shows a MongoDB sketch for comparison.
+A starting point for review, not a final design. The full PostgreSQL design, with every column, check, index and the strike-3 transaction, is in the **RTM Console PostgreSQL Schema** doc, with the corrections from the decisions in the [Backend Implementation Guide](RTM_Console_Backend_Guide.pdf) (Section 9). This section summarises it and shows a MongoDB sketch for comparison.
 
-### Option A: PostgreSQL (recommended)
+### Option A: PostgreSQL (chosen)
 
 Twenty tables: the six from the *RTM Dashboard Data Tables* file (`source_event_stream`, `rules_master`, `notification_route`, `monitoring_instance`, `incident_log`, `notification_log`), two child tables split out of it, eight for people, shift state, delivery and audit, and four for Genesys regions, orgs, queues and queue membership.
 
@@ -504,10 +502,10 @@ erDiagram
 | Group | Tables | Holds |
 | --- | --- | --- |
 | Rules and routes | `rules_master`, `rule_version`, `notification_route`, `notification_route_step` | Each rule, every version of its settings, the four routes and each rung |
-| Records | `monitoring_instance`, `incident_log`, `incident_counter` | One row per call-out; investigations; `INC-YYYY-NNNN` numbering |
+| Records | `monitoring_instance`, `incident_log`, `incident_counter` | One row per call-out; investigations; `INC-YYYY-NNNN` numbering: one counter for all orgs, one row per year |
 | Delivery | `notification_log`, `push_subscription` | One row per recipient per channel; browser push endpoints |
-| People and shift | `person`, `team`, `shift`, `agent_rule_state` | Agents and leaders by Genesys user ID; strikes and fired flags per shift |
-| Ingestion | `source_event_stream`, `status_mapping` | Raw Genesys events by month; the ordered state mapping |
+| People and shift | `person`, `team`, `shift`, `agent_rule_state` | Agents and leaders by Genesys user ID; one shift per org per Eastern day; strikes per shift |
+| Ingestion | `source_event_stream`, `status_mapping` | Raw Genesys events for the current day only; the ordered state mapping |
 | Genesys | `genesys_region`, `genesys_org`, `queue`, `queue_member` | Where each org lives; its queues, queue groups and members |
 | Audit | `audit_event` | Incident status changes, ack-all, feed switches, token refreshes |
 
@@ -569,9 +567,9 @@ CREATE TABLE status_mapping (
 ```
 
 - **The live roster** is a query: active accounts on a watched queue whose last login is within 30 days (or unknown).
-- **One open incident per agent per rule** is a partial unique index on `incident_log (person_id, rule_id) WHERE status <> 'Closed'`.
-- **Strike counts** live in `agent_rule_state` per shift, person and rule, and can be rebuilt from `monitoring_instance`.
-- **Queue numbers and call events** are rows in `source_event_stream`, so they need no table of their own.
+- **One incident per strike**, from the third on: `incident_log` has a unique `instance_id` (the call-out that opened it) and its `strike`. There is no one-open-incident index.
+- **Strike counts** live in `agent_rule_state` per shift (one org's Eastern day), person and rule, and can be rebuilt from `monitoring_instance`.
+- **Queue numbers and call events** are rows in `source_event_stream`, so they need no table of their own. It holds the current Eastern day only and is emptied (`TRUNCATE`) at midnight.
 - **Queue groups** come from the name. If they need owners, thresholds or names of their own, they become a `queue_group` table.
 
 ### Option B: MongoDB
@@ -606,13 +604,13 @@ Four main collections. Team and manager are copied onto each call-out so that ro
   "openedAt": "2026-10-06T10:42:17Z", "instances": 3, "status": "Open", "disposition": null, "closedAt": null }
 ```
 
-Indexes needed: `instances {shiftId, team.managerId, firedAt}`, `instances {shiftId, team.tlId, firedAt}`, `instances {shiftId, agent.id, rule.id}`, `agents {queueIds}`, and a partial unique index on `incidents {agent.id, rule.id}` where `status ≠ "Closed"`.
+Indexes needed: `instances {shiftId, team.managerId, firedAt}`, `instances {shiftId, team.tlId, firedAt}`, `instances {shiftId, agent.id, rule.id}`, `agents {queueIds}`, and a unique index on `incidents {instanceId}`.
 
 **What this costs compared with Option A:**
 
 - When an agent changes team, past call-outs correctly keep the old team, but any code that reads the *current* team from an embedded copy will be wrong. The rule for which copy is authoritative has to be written down and followed.
 - Queue membership as arrays has to be rewritten on every roster load, and nothing checks that a queue ID in an agent's array exists.
-- Opening an incident and writing its third call-out must be wrapped in a multi-document transaction, which requires a replica set.
+- Opening an incident and writing the call-out that opens it must be wrapped in a multi-document transaction, which requires a replica set.
 - Nothing stops a call-out being written for an agent or rule that does not exist.
 
 ---
@@ -676,17 +674,17 @@ The engine lives in the memory of a single server process. That is fine for one 
 
 | # | Decision | Options | Who decides | Blocks | Status |
 | --- | --- | --- | --- | --- | --- |
-| 1 | **Database** | PostgreSQL *(recommended)* or MongoDB | Backend lead, BITS | Schema, hosting | Open |
+| 1 | **Database** | PostgreSQL or MongoDB | Backend lead, BITS | Schema, hosting | **Decided: PostgreSQL** on AWS, Kysely migrations |
 | 2 | **Genesys access** | Which OAuth grant; one OAuth client per org; channel limit per user; division reach | Genesys administrator | Running unattended, watching more queues | Partly answered: topics and permissions confirmed on a supervisor token |
 | 3 | **Org structure source** | Genesys teams/groups, an HR system, or a table we maintain | WFM, Genesys administrator | Role scoping, the Team and Manager views | Open: queues stand in for teams |
 | 4 | **Adherence and schedule source** | NiceIEX real-time API, periodic file, or leave the rules off | WFM | Adherence breach; Prolonged offline mid-shift | Open |
 | 5 | **Status mapping** | The agreed list of Genesys statuses → seven console states | WFM | Every timer rule | Built in code (Section 5); Meeting and Training pending WFM |
 | 6 | **One floor or several** | One set of queue numbers for everyone, or one per queue group (LGO, ELV, CGS, CNX) or LOB | WFM, Operations | Queue tiles, queue rules, schema | Open |
-| 7 | **What a shift is** | Start and end times; what happens to strikes and open incidents at rollover; overnight shifts | WFM, Operations | Strike counting, incident numbering | Open: strikes reset only on restart today |
-| 8 | **Keep raw events?** | Yes (enables replay, audits and call counts after a restart; most storage) or no | BITS, data governance | Storage sizing | Open |
-| 9 | **Retention** | How long call-outs, incidents and raw events are kept | Data governance | Storage sizing, archiving | Open |
+| 7 | **What a shift is** | Start and end times; what happens to strikes and open incidents at rollover; overnight shifts | WFM, Operations | Strike counting, incident numbering | **Decided:** one US Eastern day, midnight to midnight. Strikes and day counters reset at midnight; open call-outs and incidents carry over. Built in #36; incident numbers restart each January (#37) |
+| 8 | **Keep raw events?** | Yes (enables replay, audits and call counts after a restart; most storage) or no | BITS, data governance | Storage sizing | **Decided: yes, the current day only**, emptied at midnight Eastern |
+| 9 | **Retention** | How long call-outs, incidents and raw events are kept | Data governance | Storage sizing, archiving | **Raw events: one day.** Call-outs and incidents are kept; `notification_log` is split by month |
 | 10 | **Sign-in** | SSO provider, and how a signed-in person is matched to a role and a span | IT, BITS | Going live at all | Open |
-| 11 | **Orgs per region** | The org list for US East and US West, each with its watched view | Adrian | Multi-org feeds, `genesys_org` | Open |
+| 11 | **Orgs per region** | The org list for US East and US West, each with its watched view | Adrian | Multi-org feeds, `genesys_org` | **Decided:** Anthem Commercial (US East), Anthem GBD and Anthem Specialty (US West), in `lib/orgs.ts` (#35) |
 | 12 | **One person per org** | Confirm a person belongs to one org, or key agents by org and user ID | Adrian | `person` key | Assumed |
 | 13 | **Time zone for "today"** | Server time (Manila) or US Eastern | Operations | Queue numbers, shift dates | **Decided: Eastern**, built 8 Oct 2026 |
 | 14 | **Teams or queues** | Keep queues as teams, or map queues to teams once an org source exists | WFM, Operations | `team` and `queue` tables | Open |
@@ -709,8 +707,8 @@ The engine lives in the memory of a single server process. That is fine for one 
 | **Feed adapter** | The piece of our server that connects to Gencloud and translates its events into the console's format |
 | **Rules engine** | The part of the console that keeps the timers, checks the rules and decides escalation |
 | **Call-out / Instance** | One occasion of a rule firing. "Instance" in the code and the ledger; "call-out" in conversation |
-| **Strike** | The count of call-outs for one agent on one rule in one shift |
-| **Incident** | An investigation opened at the third strike |
+| **Strike** | The count of call-outs for one agent on one rule in one shift (one Eastern day) |
+| **Incident** | An investigation, opened by every strike from the third on (one per strike) |
 | **Stage** | How far a call-out went: Nudge (agent), Leader (Team Lead) or Ops |
 | **Span** | The set of teams a person is allowed to see |
 | **REST API** | Ask-and-answer communication: one request, one response |
