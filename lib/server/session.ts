@@ -1,12 +1,13 @@
 import { cookies } from "next/headers";
 import type { Role, View } from "@/lib/types";
 import { ROLE_LABEL } from "@/lib/engine/rules";
+import { env } from "@/lib/env";
 
 /**
  * Dev/admin flag for the "View as" selector. In production the role and span must come from
  * the SSO session: replace `readSession` with a lookup of the signed-in user.
  */
-export const VIEW_AS = process.env.NEXT_PUBLIC_VIEW_AS === "1";
+export const VIEW_AS = env().NEXT_PUBLIC_VIEW_AS === "1";
 
 const VIEW_COOKIE = "rtm_view";
 const SID_COOKIE = "rtm_sid";
