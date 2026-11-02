@@ -13,6 +13,8 @@ import { loadQueueMap } from "./queueMapStore";
 import { genesysToken, loadActiveOrg, saveActiveOrg } from "./tokenStore";
 import { type OrgId, orgOf, queueNamesFor } from "@/lib/orgs";
 import { floorDate, floorSeconds } from "@/lib/floorTime";
+import { env } from "@/lib/env";
+import { bootRules } from "./store";
 
 // Server-side home of the rules engine. One live runtime serves the whole floor; a CSV
 // replay gets its own runtime per session so reviewing history never disturbs the live feed.
@@ -84,7 +86,7 @@ const remembering = (feed: FeedSource, org: OrgId): FeedSource => ({
 });
 
 /** Where an org's API is. GENCLOUD_API_BASE can still move Commercial's. */
-export const orgApiBase = (org: OrgId): string => (org === "commercial" && process.env.GENCLOUD_API_BASE) || orgOf(org).apiBase;
+export const orgApiBase = (org: OrgId): string => (org === "commercial" && env().GENCLOUD_API_BASE) || orgOf(org).apiBase;
 
 /**
  * How an org's live feed reaches Genesys. The token check on /admin/token uses it too. The saved
@@ -92,9 +94,9 @@ export const orgApiBase = (org: OrgId): string => (org === "commercial" && proce
  */
 export const gencloudConfig = (org: OrgId): GencloudConfig => ({
   apiBase: orgApiBase(org), getToken: () => genesysToken(org),
-  viewConfigId: org === "commercial" ? process.env.RTM_VIEW_CONFIG_ID : "",
+  viewConfigId: org === "commercial" ? env().RTM_VIEW_CONFIG_ID : "",
   getQueueNames: () => queueNamesFor(loadQueueMap(), org),
-  clientId: process.env.GENCLOUD_CLIENT_ID, clientSecret: process.env.GENCLOUD_CLIENT_SECRET,
+  clientId: env().GENCLOUD_CLIENT_ID, clientSecret: env().GENCLOUD_CLIENT_SECRET,
 });
 
 function createGencloud(rules: Rule[], org: OrgId, incidents: IncidentCounter): Runtime {
@@ -164,7 +166,8 @@ interface Registry {
 }
 const g = globalThis as typeof globalThis & { __rtmRegistry?: Registry };
 const registry: Registry = (g.__rtmRegistry ??= {
-  rules: defaultRules(), source: process.env.NEXT_PUBLIC_FEED === "sim" ? "sim" : "gencloud", org: loadActiveOrg(),
+  // The rules the store loaded at start-up; the defaults outside a server (unit tests).
+  rules: bootRules() ?? defaultRules(), source: env().NEXT_PUBLIC_FEED === "sim" ? "sim" : "gencloud", org: loadActiveOrg(),
   floors: {}, orgs: {}, replays: new Map(), watchers: new Set(), incidentSeq: { year: 0, n: 0 },
 });
 // A registry from before there were several orgs (a dev reload) gets the new fields.

@@ -1,5 +1,6 @@
 import { authorize, authorizeFor, deny, readJson } from "@/lib/server/guard";
 import { publishAll } from "@/lib/server/runtime";
+import { store } from "@/lib/server/store";
 import { ROUTE_IDS } from "@/lib/engine/rules";
 import type { Route } from "@/lib/types";
 
@@ -36,6 +37,8 @@ export async function PATCH(req: Request) {
     if (typeof body.on !== "boolean") return deny(400, "Enabled must be true or false.");
     e.setOn(rule.id, body.on);
   }
+  // A new rule version, saved shortly after (quick edits become one). Who changed it is recorded once sign-in exists.
+  store().ruleChanged(rule);
   publishAll();
   return Response.json({ rule });
 }

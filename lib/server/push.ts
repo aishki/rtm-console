@@ -3,6 +3,7 @@ import type { AlertNote, View } from "@/lib/types";
 import { alertsFor } from "@/lib/alerts";
 import type { EngineState } from "@/lib/engine/escalation";
 import { inScope } from "@/lib/engine/scope";
+import { env } from "@/lib/env";
 import type { Batch } from "./runtime";
 
 // Web Push: delivers nudges and escalations as system notifications, including to people
@@ -10,12 +11,11 @@ import type { Batch } from "./runtime";
 // person it is signed in as; the push services (Google for Chrome, Microsoft for Edge)
 // relay the encrypted payload.
 
-const PUBLIC_KEY = process.env.VAPID_PUBLIC_KEY;
-const PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY;
+const { VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT } = env();
 
-/** The key browsers subscribe with, or null when push is not configured. */
-export const pushKey: string | null = PUBLIC_KEY && PRIVATE_KEY ? PUBLIC_KEY : null;
-if (pushKey) webpush.setVapidDetails(process.env.VAPID_SUBJECT ?? "mailto:rtm-console@example.com", PUBLIC_KEY!, PRIVATE_KEY!);
+/** The key browsers subscribe with, or null when push is not configured. The settings check makes it all three or none. */
+export const pushKey: string | null = VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY && VAPID_SUBJECT ? VAPID_PUBLIC_KEY : null;
+if (pushKey) webpush.setVapidDetails(VAPID_SUBJECT!, VAPID_PUBLIC_KEY!, VAPID_PRIVATE_KEY!);
 
 /** A nudge is only useful in the moment: undelivered pushes are dropped after this many seconds. */
 const TTL_SECONDS = 60;

@@ -1,0 +1,27 @@
+# Local PostgreSQL for development and integration tests: npm run db:up.
+# Never used in deployed environments, which connect to rtm_console on van-reservation-prod.
+# The major version should match van-reservation-prod's (SELECT version() there).
+# The credentials are for this local container only, and match .env.example.
+name: rtm-console
+
+services:
+  db:
+    image: postgres:17.6-alpine
+    container_name: rtm-console-db
+    environment:
+      POSTGRES_USER: rtm_local
+      POSTGRES_PASSWORD: rtm_local_only
+      POSTGRES_DB: rtm_console
+    ports:
+      - "5435:5432"
+    volumes:
+      - rtm-console-pgdata:/var/lib/postgresql/data
+      - ./tools/db/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rtm_local -d rtm_console"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  rtm-console-pgdata:
