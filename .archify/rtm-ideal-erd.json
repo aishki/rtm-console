@@ -1,0 +1,765 @@
+{
+  "schema_version": 1,
+  "diagram_type": "erd",
+  "meta": {
+    "title": "RTM Console \u2014 Ideal Production PostgreSQL Schema (12 Tables)",
+    "locale": "en",
+    "output": ".archify/rtm-ideal-erd.html",
+    "quality_profile": "standard",
+    "views": [
+      {
+        "id": "ui-to-schema",
+        "label": "UI Views to Schema Mapping",
+        "focus": [
+          "source_event_stream",
+          "rules_master",
+          "rule_version",
+          "monitoring_instance",
+          "incident_log"
+        ],
+        "note": "Console KPIs from eventstream, Ledger broken rules from instances, Dashboard actions from incident_log, and Rules from rules_master."
+      },
+      {
+        "id": "full-production",
+        "label": "Complete 12-Table Enterprise Schema",
+        "focus": [
+          "status_mapping",
+          "source_event_stream",
+          "queue_map",
+          "team",
+          "person",
+          "audit_event",
+          "notification_route",
+          "rules_master",
+          "rule_version",
+          "notification_log",
+          "monitoring_instance",
+          "incident_log"
+        ],
+        "note": "Full 12-table production schema linking raw telemetry to person, queue to team hierarchy, and broken rules to instances."
+      }
+    ]
+  },
+  "layout": {
+    "mode": "grid",
+    "gapX": 60,
+    "gapY": 40,
+    "entityW": 290
+  },
+  "entities": [
+    {
+      "id": "status_mapping",
+      "label": "status_mapping",
+      "row": 0,
+      "col": 0,
+      "attributes": [
+        {
+          "name": "priority",
+          "type": "smallint",
+          "key": "pk"
+        },
+        {
+          "name": "signal",
+          "type": "text"
+        },
+        {
+          "name": "genesys_status",
+          "type": "text"
+        },
+        {
+          "name": "console_state",
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "id": "source_event_stream",
+      "label": "source_event_stream",
+      "row": 1,
+      "col": 0,
+      "attributes": [
+        {
+          "name": "event_id",
+          "type": "bigint",
+          "key": "pk"
+        },
+        {
+          "name": "person_id",
+          "type": "text",
+          "key": "fk",
+          "references": "person.person_id"
+        },
+        {
+          "name": "queue_id",
+          "type": "text",
+          "key": "fk",
+          "references": "queue_map.queue_id"
+        },
+        {
+          "name": "source_system",
+          "type": "text"
+        },
+        {
+          "name": "event_timestamp",
+          "type": "timestamptz"
+        },
+        {
+          "name": "entity_type",
+          "type": "text"
+        },
+        {
+          "name": "entity_id",
+          "type": "text"
+        },
+        {
+          "name": "metric_name",
+          "type": "text"
+        },
+        {
+          "name": "metric_value",
+          "type": "numeric"
+        },
+        {
+          "name": "event_payload",
+          "type": "jsonb"
+        },
+        {
+          "name": "processed_flag",
+          "type": "boolean"
+        },
+        {
+          "name": "processed_date",
+          "type": "timestamptz"
+        }
+      ]
+    },
+    {
+      "id": "queue_map",
+      "label": "queue_map",
+      "row": 2,
+      "col": 0,
+      "attributes": [
+        {
+          "name": "queue_id",
+          "type": "text",
+          "key": "pk"
+        },
+        {
+          "name": "team_id",
+          "type": "text",
+          "key": "fk",
+          "references": "team.team_id"
+        },
+        {
+          "name": "queue_name",
+          "type": "text"
+        },
+        {
+          "name": "tower",
+          "type": "text"
+        },
+        {
+          "name": "sub_tower",
+          "type": "text"
+        },
+        {
+          "name": "lob",
+          "type": "text"
+        },
+        {
+          "name": "sub_lob",
+          "type": "text"
+        },
+        {
+          "name": "watched",
+          "type": "boolean"
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamptz"
+        }
+      ]
+    },
+    {
+      "id": "team",
+      "label": "team",
+      "row": 0,
+      "col": 1,
+      "attributes": [
+        {
+          "name": "team_id",
+          "type": "text",
+          "key": "pk"
+        },
+        {
+          "name": "name",
+          "type": "text"
+        },
+        {
+          "name": "lob",
+          "type": "text"
+        },
+        {
+          "name": "sub_lob",
+          "type": "text"
+        },
+        {
+          "name": "tower",
+          "type": "text"
+        },
+        {
+          "name": "tl_person_id",
+          "type": "text",
+          "key": "fk",
+          "references": "person.person_id"
+        },
+        {
+          "name": "mgr_person_id",
+          "type": "text",
+          "key": "fk",
+          "references": "person.person_id"
+        }
+      ]
+    },
+    {
+      "id": "person",
+      "label": "person",
+      "row": 1,
+      "col": 1,
+      "attributes": [
+        {
+          "name": "person_id",
+          "type": "text",
+          "key": "pk"
+        },
+        {
+          "name": "team_id",
+          "type": "text",
+          "key": "fk",
+          "references": "team.team_id"
+        },
+        {
+          "name": "name",
+          "type": "text"
+        },
+        {
+          "name": "email",
+          "type": "text"
+        },
+        {
+          "name": "role",
+          "type": "text"
+        },
+        {
+          "name": "account_state",
+          "type": "text"
+        },
+        {
+          "name": "push_endpoints",
+          "type": "jsonb"
+        },
+        {
+          "name": "last_login_at",
+          "type": "timestamptz"
+        }
+      ]
+    },
+    {
+      "id": "audit_event",
+      "label": "audit_event",
+      "row": 2,
+      "col": 1,
+      "attributes": [
+        {
+          "name": "audit_id",
+          "type": "bigint",
+          "key": "pk"
+        },
+        {
+          "name": "person_id",
+          "type": "text",
+          "key": "fk",
+          "references": "person.person_id"
+        },
+        {
+          "name": "action",
+          "type": "text"
+        },
+        {
+          "name": "target_entity",
+          "type": "text"
+        },
+        {
+          "name": "details",
+          "type": "jsonb"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz"
+        }
+      ]
+    },
+    {
+      "id": "monitoring_instance",
+      "label": "monitoring_instance",
+      "row": 0,
+      "col": 2,
+      "attributes": [
+        {
+          "name": "instance_id",
+          "type": "bigint",
+          "key": "pk"
+        },
+        {
+          "name": "rule_id",
+          "type": "text",
+          "key": "fk",
+          "references": "rules_master.rule_id"
+        },
+        {
+          "name": "source_event_id",
+          "type": "bigint",
+          "key": "fk",
+          "references": "source_event_stream.event_id"
+        },
+        {
+          "name": "person_id",
+          "type": "text",
+          "key": "fk",
+          "references": "person.person_id"
+        },
+        {
+          "name": "metric_name",
+          "type": "text"
+        },
+        {
+          "name": "metric_value",
+          "type": "numeric"
+        },
+        {
+          "name": "threshold_value",
+          "type": "numeric"
+        },
+        {
+          "name": "severity",
+          "type": "text"
+        },
+        {
+          "name": "occurrence_count",
+          "type": "integer"
+        },
+        {
+          "name": "status",
+          "type": "text"
+        },
+        {
+          "name": "acknowledged_by",
+          "type": "text"
+        },
+        {
+          "name": "acknowledged_date",
+          "type": "timestamptz"
+        },
+        {
+          "name": "current_notification_level",
+          "type": "text"
+        },
+        {
+          "name": "comments",
+          "type": "text"
+        },
+        {
+          "name": "created_date",
+          "type": "timestamptz"
+        },
+        {
+          "name": "last_updated_date",
+          "type": "timestamptz"
+        }
+      ]
+    },
+    {
+      "id": "incident_log",
+      "label": "incident_log",
+      "row": 1,
+      "col": 2,
+      "attributes": [
+        {
+          "name": "incident_id",
+          "type": "bigint",
+          "key": "pk"
+        },
+        {
+          "name": "incident_number",
+          "type": "text"
+        },
+        {
+          "name": "instance_id",
+          "type": "bigint",
+          "key": "fk",
+          "references": "monitoring_instance.instance_id"
+        },
+        {
+          "name": "person_id",
+          "type": "text",
+          "key": "fk",
+          "references": "person.person_id"
+        },
+        {
+          "name": "owner",
+          "type": "text"
+        },
+        {
+          "name": "priority",
+          "type": "text"
+        },
+        {
+          "name": "status",
+          "type": "text"
+        },
+        {
+          "name": "root_cause",
+          "type": "text"
+        },
+        {
+          "name": "resolution",
+          "type": "text"
+        },
+        {
+          "name": "open_date",
+          "type": "timestamptz"
+        },
+        {
+          "name": "close_date",
+          "type": "timestamptz"
+        },
+        {
+          "name": "comments",
+          "type": "text"
+        },
+        {
+          "name": "created_date",
+          "type": "timestamptz"
+        },
+        {
+          "name": "modified_date",
+          "type": "timestamptz"
+        }
+      ]
+    },
+    {
+      "id": "notification_log",
+      "label": "notification_log",
+      "row": 2,
+      "col": 2,
+      "attributes": [
+        {
+          "name": "notification_id",
+          "type": "bigint",
+          "key": "pk"
+        },
+        {
+          "name": "instance_id",
+          "type": "bigint",
+          "key": "fk",
+          "references": "monitoring_instance.instance_id"
+        },
+        {
+          "name": "notification_timestamp",
+          "type": "timestamptz"
+        },
+        {
+          "name": "recipients",
+          "type": "jsonb"
+        },
+        {
+          "name": "channel",
+          "type": "text"
+        },
+        {
+          "name": "notification_level",
+          "type": "text"
+        },
+        {
+          "name": "delivery_status",
+          "type": "text"
+        },
+        {
+          "name": "created_date",
+          "type": "timestamptz"
+        }
+      ]
+    },
+    {
+      "id": "rules_master",
+      "label": "rules_master",
+      "row": 0,
+      "col": 3,
+      "attributes": [
+        {
+          "name": "rule_id",
+          "type": "text",
+          "key": "pk"
+        },
+        {
+          "name": "route_id",
+          "type": "text",
+          "key": "fk",
+          "references": "notification_route.route_id"
+        },
+        {
+          "name": "rule_name",
+          "type": "text"
+        },
+        {
+          "name": "scope_level",
+          "type": "text"
+        },
+        {
+          "name": "scope_target",
+          "type": "text"
+        },
+        {
+          "name": "metric_name",
+          "type": "text"
+        },
+        {
+          "name": "operator",
+          "type": "text"
+        },
+        {
+          "name": "threshold_value",
+          "type": "numeric"
+        },
+        {
+          "name": "severity",
+          "type": "text"
+        },
+        {
+          "name": "current_version",
+          "type": "integer"
+        },
+        {
+          "name": "enabled",
+          "type": "boolean"
+        },
+        {
+          "name": "created_date",
+          "type": "timestamptz"
+        },
+        {
+          "name": "modified_date",
+          "type": "timestamptz"
+        }
+      ]
+    },
+    {
+      "id": "rule_version",
+      "label": "rule_version",
+      "row": 1,
+      "col": 3,
+      "attributes": [
+        {
+          "name": "version_id",
+          "type": "bigint",
+          "key": "pk"
+        },
+        {
+          "name": "rule_id",
+          "type": "text",
+          "key": "fk",
+          "references": "rules_master.rule_id"
+        },
+        {
+          "name": "version_number",
+          "type": "integer"
+        },
+        {
+          "name": "scope_level",
+          "type": "text"
+        },
+        {
+          "name": "scope_target",
+          "type": "text"
+        },
+        {
+          "name": "threshold_value",
+          "type": "numeric"
+        },
+        {
+          "name": "operator",
+          "type": "text"
+        },
+        {
+          "name": "severity",
+          "type": "text"
+        },
+        {
+          "name": "route_id",
+          "type": "text"
+        },
+        {
+          "name": "change_reason",
+          "type": "text"
+        },
+        {
+          "name": "modified_by",
+          "type": "text",
+          "key": "fk",
+          "references": "person.person_id"
+        },
+        {
+          "name": "effective_at",
+          "type": "timestamptz"
+        }
+      ]
+    },
+    {
+      "id": "notification_route",
+      "label": "notification_route",
+      "row": 2,
+      "col": 3,
+      "attributes": [
+        {
+          "name": "route_id",
+          "type": "text",
+          "key": "pk"
+        },
+        {
+          "name": "route_name",
+          "type": "text"
+        },
+        {
+          "name": "description",
+          "type": "text"
+        },
+        {
+          "name": "route_map",
+          "type": "jsonb"
+        },
+        {
+          "name": "enabled",
+          "type": "boolean"
+        }
+      ]
+    }
+  ],
+  "relationships": [
+    {
+      "id": "r1",
+      "from": "source_event_stream",
+      "to": "person",
+      "fromCardinality": "many",
+      "toCardinality": "one",
+      "label": "originates from"
+    },
+    {
+      "id": "r2",
+      "from": "source_event_stream",
+      "to": "queue_map",
+      "fromCardinality": "many",
+      "toCardinality": "one",
+      "label": "monitors queue"
+    },
+    {
+      "id": "r3",
+      "from": "queue_map",
+      "to": "team",
+      "fromCardinality": "many",
+      "toCardinality": "one",
+      "label": "handled by"
+    },
+    {
+      "id": "r4",
+      "from": "person",
+      "to": "team",
+      "fromCardinality": "many",
+      "toCardinality": "one",
+      "label": "belongs to"
+    },
+    {
+      "id": "r5",
+      "from": "audit_event",
+      "to": "person",
+      "fromCardinality": "many",
+      "toCardinality": "one",
+      "label": "performed by"
+    },
+    {
+      "id": "r6",
+      "from": "monitoring_instance",
+      "to": "source_event_stream",
+      "fromCardinality": "many",
+      "toCardinality": "one",
+      "label": "triggered by"
+    },
+    {
+      "id": "r7",
+      "from": "monitoring_instance",
+      "to": "rules_master",
+      "fromCardinality": "many",
+      "toCardinality": "one",
+      "label": "evaluates"
+    },
+    {
+      "id": "r8",
+      "from": "monitoring_instance",
+      "to": "person",
+      "fromCardinality": "many",
+      "toCardinality": "one",
+      "label": "targets"
+    },
+    {
+      "id": "r9",
+      "from": "incident_log",
+      "to": "monitoring_instance",
+      "fromCardinality": "many",
+      "toCardinality": "one",
+      "label": "escalated from"
+    },
+    {
+      "id": "r10",
+      "from": "notification_log",
+      "to": "monitoring_instance",
+      "fromCardinality": "many",
+      "toCardinality": "one",
+      "label": "notifies for"
+    },
+    {
+      "id": "r11",
+      "from": "rules_master",
+      "to": "notification_route",
+      "fromCardinality": "many",
+      "toCardinality": "one",
+      "label": "routes via"
+    },
+    {
+      "id": "r12",
+      "from": "rule_version",
+      "to": "rules_master",
+      "fromCardinality": "many",
+      "toCardinality": "one",
+      "label": "revisions of"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "Complete Live Ingestion & People Hierarchy",
+      "items": [
+        "1. **All Telemetry Flows to Ingestion:** Every event (triggered or not) lands in `source_event_stream` carrying `person_id` (FK to `person`) and `queue_id` (FK to `queue_map`).",
+        "2. **Team Hierarchy:** `team` anchors LOB, Tower, Team Lead (`tl_person_id`), and Manager (`mgr_person_id`).",
+        "3. **WFM Queue Mapping:** `queue_map` links contact center queues to their assigned `team` (`team_id` FK)."
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "Violations, Escalations & Rules",
+      "items": [
+        "1. **Instance Trigger:** Rule breaks produce records in `monitoring_instance` pointing back to `source_event_id` and `person_id`.",
+        "2. **Every Instance Notifies:** Recorded in `notification_log`; Strike 3 escalates to `incident_log`.",
+        "3. **Rule Audit:** Multi-level scoped rules in `rules_master` track historical edits in `rule_version`."
+      ]
+    }
+  ]
+}
