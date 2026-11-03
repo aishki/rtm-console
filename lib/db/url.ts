@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { rootCertificates } from "node:tls";
+import { checkServerIdentity, rootCertificates } from "node:tls";
 
 // How the console finds its database. Pure functions, apart from reading a certificate file, and no
 // Next.js: the app, the migration tools and the tests all use them.
@@ -68,12 +68,29 @@ export function isTestDatabase(url: string): boolean {
 
 export type SslMode = "verify-full" | "no-verify" | "disable";
 
+export interface PgSsl {
+  rejectUnauthorized: boolean;
+  ca?: string[];
+  servername?: string;
+  checkServerIdentity?: typeof checkServerIdentity;
+}
+
 /**
  * The `ssl` option for pg. verify-full trusts Node's usual authorities plus DB_CA_CERT (the RDS
- * bundle on EC2, or a company's certificate behind TLS inspection): added, never a replacement.
+ * bundle, or a company's certificate behind TLS inspection): added, never a replacement.
+ *
+ * `serverName` (DB_TLS_SERVERNAME) is the name the certificate must carry when the host is not that
+ * name, as through an SSM tunnel on 127.0.0.1: the certificate is still fully checked, against the
+ * RDS endpoint instead of the tunnel's address.
  */
-export function pgSsl(mode: SslMode, caFile?: string, read: (f: string) => string = f => readFileSync(f, "utf8")): false | { rejectUnauthorized: boolean; ca?: string[] } {
+export function pgSsl(mode: SslMode, caFile?: string, serverName?: string, read: (f: string) => string = f => readFileSync(f, "utf8")): false | PgSsl {
   if (mode === "disable") return false;
   if (mode === "no-verify") return { rejectUnauthorized: false };
-  return caFile ? { rejectUnauthorized: true, ca: [...rootCertificates, read(caFile)] } : { rejectUnauthorized: true };
+  const ssl: PgSsl = { rejectUnauthorized: true };
+  if (caFile) ssl.ca = [...rootCertificates, read(caFile)];
+  if (serverName) {
+    ssl.servername = serverName;
+    ssl.checkServerIdentity = (_host, cert) => checkServerIdentity(serverName, cert);
+  }
+  return ssl;
 }

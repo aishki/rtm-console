@@ -51,7 +51,9 @@ npm run dev        # http://localhost:3000
 | `APP_ENV` | Required: `development`, `test`, `staging` or `production`. Not `NODE_ENV`. |
 | `PERSISTENCE_MODE` | Required: `postgres`, or `memory` (development and test only; nothing survives a restart). |
 | `DATABASE_URL` or `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD` | The database, for `postgres` mode and the `db:*` scripts. `DATABASE_URL` wins. The local container's values are in `.env.example`. |
-| `DB_SSLMODE`, `DB_CA_CERT` | TLS to the database. `verify-full` by default; `disable` for the local container. `DB_CA_CERT` adds a certificate authority, such as the RDS bundle. |
+| `DB_SSLMODE`, `DB_CA_CERT` | TLS to the database. `verify-full` by default; `disable` for the local container. `DB_CA_CERT` adds a certificate authority, such as the RDS bundle in `tools/db/rds-global-bundle.pem`. |
+| `DB_TLS_SERVERNAME` | The name on the database's certificate when `DB_HOST` is a tunnel (`127.0.0.1`): the RDS endpoint. The certificate is still fully checked. |
+| `DB_MIGRATE_USER`, `DB_MIGRATE_PASSWORD` | The login `npm run db:migrate` uses instead of `DB_USER` (`rtm_migrator`). Both or neither. The app never uses it. |
 | `NEXT_PUBLIC_FEED=sim` | Start on the floor simulator. Set to a non-"sim" value (e.g., `gencloud`) to start on the Gencloud adapter. An admin can switch between the two while the server runs (see "Switching the data source"). |
 | `NEXT_PUBLIC_VIEW_AS=1` | Dev/admin flag for the "View as" role selector. **Without it every API route answers 401**, because no SSO exists yet. Required for Gencloud development. |
 | `GENESYS_TOKEN` | Hand-grabbed supervisor bearer token for **Anthem Commercial** from the browser DevTools Network tab (Authorization header of an api.mypurecloud.com request). Short-lived. Seeds Commercial's first start only: a token pasted on `/admin/token` replaces it (see "Refreshing the Genesys token"). `GBD_TOKEN` and `SPECIALTY_TOKEN` do the same for Anthem GBD and Anthem Specialty. |

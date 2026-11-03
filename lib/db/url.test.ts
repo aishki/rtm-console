@@ -71,10 +71,21 @@ describe("testDatabaseUrl", () => {
 describe("pgSsl", () => {
   it("verifies the server by default, and adds DB_CA_CERT to the usual authorities", () => {
     expect(pgSsl("verify-full")).toEqual({ rejectUnauthorized: true });
-    const ssl = pgSsl("verify-full", "company.pem", () => "COMPANY-CA");
+    const ssl = pgSsl("verify-full", "company.pem", undefined, () => "COMPANY-CA");
     expect(ssl && ssl.rejectUnauthorized).toBe(true);
     expect(ssl && ssl.ca?.at(-1)).toBe("COMPANY-CA");
     expect(ssl && ssl.ca!.length).toBeGreaterThan(1);
+  });
+
+  it("checks the certificate against DB_TLS_SERVERNAME when connecting through a tunnel", () => {
+    const ssl = pgSsl("verify-full", undefined, "db.example.rds.amazonaws.com");
+    if (!ssl) throw new Error("expected TLS settings");
+    expect(ssl.rejectUnauthorized).toBe(true);
+    expect(ssl.servername).toBe("db.example.rds.amazonaws.com");
+    const cert = (name: string) => ({ subject: { CN: name }, subjectaltname: `DNS:${name}` }) as unknown as import("node:tls").PeerCertificate;
+    expect(ssl.checkServerIdentity!("127.0.0.1", cert("db.example.rds.amazonaws.com"))).toBeUndefined();
+    expect(ssl.checkServerIdentity!("127.0.0.1", cert("other.example.com"))).toBeInstanceOf(Error);
+    expect(pgSsl("verify-full")).not.toHaveProperty("checkServerIdentity");
   });
 
   it("turns TLS off or stops verifying only when asked", () => {

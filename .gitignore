@@ -23,6 +23,8 @@
 # misc
 .DS_Store
 *.pem
+# Amazon's public RDS certificate bundle (no private key): committed for DB_CA_CERT
+!/tools/db/rds-global-bundle.pem
 
 # debug
 npm-debug.log*

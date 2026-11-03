@@ -48,8 +48,13 @@ const fields = {
   DB_SCHEMA: text().regex(/^[a-z_][a-z0-9_]*$/, "must be a lower-case PostgreSQL name (letters, digits, _)").optional(),
   DB_SSLMODE: z.enum(["verify-full", "no-verify", "disable"], { error: "must be verify-full, no-verify or disable" }).default("verify-full"),
   DB_CA_CERT: text().optional(),
+  /** The name on the database's certificate, when DB_HOST is a tunnel (127.0.0.1) rather than that name. */
+  DB_TLS_SERVERNAME: text().regex(/^[a-z0-9.-]+$/i, "must be a host name, such as the RDS endpoint").optional(),
   DB_POOL_MAX: int(1, 50).default(10),
   TEST_DATABASE_URL: pgUrl().optional(),
+  /** The login db:migrate uses instead of DB_USER and DB_PASSWORD (rtm_migrator). Never used by the app. */
+  DB_MIGRATE_USER: text().optional(),
+  DB_MIGRATE_PASSWORD: text().optional(),
 
   NEXT_PUBLIC_FEED: text().optional(),
   NEXT_PUBLIC_VIEW_AS: flag().optional(),
@@ -88,6 +93,10 @@ function checkDatabase(v: Raw, required: boolean, add: (i: Issue) => void): void
   } else if (required && v.DATABASE_URL === undefined && set.length === 0) {
     add({ path: "DATABASE_URL", message: "is missing: set DATABASE_URL, or DB_HOST, DB_NAME, DB_USER and DB_PASSWORD" });
   }
+  const migrate = ["DB_MIGRATE_USER", "DB_MIGRATE_PASSWORD"] as const;
+  const migrateSet = migrate.filter(k => v[k] !== undefined);
+  if (migrateSet.length === 1) add({ path: migrate.find(k => v[k] === undefined)!, message: "is missing: the migration login needs both DB_MIGRATE_USER and DB_MIGRATE_PASSWORD, or neither" });
+  if (migrateSet.length > 0 && v.DATABASE_URL !== undefined) add({ path: "DB_MIGRATE_USER", message: "works with the DB_* settings only, not DATABASE_URL: set the migration login in the URL db:migrate uses instead" });
   for (const k of ["DATABASE_URL", "TEST_DATABASE_URL"] as const) {
     if (v[k] && /[?&](sslmode|sslrootcert|sslcert|sslkey|ssl)=/i.test(v[k]!)) add({ path: k, message: "has an ssl setting in it: use DB_SSLMODE and DB_CA_CERT instead" });
   }
@@ -147,7 +156,7 @@ function parseWith<T>(schema: z.ZodType<T>, raw: Raw, what?: string): T {
 /** Check a set of variables (process.env, or a test's). Throws an EnvError listing every problem. */
 export const parseEnv = (raw: Raw): Env => parseWith(serverSchema, raw);
 
-const dbFields = { APP_ENV: fields.APP_ENV, DATABASE_URL: fields.DATABASE_URL, DB_HOST: fields.DB_HOST, DB_PORT: fields.DB_PORT, DB_NAME: fields.DB_NAME, DB_USER: fields.DB_USER, DB_PASSWORD: fields.DB_PASSWORD, DB_SCHEMA: fields.DB_SCHEMA, DB_SSLMODE: fields.DB_SSLMODE, DB_CA_CERT: fields.DB_CA_CERT, DB_POOL_MAX: fields.DB_POOL_MAX, TEST_DATABASE_URL: fields.TEST_DATABASE_URL };
+const dbFields = { APP_ENV: fields.APP_ENV, DATABASE_URL: fields.DATABASE_URL, DB_HOST: fields.DB_HOST, DB_PORT: fields.DB_PORT, DB_NAME: fields.DB_NAME, DB_USER: fields.DB_USER, DB_PASSWORD: fields.DB_PASSWORD, DB_SCHEMA: fields.DB_SCHEMA, DB_SSLMODE: fields.DB_SSLMODE, DB_CA_CERT: fields.DB_CA_CERT, DB_TLS_SERVERNAME: fields.DB_TLS_SERVERNAME, DB_POOL_MAX: fields.DB_POOL_MAX, TEST_DATABASE_URL: fields.TEST_DATABASE_URL, DB_MIGRATE_USER: fields.DB_MIGRATE_USER, DB_MIGRATE_PASSWORD: fields.DB_MIGRATE_PASSWORD };
 const dbSchema = z.object(dbFields).superRefine((v, ctx) => {
   const add = (i: Issue) => ctx.addIssue({ code: "custom", path: [i.path], message: i.message });
   checkDatabase(v as unknown as Raw, true, add);
@@ -157,6 +166,11 @@ export type DbEnv = z.infer<typeof dbSchema>;
 
 /** Only what the database tools (db:migrate and the rest) need. They run with the migrator's login and none of the app's secrets. */
 export const parseDbEnv = (raw: Raw): DbEnv => parseWith(dbSchema, raw, "database settings");
+
+/** The settings with the migration login in place of the app's, when DB_MIGRATE_USER is set. For db:migrate and the other db:* tools only. */
+export function migrationLogin<T extends DbEnv>(e: T): T {
+  return e.DB_MIGRATE_USER && e.DB_MIGRATE_PASSWORD ? { ...e, DB_USER: e.DB_MIGRATE_USER, DB_PASSWORD: e.DB_MIGRATE_PASSWORD } : e;
+}
 
 const publicSchema = z.object({ NEXT_PUBLIC_FEED: fields.NEXT_PUBLIC_FEED, NEXT_PUBLIC_VIEW_AS: fields.NEXT_PUBLIC_VIEW_AS, NEXT_PUBLIC_DEV_TOOLS: fields.NEXT_PUBLIC_DEV_TOOLS });
 /** The settings built into the browser bundle, checked by next.config.ts at build time. */
