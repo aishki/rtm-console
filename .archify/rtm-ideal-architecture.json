@@ -1,0 +1,486 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "RTM Console \u2014 Ideal Production Runtime & Persistence Architecture",
+    "output": ".archify/rtm-ideal-architecture.html",
+    "quality_profile": "standard",
+    "repository": {
+      "url": "https://github.com/aishki/rtm-console",
+      "revision": "793b167a5cbd41a921f5cabd90846c66f861cc77"
+    }
+  },
+  "components": [
+    {
+      "id": "gencloud",
+      "type": "external",
+      "label": "GenCloud Feed",
+      "sublabel": "WS & REST Telemetry",
+      "pos": [
+        40,
+        120
+      ],
+      "size": [
+        130,
+        64
+      ],
+      "tag": "telemetry",
+      "sources": [
+        {
+          "path": "lib/feed/GencloudFeed.ts",
+          "line": 1,
+          "end_line": 35
+        }
+      ]
+    },
+    {
+      "id": "wfmUpload",
+      "type": "external",
+      "label": "WFM Queue Map",
+      "sublabel": "Tower to Queue CSV/JSON",
+      "pos": [
+        40,
+        310
+      ],
+      "size": [
+        130,
+        64
+      ],
+      "tag": "taxonomy",
+      "sources": [
+        {
+          "path": "lib/server/queueMapStore.ts",
+          "line": 1,
+          "end_line": 30
+        }
+      ]
+    },
+    {
+      "id": "ingestPipeline",
+      "type": "backend",
+      "label": "Ingestion Worker",
+      "sublabel": "Parses & maps status",
+      "pos": [
+        260,
+        120
+      ],
+      "size": [
+        140,
+        64
+      ],
+      "sources": [
+        {
+          "path": "lib/server/runtime.ts",
+          "line": 1,
+          "end_line": 50
+        }
+      ]
+    },
+    {
+      "id": "queueMapDb",
+      "type": "database",
+      "label": "queue_map & team",
+      "sublabel": "Tower -> LOB -> Team (FK)",
+      "pos": [
+        260,
+        310
+      ],
+      "size": [
+        140,
+        64
+      ],
+      "sources": [
+        {
+          "path": "lib/server/queueMapStore.ts",
+          "line": 10,
+          "end_line": 45
+        }
+      ]
+    },
+    {
+      "id": "eventStreamDb",
+      "type": "database",
+      "label": "source_event_stream",
+      "sublabel": "Live events (person_id FK)",
+      "pos": [
+        490,
+        120
+      ],
+      "size": [
+        150,
+        64
+      ],
+      "sources": [
+        {
+          "path": "docs/data-architecture.md",
+          "line": 480,
+          "end_line": 512
+        }
+      ]
+    },
+    {
+      "id": "rulesDb",
+      "type": "database",
+      "label": "rules_master & versions",
+      "sublabel": "Multi-level rule versions",
+      "pos": [
+        490,
+        310
+      ],
+      "size": [
+        150,
+        64
+      ],
+      "sources": [
+        {
+          "path": "docs/data-architecture.md",
+          "line": 504,
+          "end_line": 515
+        }
+      ]
+    },
+    {
+      "id": "rulesEngine",
+      "type": "backend",
+      "label": "Rules Engine",
+      "sublabel": "Tower-to-LOB scoping",
+      "pos": [
+        730,
+        120
+      ],
+      "size": [
+        140,
+        64
+      ],
+      "sources": [
+        {
+          "path": "lib/engine/engine.ts",
+          "line": 1,
+          "end_line": 45
+        }
+      ]
+    },
+    {
+      "id": "nudgeDispatch",
+      "type": "backend",
+      "label": "Nudge & Toast Dispatch",
+      "sublabel": "escalation.ts / strikes",
+      "pos": [
+        730,
+        310
+      ],
+      "size": [
+        140,
+        64
+      ],
+      "sources": [
+        {
+          "path": "lib/engine/escalation.ts",
+          "line": 68,
+          "end_line": 98
+        }
+      ]
+    },
+    {
+      "id": "instanceLedgerDb",
+      "type": "database",
+      "label": "monitoring_instance",
+      "sublabel": "Broken rules & strikes",
+      "pos": [
+        970,
+        120
+      ],
+      "size": [
+        150,
+        64
+      ],
+      "sources": [
+        {
+          "path": "docs/data-architecture.md",
+          "line": 493,
+          "end_line": 498
+        }
+      ]
+    },
+    {
+      "id": "incidentDb",
+      "type": "database",
+      "label": "incident_log Table",
+      "sublabel": "Incidents & actions",
+      "pos": [
+        970,
+        310
+      ],
+      "size": [
+        150,
+        64
+      ],
+      "sources": [
+        {
+          "path": "docs/data-architecture.md",
+          "line": 496,
+          "end_line": 497
+        }
+      ]
+    },
+    {
+      "id": "notificationDb",
+      "type": "database",
+      "label": "notification_log Table",
+      "sublabel": "Delivery history & audit",
+      "pos": [
+        1210,
+        310
+      ],
+      "size": [
+        150,
+        64
+      ],
+      "sources": [
+        {
+          "path": "docs/data-architecture.md",
+          "line": 508,
+          "end_line": 509
+        }
+      ]
+    },
+    {
+      "id": "sseBroadcast",
+      "type": "backend",
+      "label": "SSE Broadcast",
+      "sublabel": "snapshot.ts / deltas",
+      "pos": [
+        1210,
+        120
+      ],
+      "size": [
+        140,
+        64
+      ],
+      "sources": [
+        {
+          "path": "lib/server/snapshot.ts",
+          "line": 1,
+          "end_line": 40
+        }
+      ]
+    },
+    {
+      "id": "consoleUi",
+      "type": "frontend",
+      "label": "Console UI Surface",
+      "sublabel": "Ledger, Dash, Nudges, Toasts",
+      "pos": [
+        1450,
+        210
+      ],
+      "size": [
+        150,
+        75
+      ],
+      "sources": [
+        {
+          "path": "app/page.tsx",
+          "line": 1,
+          "end_line": 13
+        }
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "Ingestion & Streaming Core",
+      "wraps": [
+        "ingestPipeline",
+        "rulesEngine",
+        "nudgeDispatch",
+        "sseBroadcast"
+      ]
+    },
+    {
+      "kind": "security-group",
+      "label": "PostgreSQL Target Database Layer",
+      "wraps": [
+        "queueMapDb",
+        "eventStreamDb",
+        "rulesDb",
+        "instanceLedgerDb",
+        "incidentDb",
+        "notificationDb"
+      ]
+    },
+    {
+      "kind": "security-group",
+      "label": "Client Application Surface",
+      "wraps": [
+        "consoleUi"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "feed-to-ingest",
+      "from": "gencloud",
+      "to": "ingestPipeline",
+      "label": "live events",
+      "variant": "emphasis",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "wfm-to-db",
+      "from": "wfmUpload",
+      "to": "queueMapDb",
+      "label": "upload hierarchy",
+      "variant": "default",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "ingest-to-streamdb",
+      "from": "ingestPipeline",
+      "to": "eventStreamDb",
+      "label": "save all live data",
+      "variant": "emphasis",
+      "fromSide": "right",
+      "toSide": "left",
+      "labelAt": [
+        445,
+        205
+      ]
+    },
+    {
+      "id": "streamdb-to-engine",
+      "from": "eventStreamDb",
+      "to": "rulesEngine",
+      "label": "stream to evaluate",
+      "variant": "emphasis",
+      "fromSide": "right",
+      "toSide": "left",
+      "labelDy": -28
+    },
+    {
+      "id": "rulesdb-to-engine",
+      "from": "rulesDb",
+      "to": "rulesEngine",
+      "label": "Tower-LOB rules",
+      "variant": "default",
+      "fromSide": "top",
+      "toSide": "bottom",
+      "labelDx": -40
+    },
+    {
+      "id": "engine-to-instances",
+      "from": "rulesEngine",
+      "to": "instanceLedgerDb",
+      "label": "broken rules (strikes)",
+      "variant": "emphasis",
+      "fromSide": "right",
+      "toSide": "left",
+      "labelDy": -28
+    },
+    {
+      "id": "engine-to-nudge",
+      "from": "rulesEngine",
+      "to": "nudgeDispatch",
+      "label": "evaluates strikes",
+      "variant": "emphasis",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelDy": 24,
+      "labelAt": [
+        853,
+        198
+      ]
+    },
+    {
+      "id": "nudge-to-db",
+      "from": "nudgeDispatch",
+      "to": "notificationDb",
+      "label": "log delivery",
+      "variant": "default",
+      "fromSide": "right",
+      "toSide": "left",
+      "labelDy": 30
+    },
+    {
+      "id": "nudge-to-ui",
+      "from": "nudgeDispatch",
+      "to": "consoleUi",
+      "label": "nudges & toasts",
+      "variant": "emphasis",
+      "fromSide": "right",
+      "toSide": "bottom"
+    },
+    {
+      "id": "instances-to-incidents",
+      "from": "instanceLedgerDb",
+      "to": "incidentDb",
+      "label": "strike 3 / critical",
+      "variant": "emphasis",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [
+        1095,
+        215
+      ]
+    },
+    {
+      "id": "engine-to-sse",
+      "from": "rulesEngine",
+      "to": "sseBroadcast",
+      "label": "state snapshot",
+      "variant": "emphasis",
+      "fromSide": "top",
+      "toSide": "top"
+    },
+    {
+      "id": "sse-to-ui",
+      "from": "sseBroadcast",
+      "to": "consoleUi",
+      "label": "live deltas",
+      "variant": "emphasis",
+      "fromSide": "right",
+      "toSide": "top"
+    },
+    {
+      "id": "db-to-ui",
+      "from": "incidentDb",
+      "to": "consoleUi",
+      "label": "actions & reports",
+      "variant": "default",
+      "fromSide": "right",
+      "toSide": "left"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "All Live Feeds Flow to source_event_stream",
+      "items": [
+        "1. Every live event (triggered or not) is recorded in `source_event_stream`.",
+        "2. Events link directly to `person_id` (FK) and `queue_id` (FK), capturing full operational context.",
+        "3. Live floor KPIs on the Console Tab are computed directly from this continuous ingestion stream."
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "Team & Queue Organizational Hierarchy",
+      "items": [
+        "1. `team` anchors the organizational tree (`Tower -> SubTower -> LOB -> Team -> TL -> Mgr`).",
+        "2. `queue_map` links contact center queues to their responsible team via `team_id` FK.",
+        "3. `person` belongs to a `team` via `team_id` FK, mapping agents and supervisors to their hierarchy."
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "Every Instance Notifies (Nudge, Toast, Incident)",
+      "items": [
+        "1. **Every Broken Rule Fires:** Strike 1 sends a Pop-up Nudge; Strike 2 sends a Toast Alert to the TL.",
+        "2. **Ops Escalations:** Strike 3 creates a formal record in `incident_log` for investigative dashboard actions.",
+        "3. **Audit History:** Every dispatch is recorded in `notification_log` across Toast, Popup, and Email channels."
+      ]
+    }
+  ]
+}
