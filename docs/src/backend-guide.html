@@ -192,8 +192,8 @@
 <h2>Setup checklist</h2>
 <ul class="check">
   <li><b>Confirm the app's server</b>: most likely the existing EC2 instance (Section 4).</li>
-  <li><b>Create the database and its two logins</b> on <code>van-reservation-prod</code>, once, in pgAdmin (Section 4).</li>
-  <li><b>Note the PostgreSQL version</b> (step 1 of the pgAdmin steps), so local development uses the same one (Section 11).</li>
+  <li><b>Create the database and its two logins</b> on <code>van-reservation-prod</code>, once, in pgAdmin (Section 4). <span class="badge fix">DONE</span> 2026-11-03, steps 1 to 7; the test login as <code>rtm_app</code> (step 8) is still to do.</li>
+  <li><b>Note the PostgreSQL version</b> (step 1 of the pgAdmin steps), so local development uses the same one (Section 11). <span class="badge fix">DONE</span> PostgreSQL 17.7; the local Docker image is <code>postgres:17.7-alpine</code>.</li>
   <li><b>Write the deploy script</b> that runs <code>db:migrate</code> before restarting the app (Section 8).</li>
 </ul>
 
@@ -358,58 +358,86 @@
   </tbody>
 </table>
 
+<div class="ok">
+  <b>Status: steps 1 to 7 done on 2026-11-03</b>
+  <p>The setup below was run on <code>van-reservation-prod</code> (PostgreSQL 17.7) as its master login, <code>vanadmin</code>, through pgAdmin. The steps are written as they worked there; step 8, the test login as <code>rtm_app</code>, is still to do. Keep them for a rebuild or a move to another instance.</p>
+</div>
+
 <div class="warn">
   <b>Before you start in pgAdmin</b>
   <ul>
     <li><b>Run one step at a time.</b> In the Query Tool, highlight the statements for a step and press <b>F5</b>: pgAdmin then runs only the highlighted text. Step 4 (<code>CREATE DATABASE</code>) must run on its own; PostgreSQL refuses it when it is sent together with other statements.</li>
-    <li><b>Passwords go through the role dialog, not the Query Tool</b> (step 3), so they never land in the Query Tool's history.</li>
-    <li><b>Check the server name</b> in the Query Tool's title bar before each step: it must be <code>van-reservation-prod</code>, and the database must be the one the step names.</li>
+    <li><b>pgAdmin shows only the last result.</b> When several statements run together, <i>Data Output</i> shows the last one's rows and <i>Messages</i> the last one's message. Run a check query on its own to see its result.</li>
+    <li><b>The master login is not the owner.</b> On RDS the master login is not a superuser, and since PostgreSQL 16 it does not take on the rights of a role it created. A <code>GRANT</code> or <code>REVOKE</code> it runs on <code>rtm_console</code> is skipped with only a warning, not an error. So steps 5 and 6 first switch to the owner with <code>SET ROLE rtm_migrator</code>, and end with <code>RESET ROLE</code>.</li>
+    <li><b>Passwords never go in the Query Tool as plain text.</b> The role dialog's password field is locked for the RDS master login, so step 3 sets each password from a hash made on your own PC. Neither pgAdmin's history nor the server's logs ever hold the password itself.</li>
+    <li><b>Check the server name</b> in the Query Tool's title bar before each step: it must be <code>van-reservation-prod</code>, and the database must be the one the step names. If pgAdmin reaches the instance through a tunnel, the address shows as <code>127.0.0.1</code> with a local port; that is expected.</li>
   </ul>
 </div>
 
 <ol class="steps">
   <li><b>Open a Query Tool on the <code>postgres</code> database.</b> In the Object Explorer, expand the <code>van-reservation-prod</code> server, then <i>Databases</i>, right-click <code>postgres</code> and choose <i>Query Tool</i>. Roles belong to the whole instance, so this database is the right place for steps 1 to 5, and it keeps you out of the Van Reservation database. First, record what the instance is running:
 <pre>SELECT version();          <span class="c">-- the PostgreSQL version: the local Docker image must match it (Section 11)</span>
-SELECT current_user;       <span class="c">-- the master user you are logged in as</span>
-SELECT datname FROM pg_database WHERE NOT datistemplate;   <span class="c">-- existing databases; rtm_console must not be listed yet</span></pre></li>
+SELECT current_user;       <span class="c">-- the master login (vanadmin); see the check below</span>
+SELECT datname FROM pg_database WHERE NOT datistemplate;   <span class="c">-- existing databases; rtm_console must not be listed yet</span></pre>
+  Run each line on its own to see its result. To confirm the login is the instance's master login, all three columns must be <i>true</i>:
+<pre>SELECT pg_has_role(current_user, 'rds_superuser', 'MEMBER') AS is_rds_master,
+       rolcreaterole AS can_create_roles, rolcreatedb AS can_create_databases
+FROM pg_roles WHERE rolname = current_user;</pre></li>
 
-  <li><b>Create the two roles.</b> They are created without passwords, so nobody can log in as them until step 3. The <code>GRANT</code> lets the master user create a database owned by <code>rtm_migrator</code> and set its default privileges in step 6.
+  <li><b>Create the two roles.</b> They are created without passwords, so nobody can log in as them until step 3. The <code>GRANT</code> lets the master login create a database owned by <code>rtm_migrator</code> (step 4) and switch to it with <code>SET ROLE</code> (steps 5 and 6).
 <pre>CREATE ROLE rtm_migrator LOGIN CONNECTION LIMIT 3;
 CREATE ROLE rtm_app      LOGIN CONNECTION LIMIT 15;
 GRANT rtm_migrator TO CURRENT_USER;</pre></li>
 
-  <li><b>Set the passwords in the role dialog.</b> Right-click <i>Login/Group Roles</i> and choose <i>Refresh</i>. For each RTM role: right-click it, <i>Properties</i>, <i>Definition</i> tab, enter a long generated password (from a password manager, at least 32 characters), and <i>Save</i>. Store each password in AWS Secrets Manager straight away, one secret per role, and never in a file, chat or ticket.</li>
+  <li><b>Set the passwords from a hash.</b> On your own PC, in a terminal of your own (PowerShell or the VS Code terminal; <b>not</b> through an AI assistant or anything else that records the output), in the repository:
+<pre>npm run db:role-passwords</pre>
+  It prints a new random 40-character password for each role, once, and an <code>ALTER ROLE ... PASSWORD 'SCRAM-SHA-256$...'</code> line for each. Save both passwords in a password manager straight away, then in AWS Secrets Manager (one secret per role), and never in a file, chat or ticket. Paste only the two <code>ALTER ROLE</code> lines into the Query Tool on <code>postgres</code> and run them; then close the terminal. If a password is ever seen by anyone else, run the command again and apply the new lines: the old password stops working.</li>
 
   <li><b>Create the database</b>, highlighting this statement on its own:
 <pre>CREATE DATABASE rtm_console OWNER rtm_migrator;</pre></li>
 
-  <li><b>Close the database to everyone else.</b> By default every role may connect to a new database; this limits <code>rtm_console</code> to the RTM roles and the master user. (<code>rtm_migrator</code> connects as the owner.)
-<pre>REVOKE CONNECT, TEMPORARY ON DATABASE rtm_console FROM PUBLIC;
+  <li><b>Close the database to everyone else.</b> By default every role may connect to a new database; this limits <code>rtm_console</code> to its owner, <code>rtm_app</code> and the master login. The grants run as the owner (see <i>Before you start</i>).
+<pre>SET ROLE rtm_migrator;
+REVOKE CONNECT, TEMPORARY ON DATABASE rtm_console FROM PUBLIC;
 GRANT CONNECT ON DATABASE rtm_console TO rtm_app;
-GRANT CONNECT ON DATABASE rtm_console TO CURRENT_USER;</pre></li>
+GRANT CONNECT ON DATABASE rtm_console TO vanadmin;    <span class="c">-- the master login from step 1</span>
+RESET ROLE;</pre>
+  Then check, on its own:
+<pre>SELECT current_user AS back_to,                                          <span class="c">-- vanadmin</span>
+       has_database_privilege('vanadmin', 'rtm_console', 'CONNECT') AS master_can_connect,   <span class="c">-- true</span>
+       has_database_privilege('rtm_app',  'rtm_console', 'CONNECT') AS app_can_connect,      <span class="c">-- true</span>
+       has_database_privilege('public',   'rtm_console', 'CONNECT') AS everyone_can_connect; <span class="c">-- false</span></pre>
+  If pgAdmin then says <i>permission denied for database "rtm_console"</i> when you open it, it is reusing an attempt made before the grants: close any tab on <code>rtm_console</code>, then <i>Disconnect Server</i> and <i>Connect Server</i>.</li>
 
-  <li><b>Set the grants inside <code>rtm_console</code>.</b> Right-click <i>Databases</i>, <i>Refresh</i>, then right-click <code>rtm_console</code> and open a <b>new</b> Query Tool on it: these grants apply only to the database the Query Tool is connected to. The default privileges give <code>rtm_app</code> read and write access to every table and sequence that <code>rtm_migrator</code> creates later, so no migration has to grant them one by one.
-<pre>REVOKE CREATE ON SCHEMA public FROM PUBLIC;    <span class="c">-- already the default on PostgreSQL 15 and later</span>
+  <li><b>Set the grants inside <code>rtm_console</code>.</b> Right-click <i>Databases</i>, <i>Refresh</i>, then right-click <code>rtm_console</code> and open a <b>new</b> Query Tool on it: these grants apply only to the database the Query Tool is connected to. The default privileges give <code>rtm_app</code> read and write access to every table and sequence that <code>rtm_migrator</code> creates later, so no migration has to grant them one by one. They are set while acting as <code>rtm_migrator</code>, so they apply to the objects it creates.
+<pre>SET ROLE rtm_migrator;
+REVOKE CREATE ON SCHEMA public FROM PUBLIC;    <span class="c">-- already the default on PostgreSQL 15 and later</span>
 GRANT USAGE, CREATE ON SCHEMA public TO rtm_migrator;
 GRANT USAGE ON SCHEMA public TO rtm_app;
-
-ALTER DEFAULT PRIVILEGES FOR ROLE rtm_migrator IN SCHEMA public
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
   GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO rtm_app;
-ALTER DEFAULT PRIVILEGES FOR ROLE rtm_migrator IN SCHEMA public
-  GRANT USAGE, SELECT ON SEQUENCES TO rtm_app;</pre>
-  If any of these fails with <i>permission denied</i>, stop and note the version from step 1: instances older than PostgreSQL 15 handle the <code>public</code> schema differently, and the statements need adjusting.</li>
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+  GRANT USAGE, SELECT ON SEQUENCES TO rtm_app;
+RESET ROLE;</pre>
+  Then check, on its own, in the same Query Tool:
+<pre>SELECT current_user AS me,                                                     <span class="c">-- vanadmin</span>
+       has_schema_privilege('rtm_migrator', 'public', 'CREATE') AS migrator_can_create, <span class="c">-- true</span>
+       has_schema_privilege('rtm_app', 'public', 'USAGE')        AS app_can_use,         <span class="c">-- true</span>
+       has_schema_privilege('rtm_app', 'public', 'CREATE')       AS app_can_create,      <span class="c">-- false</span>
+       has_schema_privilege('public',  'public', 'CREATE')       AS everyone_can_create, <span class="c">-- false</span>
+       (SELECT string_agg(defaclobjtype::text || ': ' || defaclacl::text, '  ')
+          FROM pg_default_acl WHERE defaclrole = 'rtm_migrator'::regrole) AS future_grants;</pre>
+  <code>future_grants</code> must read <code>r: {rtm_app=arwd/rtm_migrator}  S: {rtm_app=rU/rtm_migrator}</code>: tables readable and writable by <code>rtm_app</code>, sequences usable by it. If a statement fails partway, close the tab without saving, so the session does not stay switched to <code>rtm_migrator</code>.</li>
 
-  <li><b>Check the result.</b> In the Query Tool on <code>postgres</code>:
+  <li><b>Check the roles.</b> In the Query Tool on <code>postgres</code>:
 <pre>SELECT rolname, rolcanlogin, rolconnlimit
-FROM pg_roles WHERE rolname LIKE 'rtm\_%';     <span class="c">-- two rows: limits 3 and 15</span>
+FROM pg_roles WHERE rolname LIKE 'rtm\_%' ORDER BY rolname;  <span class="c">-- rtm_app 15, rtm_migrator 3</span></pre>
+  The owner and who may connect were checked in step 5.</li>
 
-SELECT datname, pg_get_userbyid(datdba) AS owner
-FROM pg_database WHERE datname = 'rtm_console';  <span class="c">-- owner rtm_migrator</span></pre></li>
-
-  <li><b>Test the app login.</b> In pgAdmin, <i>Register &rarr; Server</i>: the same host and port as <code>van-reservation-prod</code>, maintenance database <code>rtm_console</code>, user <code>rtm_app</code>, SSL mode <i>require</i>, and <b>Save password</b> left off. In a Query Tool on that connection:
+  <li><b>Test the app login.</b> This is the only step that proves the <code>rtm_app</code> password works. In pgAdmin, <i>Object &rarr; Register &rarr; Server</i>: a name such as <i>rtm-test (delete me)</i>; on <i>Connection</i>, the same host and port as <code>van-reservation-prod</code> (and the same <i>SSH Tunnel</i> settings, if it uses one); maintenance database <code>rtm_console</code>, user <code>rtm_app</code>, and <b>Save password</b> left off; SSL mode <i>require</i> unless the tunnel already protects the link. Paste the password when asked. In a Query Tool on that connection, one line at a time:
 <pre>SELECT current_user, current_database();    <span class="c">-- rtm_app, rtm_console</span>
 CREATE TABLE should_fail (x int);           <span class="c">-- must fail: permission denied for schema public</span></pre>
-  Then remove the test server registration. A successful login from your PC only works if the RDS security group admits it; the deployed app connects from the EC2 instance.</li>
+  Then remove the test server registration. A login from your PC only works through the tunnel or if the RDS security group admits your address; the deployed app connects from the EC2 instance.</li>
 </ol>
 
 <div class="note">
@@ -424,7 +452,12 @@ WHERE grantee = 'PUBLIC'
 
 <div class="ok">
   <b>Undoing it</b>
-  <p>Until the console has stored real data, the whole setup can be removed without touching anything else. On the <code>postgres</code> database, one statement at a time: <code>DROP DATABASE rtm_console;</code> then <code>DROP ROLE rtm_app;</code> then <code>DROP ROLE rtm_migrator;</code></p>
+  <p>Until the console has stored real data, the whole setup can be removed without touching anything else. Close every tab and connection on <code>rtm_console</code> first. Then, in the Query Tool on <code>postgres</code>, run each line on its own, in this order (only the owner may drop the database, and <code>DROP DATABASE</code> refuses to run together with other statements):</p>
+<pre>SET ROLE rtm_migrator;
+DROP DATABASE rtm_console;
+RESET ROLE;
+DROP ROLE rtm_app;
+DROP ROLE rtm_migrator;</pre>
 </div>
 
 <h2>Moving out later</h2>
@@ -538,6 +571,7 @@ WHERE grantee = 'PUBLIC'
     <tr><td><code>npm run db:status</code></td><td>Lists the migrations and which are applied.</td><td>Yes</td></tr>
     <tr><td><code>npm run db:rollback</code></td><td>Undoes the last migration. <b>Local only</b>: refused when <code>APP_ENV</code> is staging or production.</td><td>Yes</td></tr>
     <tr><td><code>npm run db:types</code></td><td>Regenerates <code>lib/db/schema.ts</code>, the TypeScript description of every table, from a migrated database (<code>kysely-codegen</code>).</td><td>Yes, local</td></tr>
+    <tr><td><code>npm run db:role-passwords</code></td><td>Prints a new random password for each RTM database role, once, and the <code>ALTER ROLE</code> line that sets it from a SCRAM hash, so the password itself never reaches pgAdmin (Section 4, step 3). Run it in a terminal of your own.</td><td>No</td></tr>
     <tr><td><code>npm run db:up</code></td><td>Starts the local PostgreSQL container.</td><td>No</td></tr>
   </tbody>
 </table>
@@ -554,8 +588,8 @@ lib/db/schema.ts                      <span class="c"># generated by db:types, c
 lib/db/client.ts                      <span class="c"># the lazily created Kysely instance</span>
 lib/db/url.ts                         <span class="c"># DATABASE_URL composition, schemaFromUrl()</span>
 lib/store/                            <span class="c"># the Store interface, memory and PostgreSQL</span>
-tools/db/                             <span class="c"># db:types, the rollback guard, the test-database init script</span></pre>
-<p>The scripts in <code>tools/db/</code> run with <code>tsx</code>, a dev dependency.</p>
+tools/db/                             <span class="c"># db:types, the rollback guard, the test-database init script, role passwords</span></pre>
+<p>The TypeScript scripts in <code>tools/db/</code> run with <code>tsx</code>, a dev dependency; <code>role-passwords.mjs</code> runs with plain Node.</p>
 
 <h2>A migration, in outline</h2>
 <pre>import { type Kysely, sql } from "kysely";

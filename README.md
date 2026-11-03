@@ -41,6 +41,7 @@ npm run dev        # http://localhost:3000
 | `npm run db:status` | Lists migrations and which have run |
 | `npm run db:rollback` | Undoes the last migration. Local only: refused for staging and production |
 | `npm run db:types` | Regenerates `lib/db/schema.ts` from a migrated database |
+| `npm run db:role-passwords` | Prints new passwords for the RTM database roles and the `ALTER ROLE` lines that set them from a hash (one-time pgAdmin setup). Run it in a terminal of your own |
 
 ### Environment
 
