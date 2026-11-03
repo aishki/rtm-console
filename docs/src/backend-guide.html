@@ -192,7 +192,7 @@
 <h2>Setup checklist</h2>
 <ul class="check">
   <li><b>Confirm the app's server</b>: most likely the existing EC2 instance (Section 4).</li>
-  <li><b>Create the database and its two logins</b> on <code>van-reservation-prod</code>, once, in pgAdmin (Section 4). <span class="badge fix">DONE</span> 2026-11-03, steps 1 to 7; the test login as <code>rtm_app</code> (step 8) is still to do.</li>
+  <li><b>Create the database and its two logins</b> on <code>van-reservation-prod</code>, once, in pgAdmin (Section 4). <span class="badge fix">DONE</span> 2026-11-03, including the test login as <code>rtm_app</code>.</li>
   <li><b>Note the PostgreSQL version</b> (step 1 of the pgAdmin steps), so local development uses the same one (Section 11). <span class="badge fix">DONE</span> PostgreSQL 17.7; the local Docker image is <code>postgres:17.7-alpine</code>.</li>
   <li><b>Write the deploy script</b> that runs <code>db:migrate</code> before restarting the app (Section 8).</li>
 </ul>
@@ -359,8 +359,8 @@
 </table>
 
 <div class="ok">
-  <b>Status: steps 1 to 7 done on 2026-11-03</b>
-  <p>The setup below was run on <code>van-reservation-prod</code> (PostgreSQL 17.7) as its master login, <code>vanadmin</code>, through pgAdmin. The steps are written as they worked there; step 8, the test login as <code>rtm_app</code>, is still to do. Keep them for a rebuild or a move to another instance.</p>
+  <b>Status: done on 2026-11-03</b>
+  <p>The setup below was run on <code>van-reservation-prod</code> (PostgreSQL 17.7) as its master login, <code>vanadmin</code>, through pgAdmin. The steps are written as they worked there, and the test login as <code>rtm_app</code> (step 8) passed. Keep them for a rebuild or a move to another instance.</p>
 </div>
 
 <div class="warn">
