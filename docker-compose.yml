@@ -1,12 +1,12 @@
 # Local PostgreSQL for development and integration tests: npm run db:up.
 # Never used in deployed environments, which connect to rtm_console on van-reservation-prod.
-# The major version should match van-reservation-prod's (SELECT version() there).
+# Matches van-reservation-prod, which runs PostgreSQL 17.7 (SELECT version() there, 2026-11-03).
 # The credentials are for this local container only, and match .env.example.
 name: rtm-console
 
 services:
   db:
-    image: postgres:17.6-alpine
+    image: postgres:17.7-alpine
     container_name: rtm-console-db
     environment:
       POSTGRES_USER: rtm_local
