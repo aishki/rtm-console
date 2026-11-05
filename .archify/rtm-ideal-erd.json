@@ -2,763 +2,429 @@
   "schema_version": 1,
   "diagram_type": "erd",
   "meta": {
-    "title": "RTM Console \u2014 Ideal Production PostgreSQL Schema (12 Tables)",
+    "title": "RTM Console — Ideal PostgreSQL Schema (22 tables)",
     "locale": "en",
     "output": ".archify/rtm-ideal-erd.html",
     "quality_profile": "standard",
     "views": [
       {
-        "id": "ui-to-schema",
-        "label": "UI Views to Schema Mapping",
-        "focus": [
-          "source_event_stream",
-          "rules_master",
-          "rule_version",
-          "monitoring_instance",
-          "incident_log"
-        ],
-        "note": "Console KPIs from eventstream, Ledger broken rules from instances, Dashboard actions from incident_log, and Rules from rules_master."
+        "id": "word-file-core",
+        "label": "The Word file's six tables",
+        "focus": ["source_event_stream", "rules_master", "notification_route", "monitoring_instance", "notification_log", "incident_log"],
+        "note": "Event → Rule → Instance → Route → Notification → Incident, under the same names as RTM Dashboard Data Tables."
       },
       {
-        "id": "full-production",
-        "label": "Complete 12-Table Enterprise Schema",
-        "focus": [
-          "status_mapping",
-          "source_event_stream",
-          "queue_map",
-          "team",
-          "person",
-          "audit_event",
-          "notification_route",
-          "rules_master",
-          "rule_version",
-          "notification_log",
-          "monitoring_instance",
-          "incident_log"
-        ],
-        "note": "Full 12-table production schema linking raw telemetry to person, queue to team hierarchy, and broken rules to instances."
+        "id": "scoped-thresholds",
+        "label": "Thresholds by Tower, Sub-tower, LOB",
+        "focus": ["rules_master", "rule_version", "rule_override", "queue_lob_map", "queue", "monitoring_instance"],
+        "note": "rule_override sets a rule per Tower, Sub-tower or LOB over the rule_version default; the most specific value wins."
+      },
+      {
+        "id": "queue-mapping",
+        "label": "Queues and the Queue-to-LOB mapping",
+        "focus": ["genesys_region", "genesys_org", "queue", "queue_member", "queue_lob_map", "team", "person"],
+        "note": "The uploaded Queue-to-LOB mapping gives each queue its Tower, Sub-tower and LOB; queue joins it on name_key = queue_key."
+      },
+      {
+        "id": "day-and-strikes",
+        "label": "The day, strikes and incidents",
+        "focus": ["shift", "agent_rule_state", "monitoring_instance", "incident_log", "incident_counter", "notification_log", "push_subscription"],
+        "note": "One shift per org per Eastern day; strikes per shift; every strike from 3 opens its own incident, numbered per year."
       }
     ]
   },
   "layout": {
     "mode": "grid",
-    "gapX": 60,
-    "gapY": 40,
-    "entityW": 290
+    "gapX": 56,
+    "gapY": 36,
+    "entityW": 270
   },
   "entities": [
     {
-      "id": "status_mapping",
-      "label": "status_mapping",
-      "row": 0,
-      "col": 0,
+      "id": "genesys_region", "label": "genesys_region", "sublabel": "Phase 0 · built", "tag": "genesys and queues", "row": 3, "col": 0,
       "attributes": [
-        {
-          "name": "priority",
-          "type": "smallint",
-          "key": "pk"
-        },
-        {
-          "name": "signal",
-          "type": "text"
-        },
-        {
-          "name": "genesys_status",
-          "type": "text"
-        },
-        {
-          "name": "console_state",
-          "type": "text"
-        }
+        { "name": "region_id", "type": "text", "key": "pk" },
+        { "name": "name", "type": "text" },
+        { "name": "api_host", "type": "text" },
+        { "name": "login_host", "type": "text" }
       ]
     },
     {
-      "id": "source_event_stream",
-      "label": "source_event_stream",
-      "row": 1,
-      "col": 0,
+      "id": "genesys_org", "label": "genesys_org", "sublabel": "Phase 0 · built", "tag": "genesys and queues", "row": 2, "col": 0,
       "attributes": [
-        {
-          "name": "event_id",
-          "type": "bigint",
-          "key": "pk"
-        },
-        {
-          "name": "person_id",
-          "type": "text",
-          "key": "fk",
-          "references": "person.person_id"
-        },
-        {
-          "name": "queue_id",
-          "type": "text",
-          "key": "fk",
-          "references": "queue_map.queue_id"
-        },
-        {
-          "name": "source_system",
-          "type": "text"
-        },
-        {
-          "name": "event_timestamp",
-          "type": "timestamptz"
-        },
-        {
-          "name": "entity_type",
-          "type": "text"
-        },
-        {
-          "name": "entity_id",
-          "type": "text"
-        },
-        {
-          "name": "metric_name",
-          "type": "text"
-        },
-        {
-          "name": "metric_value",
-          "type": "numeric"
-        },
-        {
-          "name": "event_payload",
-          "type": "jsonb"
-        },
-        {
-          "name": "processed_flag",
-          "type": "boolean"
-        },
-        {
-          "name": "processed_date",
-          "type": "timestamptz"
-        }
+        { "name": "org_id", "type": "text", "key": "pk" },
+        { "name": "region_id", "type": "text", "key": "fk", "references": "genesys_region.region_id" },
+        { "name": "name", "type": "text" },
+        { "name": "genesys_org_id", "type": "text", "key": "uk" },
+        { "name": "view_config_id", "type": "text" },
+        { "name": "oauth_client_id", "type": "text" },
+        { "name": "enabled", "type": "boolean" }
       ]
     },
     {
-      "id": "queue_map",
-      "label": "queue_map",
-      "row": 2,
-      "col": 0,
+      "id": "queue", "label": "queue", "width": 320, "sublabel": "Phase 1", "tag": "genesys and queues", "row": 0, "col": 0,
       "attributes": [
-        {
-          "name": "queue_id",
-          "type": "text",
-          "key": "pk"
-        },
-        {
-          "name": "team_id",
-          "type": "text",
-          "key": "fk",
-          "references": "team.team_id"
-        },
-        {
-          "name": "queue_name",
-          "type": "text"
-        },
-        {
-          "name": "tower",
-          "type": "text"
-        },
-        {
-          "name": "sub_tower",
-          "type": "text"
-        },
-        {
-          "name": "lob",
-          "type": "text"
-        },
-        {
-          "name": "sub_lob",
-          "type": "text"
-        },
-        {
-          "name": "watched",
-          "type": "boolean"
-        },
-        {
-          "name": "updated_at",
-          "type": "timestamptz"
-        }
+        { "name": "queue_id", "type": "text", "key": "pk" },
+        { "name": "org_id", "type": "text", "key": "fk", "references": "genesys_org.org_id" },
+        { "name": "name", "type": "text" },
+        { "name": "name_key", "type": "text generated upper(trim(name))" },
+        { "name": "division", "type": "text" },
+        { "name": "queue_group", "type": "text generated" },
+        { "name": "queue_subgroup", "type": "text generated" },
+        { "name": "watched", "type": "boolean" },
+        { "name": "team_id", "type": "text", "key": "fk", "references": "team.team_id" },
+        { "name": "seen_at", "type": "timestamptz" }
       ]
     },
     {
-      "id": "team",
-      "label": "team",
-      "row": 0,
-      "col": 1,
+      "id": "queue_member", "label": "queue_member", "sublabel": "Phase 1", "tag": "genesys and queues", "row": 4, "col": 0,
       "attributes": [
-        {
-          "name": "team_id",
-          "type": "text",
-          "key": "pk"
-        },
-        {
-          "name": "name",
-          "type": "text"
-        },
-        {
-          "name": "lob",
-          "type": "text"
-        },
-        {
-          "name": "sub_lob",
-          "type": "text"
-        },
-        {
-          "name": "tower",
-          "type": "text"
-        },
-        {
-          "name": "tl_person_id",
-          "type": "text",
-          "key": "fk",
-          "references": "person.person_id"
-        },
-        {
-          "name": "mgr_person_id",
-          "type": "text",
-          "key": "fk",
-          "references": "person.person_id"
-        }
+        { "name": "queue_id", "type": "text", "key": ["pk", "fk"], "references": "queue.queue_id" },
+        { "name": "person_id", "type": "text", "key": ["pk", "fk"], "references": "person.person_id" }
       ]
     },
     {
-      "id": "person",
-      "label": "person",
-      "row": 1,
-      "col": 1,
+      "id": "queue_lob_map", "label": "queue_lob_map", "sublabel": "Phase 1 · new: Queue-to-LOB mapping upload", "tag": "genesys and queues", "row": 1, "col": 0,
       "attributes": [
-        {
-          "name": "person_id",
-          "type": "text",
-          "key": "pk"
-        },
-        {
-          "name": "team_id",
-          "type": "text",
-          "key": "fk",
-          "references": "team.team_id"
-        },
-        {
-          "name": "name",
-          "type": "text"
-        },
-        {
-          "name": "email",
-          "type": "text"
-        },
-        {
-          "name": "role",
-          "type": "text"
-        },
-        {
-          "name": "account_state",
-          "type": "text"
-        },
-        {
-          "name": "push_endpoints",
-          "type": "jsonb"
-        },
-        {
-          "name": "last_login_at",
-          "type": "timestamptz"
-        }
+        { "name": "queue_key", "type": "text upper(trim(queue))", "key": "pk" },
+        { "name": "queue_name", "type": "text" },
+        { "name": "tower", "type": "text" },
+        { "name": "sub_tower", "type": "text" },
+        { "name": "lob", "type": "text" },
+        { "name": "region", "type": "text" },
+        { "name": "org", "type": "text" },
+        { "name": "org_id", "type": "text null = every org", "key": "fk", "references": "genesys_org.org_id" },
+        { "name": "uploaded_by", "type": "text", "key": "fk", "references": "person.person_id" },
+        { "name": "uploaded_at", "type": "timestamptz" }
       ]
     },
     {
-      "id": "audit_event",
-      "label": "audit_event",
-      "row": 2,
-      "col": 1,
+      "id": "person", "label": "person", "width": 330, "sublabel": "Phase 1 · Genesys user ID", "tag": "people and the day", "row": 0, "col": 1,
       "attributes": [
-        {
-          "name": "audit_id",
-          "type": "bigint",
-          "key": "pk"
-        },
-        {
-          "name": "person_id",
-          "type": "text",
-          "key": "fk",
-          "references": "person.person_id"
-        },
-        {
-          "name": "action",
-          "type": "text"
-        },
-        {
-          "name": "target_entity",
-          "type": "text"
-        },
-        {
-          "name": "details",
-          "type": "jsonb"
-        },
-        {
-          "name": "created_at",
-          "type": "timestamptz"
-        }
+        { "name": "person_id", "type": "text", "key": "pk" },
+        { "name": "org_id", "type": "text", "key": "fk", "references": "genesys_org.org_id" },
+        { "name": "team_id", "type": "text", "key": "fk", "references": "team.team_id" },
+        { "name": "name", "type": "text" },
+        { "name": "email", "type": "text" },
+        { "name": "role", "type": "text admin|senior|mgr|tl|agent" },
+        { "name": "account_state", "type": "text active|inactive|deleted" },
+        { "name": "last_login_at", "type": "timestamptz" }
       ]
     },
     {
-      "id": "monitoring_instance",
-      "label": "monitoring_instance",
-      "row": 0,
-      "col": 2,
+      "id": "team", "label": "team", "sublabel": "Phase 1 · hierarchy via its queue", "tag": "people and the day", "row": 1, "col": 1,
       "attributes": [
-        {
-          "name": "instance_id",
-          "type": "bigint",
-          "key": "pk"
-        },
-        {
-          "name": "rule_id",
-          "type": "text",
-          "key": "fk",
-          "references": "rules_master.rule_id"
-        },
-        {
-          "name": "source_event_id",
-          "type": "bigint",
-          "key": "fk",
-          "references": "source_event_stream.event_id"
-        },
-        {
-          "name": "person_id",
-          "type": "text",
-          "key": "fk",
-          "references": "person.person_id"
-        },
-        {
-          "name": "metric_name",
-          "type": "text"
-        },
-        {
-          "name": "metric_value",
-          "type": "numeric"
-        },
-        {
-          "name": "threshold_value",
-          "type": "numeric"
-        },
-        {
-          "name": "severity",
-          "type": "text"
-        },
-        {
-          "name": "occurrence_count",
-          "type": "integer"
-        },
-        {
-          "name": "status",
-          "type": "text"
-        },
-        {
-          "name": "acknowledged_by",
-          "type": "text"
-        },
-        {
-          "name": "acknowledged_date",
-          "type": "timestamptz"
-        },
-        {
-          "name": "current_notification_level",
-          "type": "text"
-        },
-        {
-          "name": "comments",
-          "type": "text"
-        },
-        {
-          "name": "created_date",
-          "type": "timestamptz"
-        },
-        {
-          "name": "last_updated_date",
-          "type": "timestamptz"
-        }
+        { "name": "team_id", "type": "text", "key": "pk" },
+        { "name": "org_id", "type": "text", "key": "fk", "references": "genesys_org.org_id" },
+        { "name": "name", "type": "text" },
+        { "name": "tl_id", "type": "text", "key": "fk", "references": "person.person_id" },
+        { "name": "manager_id", "type": "text", "key": "fk", "references": "person.person_id" }
       ]
     },
     {
-      "id": "incident_log",
-      "label": "incident_log",
-      "row": 1,
-      "col": 2,
+      "id": "push_subscription", "label": "push_subscription", "sublabel": "Phase 1", "tag": "people and the day", "row": 4, "col": 1,
       "attributes": [
-        {
-          "name": "incident_id",
-          "type": "bigint",
-          "key": "pk"
-        },
-        {
-          "name": "incident_number",
-          "type": "text"
-        },
-        {
-          "name": "instance_id",
-          "type": "bigint",
-          "key": "fk",
-          "references": "monitoring_instance.instance_id"
-        },
-        {
-          "name": "person_id",
-          "type": "text",
-          "key": "fk",
-          "references": "person.person_id"
-        },
-        {
-          "name": "owner",
-          "type": "text"
-        },
-        {
-          "name": "priority",
-          "type": "text"
-        },
-        {
-          "name": "status",
-          "type": "text"
-        },
-        {
-          "name": "root_cause",
-          "type": "text"
-        },
-        {
-          "name": "resolution",
-          "type": "text"
-        },
-        {
-          "name": "open_date",
-          "type": "timestamptz"
-        },
-        {
-          "name": "close_date",
-          "type": "timestamptz"
-        },
-        {
-          "name": "comments",
-          "type": "text"
-        },
-        {
-          "name": "created_date",
-          "type": "timestamptz"
-        },
-        {
-          "name": "modified_date",
-          "type": "timestamptz"
-        }
+        { "name": "endpoint_hash", "type": "text sha256", "key": "pk" },
+        { "name": "person_id", "type": "text", "key": "fk", "references": "person.person_id" },
+        { "name": "endpoint", "type": "text" },
+        { "name": "p256dh", "type": "text" },
+        { "name": "auth", "type": "text" },
+        { "name": "user_agent", "type": "text" },
+        { "name": "created_at", "type": "timestamptz" },
+        { "name": "last_success_at", "type": "timestamptz" }
       ]
     },
     {
-      "id": "notification_log",
-      "label": "notification_log",
-      "row": 2,
-      "col": 2,
+      "id": "shift", "label": "shift", "width": 280, "sublabel": "Phase 2 · one per org per Eastern day", "tag": "people and the day", "row": 2, "col": 1,
       "attributes": [
-        {
-          "name": "notification_id",
-          "type": "bigint",
-          "key": "pk"
-        },
-        {
-          "name": "instance_id",
-          "type": "bigint",
-          "key": "fk",
-          "references": "monitoring_instance.instance_id"
-        },
-        {
-          "name": "notification_timestamp",
-          "type": "timestamptz"
-        },
-        {
-          "name": "recipients",
-          "type": "jsonb"
-        },
-        {
-          "name": "channel",
-          "type": "text"
-        },
-        {
-          "name": "notification_level",
-          "type": "text"
-        },
-        {
-          "name": "delivery_status",
-          "type": "text"
-        },
-        {
-          "name": "created_date",
-          "type": "timestamptz"
-        }
+        { "name": "shift_id", "type": "text", "key": "pk" },
+        { "name": "org_id", "type": "text unique with shift_date", "key": "fk", "references": "genesys_org.org_id" },
+        { "name": "shift_date", "type": "date (Eastern)" },
+        { "name": "starts_at", "type": "timestamptz" },
+        { "name": "ends_at", "type": "timestamptz" },
+        { "name": "source", "type": "text gencloud|sim" },
+        { "name": "status", "type": "text active|closed" },
+        { "name": "floor_fired", "type": "text[] rule@group" }
       ]
     },
     {
-      "id": "rules_master",
-      "label": "rules_master",
-      "row": 0,
-      "col": 3,
+      "id": "agent_rule_state", "label": "agent_rule_state", "sublabel": "Phase 2 · strikes only", "tag": "people and the day", "row": 3, "col": 1,
       "attributes": [
-        {
-          "name": "rule_id",
-          "type": "text",
-          "key": "pk"
-        },
-        {
-          "name": "route_id",
-          "type": "text",
-          "key": "fk",
-          "references": "notification_route.route_id"
-        },
-        {
-          "name": "rule_name",
-          "type": "text"
-        },
-        {
-          "name": "scope_level",
-          "type": "text"
-        },
-        {
-          "name": "scope_target",
-          "type": "text"
-        },
-        {
-          "name": "metric_name",
-          "type": "text"
-        },
-        {
-          "name": "operator",
-          "type": "text"
-        },
-        {
-          "name": "threshold_value",
-          "type": "numeric"
-        },
-        {
-          "name": "severity",
-          "type": "text"
-        },
-        {
-          "name": "current_version",
-          "type": "integer"
-        },
-        {
-          "name": "enabled",
-          "type": "boolean"
-        },
-        {
-          "name": "created_date",
-          "type": "timestamptz"
-        },
-        {
-          "name": "modified_date",
-          "type": "timestamptz"
-        }
+        { "name": "shift_id", "type": "text", "key": ["pk", "fk"], "references": "shift.shift_id" },
+        { "name": "person_id", "type": "text", "key": ["pk", "fk"], "references": "person.person_id" },
+        { "name": "rule_id", "type": "text", "key": ["pk", "fk"], "references": "rules_master.rule_id" },
+        { "name": "strikes", "type": "smallint" }
       ]
     },
     {
-      "id": "rule_version",
-      "label": "rule_version",
-      "row": 1,
-      "col": 3,
+      "id": "monitoring_instance", "label": "monitoring_instance", "width": 310, "sublabel": "Phase 2 · Word file core · one per call-out", "tag": "call-outs and incidents", "row": 0, "col": 3,
       "attributes": [
-        {
-          "name": "version_id",
-          "type": "bigint",
-          "key": "pk"
-        },
-        {
-          "name": "rule_id",
-          "type": "text",
-          "key": "fk",
-          "references": "rules_master.rule_id"
-        },
-        {
-          "name": "version_number",
-          "type": "integer"
-        },
-        {
-          "name": "scope_level",
-          "type": "text"
-        },
-        {
-          "name": "scope_target",
-          "type": "text"
-        },
-        {
-          "name": "threshold_value",
-          "type": "numeric"
-        },
-        {
-          "name": "operator",
-          "type": "text"
-        },
-        {
-          "name": "severity",
-          "type": "text"
-        },
-        {
-          "name": "route_id",
-          "type": "text"
-        },
-        {
-          "name": "change_reason",
-          "type": "text"
-        },
-        {
-          "name": "modified_by",
-          "type": "text",
-          "key": "fk",
-          "references": "person.person_id"
-        },
-        {
-          "name": "effective_at",
-          "type": "timestamptz"
-        }
+        { "name": "instance_id", "type": "bigint identity", "key": "pk" },
+        { "name": "shift_id", "type": "text", "key": "fk", "references": "shift.shift_id" },
+        { "name": "source", "type": "text gencloud|sim" },
+        { "name": "rule_id", "type": "text", "key": "fk", "references": "rule_version.rule_id" },
+        { "name": "rule_version", "type": "integer", "key": "fk", "references": "rule_version.version" },
+        { "name": "rule_override_id", "type": "bigint null = default", "key": "fk", "references": "rule_override.override_id" },
+        { "name": "person_id", "type": "text null = floor", "key": "fk", "references": "person.person_id" },
+        { "name": "team_id", "type": "text at fire time", "key": "fk", "references": "team.team_id" },
+        { "name": "tower", "type": "text at fire time" },
+        { "name": "sub_tower", "type": "text at fire time" },
+        { "name": "lob", "type": "text at fire time" },
+        { "name": "metric_value", "type": "text as shown" },
+        { "name": "threshold_value", "type": "numeric" },
+        { "name": "condition_text", "type": "text" },
+        { "name": "severity", "type": "text warn|crit|esc" },
+        { "name": "occurrence_count", "type": "smallint 0 = floor" },
+        { "name": "notification_level", "type": "text nudge|lead|ops" },
+        { "name": "status", "type": "text open|acked" },
+        { "name": "acknowledged_by", "type": "text", "key": "fk", "references": "person.person_id" },
+        { "name": "acknowledged_at", "type": "timestamptz" },
+        { "name": "ack_via", "type": "text console|push|ack_all" },
+        { "name": "agent_comment", "type": "text ≤ 140" },
+        { "name": "agent_comment_at", "type": "timestamptz" },
+        { "name": "source_event_id", "type": "bigint no FK" },
+        { "name": "created_at", "type": "timestamptz" },
+        { "name": "updated_at", "type": "timestamptz" }
       ]
     },
     {
-      "id": "notification_route",
-      "label": "notification_route",
-      "row": 2,
-      "col": 3,
+      "id": "incident_log", "label": "incident_log", "width": 330, "sublabel": "Phase 2 · Word file core · one per strike ≥ 3", "tag": "call-outs and incidents", "row": 1, "col": 3,
       "attributes": [
-        {
-          "name": "route_id",
-          "type": "text",
-          "key": "pk"
-        },
-        {
-          "name": "route_name",
-          "type": "text"
-        },
-        {
-          "name": "description",
-          "type": "text"
-        },
-        {
-          "name": "route_map",
-          "type": "jsonb"
-        },
-        {
-          "name": "enabled",
-          "type": "boolean"
-        }
+        { "name": "incident_id", "type": "bigint identity", "key": "pk" },
+        { "name": "incident_number", "type": "text INC-YYYY-NNNN", "key": "uk" },
+        { "name": "instance_id", "type": "bigint", "key": ["fk", "uk"], "references": "monitoring_instance.instance_id" },
+        { "name": "shift_id", "type": "text", "key": "fk", "references": "shift.shift_id" },
+        { "name": "source", "type": "text gencloud|sim" },
+        { "name": "person_id", "type": "text", "key": "fk", "references": "person.person_id" },
+        { "name": "team_id", "type": "text", "key": "fk", "references": "team.team_id" },
+        { "name": "rule_id", "type": "text", "key": "fk", "references": "rules_master.rule_id" },
+        { "name": "strike", "type": "smallint ≥ 3" },
+        { "name": "tower", "type": "text" },
+        { "name": "sub_tower", "type": "text" },
+        { "name": "lob", "type": "text" },
+        { "name": "status", "type": "text Open|Investigating|Closed" },
+        { "name": "disposition", "type": "text one of 12 DISPOSITIONS" },
+        { "name": "owner_id", "type": "text", "key": "fk", "references": "person.person_id" },
+        { "name": "priority", "type": "text" },
+        { "name": "root_cause", "type": "text" },
+        { "name": "resolution", "type": "text" },
+        { "name": "comments", "type": "text" },
+        { "name": "opened_at", "type": "timestamptz" },
+        { "name": "closed_at", "type": "timestamptz" },
+        { "name": "modified_at", "type": "timestamptz" }
+      ]
+    },
+    {
+      "id": "incident_counter", "label": "incident_counter", "sublabel": "Phase 2 · one for every org", "tag": "call-outs and incidents", "row": 3, "col": 3,
+      "attributes": [
+        { "name": "year", "type": "smallint (Eastern)", "key": "pk" },
+        { "name": "last_value", "type": "integer" }
+      ]
+    },
+    {
+      "id": "notification_log", "label": "notification_log", "width": 340, "sublabel": "Phase 2 · Word file core · monthly partitions", "tag": "call-outs and incidents", "row": 2, "col": 3,
+      "attributes": [
+        { "name": "notification_log_id", "type": "bigint identity", "key": "pk" },
+        { "name": "notification_ts", "type": "timestamptz partition key", "key": "pk" },
+        { "name": "instance_id", "type": "bigint null = feed notice", "key": "fk", "references": "monitoring_instance.instance_id" },
+        { "name": "recipient_id", "type": "text", "key": "fk", "references": "person.person_id" },
+        { "name": "recipient_role", "type": "text" },
+        { "name": "channel", "type": "text popup|toast|push|…" },
+        { "name": "notification_level", "type": "text nudge|lead|ops|info" },
+        { "name": "endpoint_hash", "type": "text", "key": "fk", "references": "push_subscription.endpoint_hash" },
+        { "name": "delivery_status", "type": "text 6 delivery states" },
+        { "name": "action", "type": "text got_it|send_reason|acknowledge" },
+        { "name": "action_at", "type": "timestamptz" }
+      ]
+    },
+    {
+      "id": "rules_master", "label": "rules_master", "width": 370, "sublabel": "Phase 0 · built · Word file core", "tag": "rules and routes", "row": 1, "col": 2,
+      "attributes": [
+        { "name": "rule_id", "type": "text", "key": "pk" },
+        { "name": "rule_name", "type": "text" },
+        { "name": "description", "type": "text" },
+        { "name": "rule_type", "type": "text duration|event|ratio|queue|system" },
+        { "name": "rule_scope", "type": "text agent|floor" },
+        { "name": "metric_name", "type": "text" },
+        { "name": "operator", "type": "text > >= < <=" },
+        { "name": "once_per_shift", "type": "boolean" },
+        { "name": "nudge_template", "type": "text" },
+        { "name": "current_version", "type": "integer deferred FK", "key": "fk", "references": "rule_version.version" },
+        { "name": "created_at", "type": "timestamptz" }
+      ]
+    },
+    {
+      "id": "rule_version", "label": "rule_version", "sublabel": "Phase 0 · built · the default settings", "tag": "rules and routes", "row": 2, "col": 2,
+      "attributes": [
+        { "name": "rule_id", "type": "text", "key": ["pk", "fk"], "references": "rules_master.rule_id" },
+        { "name": "version", "type": "integer", "key": "pk" },
+        { "name": "threshold", "type": "numeric ≥ 1" },
+        { "name": "unit", "type": "text s|%|calls" },
+        { "name": "severity", "type": "text warn|crit" },
+        { "name": "route_id", "type": "text", "key": "fk", "references": "notification_route.route_id" },
+        { "name": "enabled", "type": "boolean" },
+        { "name": "changed_by", "type": "text", "key": "fk", "references": "person.person_id" },
+        { "name": "changed_at", "type": "timestamptz" }
+      ]
+    },
+    {
+      "id": "rule_override", "label": "rule_override", "width": 350, "sublabel": "Phase 2 · new: Tower / Sub-tower / LOB settings", "tag": "rules and routes", "row": 0, "col": 2,
+      "attributes": [
+        { "name": "override_id", "type": "bigint identity", "key": "pk" },
+        { "name": "rule_id", "type": "text", "key": "fk", "references": "rules_master.rule_id" },
+        { "name": "tower", "type": "text" },
+        { "name": "sub_tower", "type": "text '' above its level" },
+        { "name": "lob", "type": "text '' above its level" },
+        { "name": "scope_level", "type": "text generated tower|sub_tower|lob" },
+        { "name": "version", "type": "integer unique per rule + place" },
+        { "name": "threshold", "type": "numeric null = inherit" },
+        { "name": "severity", "type": "text null = inherit" },
+        { "name": "route_id", "type": "text null = inherit", "key": "fk", "references": "notification_route.route_id" },
+        { "name": "enabled", "type": "boolean null = inherit" },
+        { "name": "change_reason", "type": "text" },
+        { "name": "changed_by", "type": "text", "key": "fk", "references": "person.person_id" },
+        { "name": "changed_at", "type": "timestamptz" }
+      ]
+    },
+    {
+      "id": "notification_route", "label": "notification_route", "width": 330, "sublabel": "Phase 0 · built · Word file core", "tag": "rules and routes", "row": 3, "col": 2,
+      "attributes": [
+        { "name": "route_id", "type": "text nudge|lead|nudgeonly|leadonly", "key": "pk" },
+        { "name": "route_name", "type": "text" },
+        { "name": "description", "type": "text" },
+        { "name": "enabled", "type": "boolean" }
+      ]
+    },
+    {
+      "id": "notification_route_step", "label": "notification_route_step", "width": 340, "sublabel": "Phase 0 · built · the RouteMap rungs", "tag": "rules and routes", "row": 4, "col": 2,
+      "attributes": [
+        { "name": "route_id", "type": "text", "key": ["pk", "fk"], "references": "notification_route.route_id" },
+        { "name": "step_no", "type": "smallint", "key": "pk" },
+        { "name": "min_occurrence", "type": "smallint" },
+        { "name": "max_occurrence", "type": "smallint null = and later" },
+        { "name": "stage", "type": "text nudge|lead|ops" },
+        { "name": "recipient_roles", "type": "text[]" },
+        { "name": "action_owner", "type": "text" },
+        { "name": "action", "type": "text" },
+        { "name": "channels", "type": "text[]" },
+        { "name": "opens_incident", "type": "boolean" }
+      ]
+    },
+    {
+      "id": "source_event_stream", "label": "source_event_stream", "width": 340, "sublabel": "Phase 3 · Word file core · today only", "tag": "raw events", "row": 4, "col": 3,
+      "attributes": [
+        { "name": "event_id", "type": "bigint identity", "key": "pk" },
+        { "name": "org_id", "type": "text null for NICE / UiPath", "key": "fk", "references": "genesys_org.org_id" },
+        { "name": "event_ts", "type": "timestamptz" },
+        { "name": "source_system", "type": "text GenCloud|NICE|UiPath" },
+        { "name": "entity_type", "type": "text agent|queue|team|lob|system" },
+        { "name": "entity_id", "type": "text" },
+        { "name": "metric_name", "type": "text" },
+        { "name": "metric_value", "type": "text" },
+        { "name": "event_payload", "type": "jsonb" },
+        { "name": "processed_flag", "type": "boolean" },
+        { "name": "processed_at", "type": "timestamptz" }
+      ]
+    },
+    {
+      "id": "status_mapping", "label": "status_mapping", "width": 300, "sublabel": "Phase 0 · built", "tag": "raw events", "row": 5, "col": 3,
+      "attributes": [
+        { "name": "priority", "type": "smallint", "key": "pk" },
+        { "name": "signal", "type": "text presence|routing|call" },
+        { "name": "genesys_status", "type": "text unique with signal" },
+        { "name": "console_state", "type": "text one of 7 states" },
+        { "name": "updated_by", "type": "text", "key": "fk", "references": "person.person_id" },
+        { "name": "updated_at", "type": "timestamptz" }
+      ]
+    },
+    {
+      "id": "audit_event", "label": "audit_event", "sublabel": "Phase 0 · built", "tag": "audit", "row": 6, "col": 3,
+      "attributes": [
+        { "name": "audit_id", "type": "bigint identity", "key": "pk" },
+        { "name": "at", "type": "timestamptz" },
+        { "name": "actor_id", "type": "text", "key": "fk", "references": "person.person_id" },
+        { "name": "action", "type": "text" },
+        { "name": "target_type", "type": "text" },
+        { "name": "target_id", "type": "text" },
+        { "name": "before", "type": "jsonb" },
+        { "name": "after", "type": "jsonb" }
       ]
     }
   ],
   "relationships": [
-    {
-      "id": "r1",
-      "from": "source_event_stream",
-      "to": "person",
-      "fromCardinality": "many",
-      "toCardinality": "one",
-      "label": "originates from"
-    },
-    {
-      "id": "r2",
-      "from": "source_event_stream",
-      "to": "queue_map",
-      "fromCardinality": "many",
-      "toCardinality": "one",
-      "label": "monitors queue"
-    },
-    {
-      "id": "r3",
-      "from": "queue_map",
-      "to": "team",
-      "fromCardinality": "many",
-      "toCardinality": "one",
-      "label": "handled by"
-    },
-    {
-      "id": "r4",
-      "from": "person",
-      "to": "team",
-      "fromCardinality": "many",
-      "toCardinality": "one",
-      "label": "belongs to"
-    },
-    {
-      "id": "r5",
-      "from": "audit_event",
-      "to": "person",
-      "fromCardinality": "many",
-      "toCardinality": "one",
-      "label": "performed by"
-    },
-    {
-      "id": "r6",
-      "from": "monitoring_instance",
-      "to": "source_event_stream",
-      "fromCardinality": "many",
-      "toCardinality": "one",
-      "label": "triggered by"
-    },
-    {
-      "id": "r7",
-      "from": "monitoring_instance",
-      "to": "rules_master",
-      "fromCardinality": "many",
-      "toCardinality": "one",
-      "label": "evaluates"
-    },
-    {
-      "id": "r8",
-      "from": "monitoring_instance",
-      "to": "person",
-      "fromCardinality": "many",
-      "toCardinality": "one",
-      "label": "targets"
-    },
-    {
-      "id": "r9",
-      "from": "incident_log",
-      "to": "monitoring_instance",
-      "fromCardinality": "many",
-      "toCardinality": "one",
-      "label": "escalated from"
-    },
-    {
-      "id": "r10",
-      "from": "notification_log",
-      "to": "monitoring_instance",
-      "fromCardinality": "many",
-      "toCardinality": "one",
-      "label": "notifies for"
-    },
-    {
-      "id": "r11",
-      "from": "rules_master",
-      "to": "notification_route",
-      "fromCardinality": "many",
-      "toCardinality": "one",
-      "label": "routes via"
-    },
-    {
-      "id": "r12",
-      "from": "rule_version",
-      "to": "rules_master",
-      "fromCardinality": "many",
-      "toCardinality": "one",
-      "label": "revisions of"
-    }
+    { "id": "org-region", "from": "genesys_org", "to": "genesys_region", "fromCardinality": "many", "toCardinality": "one" },
+    { "id": "queue-org", "from": "queue", "to": "genesys_org", "fromCardinality": "many", "toCardinality": "one" },
+    { "id": "queue-team", "from": "queue", "to": "team", "fromCardinality": "many", "fromOptional": true, "toCardinality": "one", "toOptional": true, "identifying": false },
+    { "id": "member-queue", "from": "queue_member", "to": "queue", "fromCardinality": "many", "fromOptional": true, "toCardinality": "one" },
+    { "id": "member-person", "from": "queue_member", "to": "person", "fromCardinality": "many", "fromOptional": true, "toCardinality": "one" },
+    { "id": "map-org", "from": "queue_lob_map", "to": "genesys_org", "fromCardinality": "many", "fromOptional": true, "toCardinality": "one", "toOptional": true, "identifying": false },
+    { "id": "map-uploader", "from": "queue_lob_map", "to": "person", "fromCardinality": "many", "fromOptional": true, "toCardinality": "one", "toOptional": true, "identifying": false },
+    { "id": "person-org", "from": "person", "to": "genesys_org", "fromCardinality": "many", "toCardinality": "one" },
+    { "id": "person-team", "from": "person", "to": "team", "fromCardinality": "many", "fromOptional": true, "toCardinality": "one", "toOptional": true, "identifying": false },
+    { "id": "team-org", "from": "team", "to": "genesys_org", "fromCardinality": "many", "toCardinality": "one" },
+    { "id": "team-leaders", "from": "team", "to": "person", "label": "tl_id, manager_id", "fromCardinality": "many", "fromOptional": true, "toCardinality": "one", "toOptional": true, "identifying": false },
+    { "id": "push-person", "from": "push_subscription", "to": "person", "fromCardinality": "many", "fromOptional": true, "toCardinality": "one" },
+    { "id": "shift-org", "from": "shift", "to": "genesys_org", "fromCardinality": "many", "toCardinality": "one" },
+    { "id": "strikes-shift", "from": "agent_rule_state", "to": "shift", "fromCardinality": "many", "fromOptional": true, "toCardinality": "one" },
+    { "id": "strikes-person", "from": "agent_rule_state", "to": "person", "fromCardinality": "many", "fromOptional": true, "toCardinality": "one" },
+    { "id": "strikes-rule", "from": "agent_rule_state", "to": "rules_master", "fromCardinality": "many", "fromOptional": true, "toCardinality": "one" },
+    { "id": "instance-shift", "from": "monitoring_instance", "to": "shift", "fromCardinality": "many", "fromOptional": true, "toCardinality": "one" },
+    { "id": "instance-version", "from": "monitoring_instance", "to": "rule_version", "label": "rule as it fired", "fromCardinality": "many", "fromOptional": true, "toCardinality": "one" },
+    { "id": "instance-override", "from": "monitoring_instance", "to": "rule_override", "label": "override that applied", "fromCardinality": "many", "fromOptional": true, "toCardinality": "one", "toOptional": true, "identifying": false },
+    { "id": "instance-person", "from": "monitoring_instance", "to": "person", "fromCardinality": "many", "fromOptional": true, "toCardinality": "one", "toOptional": true, "identifying": false },
+    { "id": "instance-team", "from": "monitoring_instance", "to": "team", "fromCardinality": "many", "fromOptional": true, "toCardinality": "one", "toOptional": true, "identifying": false },
+    { "id": "incident-instance", "from": "incident_log", "to": "monitoring_instance", "label": "opened by", "fromCardinality": "one", "fromOptional": true, "toCardinality": "one" },
+    { "id": "incident-shift", "from": "incident_log", "to": "shift", "fromCardinality": "many", "fromOptional": true, "toCardinality": "one" },
+    { "id": "incident-person", "from": "incident_log", "to": "person", "fromCardinality": "many", "fromOptional": true, "toCardinality": "one" },
+    { "id": "incident-team", "from": "incident_log", "to": "team", "fromCardinality": "many", "fromOptional": true, "toCardinality": "one" },
+    { "id": "incident-rule", "from": "incident_log", "to": "rules_master", "fromCardinality": "many", "fromOptional": true, "toCardinality": "one" },
+    { "id": "notice-instance", "from": "notification_log", "to": "monitoring_instance", "fromCardinality": "many", "fromOptional": true, "toCardinality": "one", "toOptional": true, "identifying": false },
+    { "id": "notice-recipient", "from": "notification_log", "to": "person", "fromCardinality": "many", "fromOptional": true, "toCardinality": "one" },
+    { "id": "notice-endpoint", "from": "notification_log", "to": "push_subscription", "fromCardinality": "many", "fromOptional": true, "toCardinality": "one", "toOptional": true, "identifying": false },
+    { "id": "version-rule", "from": "rule_version", "to": "rules_master", "fromCardinality": "many", "toCardinality": "one" },
+    { "id": "version-route", "from": "rule_version", "to": "notification_route", "fromCardinality": "many", "fromOptional": true, "toCardinality": "one" },
+    { "id": "override-rule", "from": "rule_override", "to": "rules_master", "fromCardinality": "many", "fromOptional": true, "toCardinality": "one" },
+    { "id": "override-route", "from": "rule_override", "to": "notification_route", "fromCardinality": "many", "fromOptional": true, "toCardinality": "one", "toOptional": true, "identifying": false },
+    { "id": "step-route", "from": "notification_route_step", "to": "notification_route", "fromCardinality": "many", "toCardinality": "one" },
+    { "id": "event-org", "from": "source_event_stream", "to": "genesys_org", "fromCardinality": "many", "fromOptional": true, "toCardinality": "one", "toOptional": true, "identifying": false },
+    { "id": "mapping-editor", "from": "status_mapping", "to": "person", "fromCardinality": "many", "fromOptional": true, "toCardinality": "one", "toOptional": true, "identifying": false },
+    { "id": "audit-actor", "from": "audit_event", "to": "person", "fromCardinality": "many", "fromOptional": true, "toCardinality": "one", "toOptional": true, "identifying": false }
   ],
   "cards": [
     {
-      "dot": "emerald",
-      "title": "Complete Live Ingestion & People Hierarchy",
+      "dot": "cyan",
+      "title": "Thresholds by Tower, Sub-tower and LOB",
       "items": [
-        "1. **All Telemetry Flows to Ingestion:** Every event (triggered or not) lands in `source_event_stream` carrying `person_id` (FK to `person`) and `queue_id` (FK to `queue_map`).",
-        "2. **Team Hierarchy:** `team` anchors LOB, Tower, Team Lead (`tl_person_id`), and Manager (`mgr_person_id`).",
-        "3. **WFM Queue Mapping:** `queue_map` links contact center queues to their assigned `team` (`team_id` FK)."
+        "rule_version holds each rule's default; rule_override holds one rule's settings for one Tower, Sub-tower or LOB, versioned.",
+        "Per setting, the most specific value wins: LOB → Sub-tower → Tower → default. A null column inherits.",
+        "Agent rules use the agent's home queue; queue rules also run per overridden group on its rolled-up numbers; the system rule has no overrides."
       ]
     },
     {
-      "dot": "cyan",
-      "title": "Violations, Escalations & Rules",
+      "dot": "emerald",
+      "title": "Queue-to-LOB mapping",
       "items": [
-        "1. **Instance Trigger:** Rule breaks produce records in `monitoring_instance` pointing back to `source_event_id` and `person_id`.",
-        "2. **Every Instance Notifies:** Recorded in `notification_log`; Strike 3 escalates to `incident_log`.",
-        "3. **Rule Audit:** Multi-level scoped rules in `rules_master` track historical edits in `rule_version`."
+        "queue_lob_map stores the Admin upload: sheet \"Queue-to-LOB mapping\", columns Tower, Sub-tower, LOB, Queue (+ Region, Org).",
+        "An upload replaces only the towers in the file; on a duplicate queue the first row wins.",
+        "No FK to queue: the mapping can name a queue before the feed finds it. queue.name_key = queue_lob_map.queue_key."
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Decisions built in",
+      "items": [
+        "One shift per org per Eastern day; strikes live per shift, so they restart at zero at midnight.",
+        "Every strike from 3 on opens its own incident: incident_log.instance_id is unique. INC-YYYY-NNNN restarts each January, one counter for every org.",
+        "source_event_stream keeps today only and is emptied with TRUNCATE at midnight Eastern. CSV replays are never saved."
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Built today",
+      "items": [
+        "Phase 0 is merged: genesys_region, genesys_org, notification_route, notification_route_step, rules_master, rule_version, status_mapping, audit_event.",
+        "Everything else is a new migration; the Phase 0 migration is never edited.",
+        "Full design and build order: docs/ideal-dataflow.md."
       ]
     }
   ]
