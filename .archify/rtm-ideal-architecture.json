@@ -2,484 +2,162 @@
   "schema_version": 1,
   "diagram_type": "architecture",
   "meta": {
-    "title": "RTM Console \u2014 Ideal Production Runtime & Persistence Architecture",
+    "title": "RTM Console — Ideal Runtime and Persistence",
+    "locale": "en",
     "output": ".archify/rtm-ideal-architecture.html",
-    "quality_profile": "standard",
+    "quality_profile": "showcase",
     "repository": {
-      "url": "https://github.com/aishki/rtm-console",
-      "revision": "793b167a5cbd41a921f5cabd90846c66f861cc77"
+      "url": "https://github.com/aishki/rtm-console.git",
+      "revision": "06bb279834222158de54b999566ba4771cabc832"
     }
   },
   "components": [
     {
-      "id": "gencloud",
-      "type": "external",
-      "label": "GenCloud Feed",
-      "sublabel": "WS & REST Telemetry",
-      "pos": [
-        40,
-        120
-      ],
-      "size": [
-        130,
-        64
-      ],
-      "tag": "telemetry",
+      "id": "genesys", "type": "external", "label": "Genesys Cloud", "sublabel": "3 orgs · 2 regions",
+      "pos": [40, 200], "size": [140, 64],
+      "sources": [{ "path": "lib/orgs.ts", "line": 16, "end_line": 20, "label": "the Genesys orgs" }]
+    },
+    {
+      "id": "feed", "type": "backend", "label": "Feed adapter", "sublabel": "GencloudFeed · status_mapping", "tag": "Sim / CSV never saved",
+      "pos": [265, 200], "size": [170, 64],
       "sources": [
-        {
-          "path": "lib/feed/GencloudFeed.ts",
-          "line": 1,
-          "end_line": 35
-        }
+        { "path": "lib/feed/GencloudFeed.ts", "line": 76, "label": "GencloudFeed" },
+        { "path": "lib/feed/gencloud/state.ts", "line": 47, "label": "consoleState()" }
       ]
     },
     {
-      "id": "wfmUpload",
-      "type": "external",
-      "label": "WFM Queue Map",
-      "sublabel": "Tower to Queue CSV/JSON",
-      "pos": [
-        40,
-        310
-      ],
-      "size": [
-        130,
-        64
-      ],
-      "tag": "taxonomy",
+      "id": "engine", "type": "backend", "label": "Rules engine", "sublabel": "1 s tick · LOB → Sub-tower → Tower → default", "tag": "in memory",
+      "pos": [560, 196], "size": [250, 72],
       "sources": [
-        {
-          "path": "lib/server/queueMapStore.ts",
-          "line": 1,
-          "end_line": 30
-        }
+        { "path": "lib/engine/engine.ts", "line": 32, "label": "createEngine()" },
+        { "path": "lib/engine/rules.ts", "line": 115, "label": "evaluateAgents()" },
+        { "path": "lib/engine/escalation.ts", "line": 89, "label": "fire(): strike, stage, incident" }
       ]
     },
     {
-      "id": "ingestPipeline",
-      "type": "backend",
-      "label": "Ingestion Worker",
-      "sublabel": "Parses & maps status",
-      "pos": [
-        260,
-        120
-      ],
-      "size": [
-        140,
-        64
-      ],
+      "id": "publish", "type": "backend", "label": "Runtime publish", "sublabel": "SSE · Web Push",
+      "pos": [875, 200], "size": [130, 64],
       "sources": [
-        {
-          "path": "lib/server/runtime.ts",
-          "line": 1,
-          "end_line": 50
-        }
+        { "path": "app/api/stream/route.ts", "line": 11, "label": "/api/stream" },
+        { "path": "lib/server/push.ts", "line": 58, "label": "pushBatch()" }
       ]
     },
     {
-      "id": "queueMapDb",
-      "type": "database",
-      "label": "queue_map & team",
-      "sublabel": "Tower -> LOB -> Team (FK)",
-      "pos": [
-        260,
-        310
-      ],
-      "size": [
-        140,
-        64
-      ],
+      "id": "browser", "type": "frontend", "label": "Console screens", "sublabel": "Console · Ledger · Dashboards · Rules",
+      "pos": [1050, 200], "size": [190, 64],
+      "sources": [{ "path": "lib/client/store.ts", "line": 64, "label": "useConsole store" }]
+    },
+    {
+      "id": "pushSvc", "type": "external", "label": "Browser push service", "sublabel": "desktop alerts",
+      "pos": [1055, 40], "size": [180, 60],
+      "sources": [{ "path": "lib/server/push.ts", "line": 58, "label": "pushBatch()" }]
+    },
+    {
+      "id": "api", "type": "backend", "label": "/api/* actions", "sublabel": "PERMS checked per span",
+      "pos": [875, 330], "size": [160, 64],
       "sources": [
-        {
-          "path": "lib/server/queueMapStore.ts",
-          "line": 10,
-          "end_line": 45
-        }
+        { "path": "app/api/rules/route.ts", "line": 16, "label": "PATCH /api/rules" },
+        { "path": "app/api/incidents/[inc]/route.ts", "line": 9, "label": "POST /api/incidents/[inc]" },
+        { "path": "app/api/instances/[n]/ack/route.ts", "line": 5, "label": "ack" }
       ]
     },
     {
-      "id": "eventStreamDb",
-      "type": "database",
-      "label": "source_event_stream",
-      "sublabel": "Live events (person_id FK)",
-      "pos": [
-        490,
-        120
-      ],
-      "size": [
-        150,
-        64
-      ],
+      "id": "admin", "type": "external", "label": "Admin (WFM)", "sublabel": "Queue-to-LOB .xlsx",
+      "pos": [40, 440], "size": [120, 64],
+      "sources": [{ "path": "lib/import/queueMap.ts", "line": 11, "label": "sheet \"Queue-to-LOB mapping\"" }]
+    },
+    {
+      "id": "upload", "type": "backend", "label": "Mapping upload", "sublabel": "/api/admin/queue-map",
+      "pos": [265, 440], "size": [170, 64],
       "sources": [
-        {
-          "path": "docs/data-architecture.md",
-          "line": 480,
-          "end_line": 512
-        }
+        { "path": "app/api/admin/queue-map/route.ts", "line": 15, "label": "POST" },
+        { "path": "lib/import/queueMap.ts", "line": 68, "label": "mergeQueueMap(): replace towers" }
       ]
     },
     {
-      "id": "rulesDb",
-      "type": "database",
-      "label": "rules_master & versions",
-      "sublabel": "Multi-level rule versions",
-      "pos": [
-        490,
-        310
-      ],
-      "size": [
-        150,
-        64
-      ],
+      "id": "store", "type": "backend", "label": "Store", "sublabel": "write-behind · ordered · retried",
+      "pos": [575, 440], "size": [220, 64],
       "sources": [
-        {
-          "path": "docs/data-architecture.md",
-          "line": 504,
-          "end_line": 515
-        }
+        { "path": "lib/store/postgres.ts", "line": 21, "label": "postgresStore()" },
+        { "path": "lib/server/store.ts", "line": 13, "label": "openStore()" }
       ]
     },
     {
-      "id": "rulesEngine",
-      "type": "backend",
-      "label": "Rules Engine",
-      "sublabel": "Tower-to-LOB scoping",
-      "pos": [
-        730,
-        120
-      ],
-      "size": [
-        140,
-        64
-      ],
-      "sources": [
-        {
-          "path": "lib/engine/engine.ts",
-          "line": 1,
-          "end_line": 45
-        }
-      ]
+      "id": "mappingDb", "type": "database", "label": "Queues & mapping", "sublabel": "queue_lob_map · queue · team · person",
+      "pos": [240, 610], "size": [210, 64],
+      "sources": [{ "path": "lib/server/queueMapStore.ts", "line": 32, "label": "today: .rtm/queue-map.json" }]
     },
     {
-      "id": "nudgeDispatch",
-      "type": "backend",
-      "label": "Nudge & Toast Dispatch",
-      "sublabel": "escalation.ts / strikes",
-      "pos": [
-        730,
-        310
-      ],
-      "size": [
-        140,
-        64
-      ],
-      "sources": [
-        {
-          "path": "lib/engine/escalation.ts",
-          "line": 68,
-          "end_line": 98
-        }
-      ]
+      "id": "rulesDb", "type": "database", "label": "Rules & overrides", "sublabel": "rules_master · rule_version · rule_override",
+      "pos": [470, 610], "size": [230, 64],
+      "sources": [{ "path": "lib/db/migrations/1793339440972_reference.ts", "line": 124, "label": "Phase 0 rule tables" }]
     },
     {
-      "id": "instanceLedgerDb",
-      "type": "database",
-      "label": "monitoring_instance",
-      "sublabel": "Broken rules & strikes",
-      "pos": [
-        970,
-        120
-      ],
-      "size": [
-        150,
-        64
-      ],
-      "sources": [
-        {
-          "path": "docs/data-architecture.md",
-          "line": 493,
-          "end_line": 498
-        }
-      ]
+      "id": "recordsDb", "type": "database", "label": "Call-outs & incidents", "sublabel": "shift · monitoring_instance · incident_log",
+      "pos": [720, 610], "size": [230, 64],
+      "sources": [{ "path": "docs/data-architecture.md", "line": 505, "end_line": 507, "label": "records, delivery, shift" }]
     },
     {
-      "id": "incidentDb",
-      "type": "database",
-      "label": "incident_log Table",
-      "sublabel": "Incidents & actions",
-      "pos": [
-        970,
-        310
-      ],
-      "size": [
-        150,
-        64
-      ],
-      "sources": [
-        {
-          "path": "docs/data-architecture.md",
-          "line": 496,
-          "end_line": 497
-        }
-      ]
-    },
-    {
-      "id": "notificationDb",
-      "type": "database",
-      "label": "notification_log Table",
-      "sublabel": "Delivery history & audit",
-      "pos": [
-        1210,
-        310
-      ],
-      "size": [
-        150,
-        64
-      ],
-      "sources": [
-        {
-          "path": "docs/data-architecture.md",
-          "line": 508,
-          "end_line": 509
-        }
-      ]
-    },
-    {
-      "id": "sseBroadcast",
-      "type": "backend",
-      "label": "SSE Broadcast",
-      "sublabel": "snapshot.ts / deltas",
-      "pos": [
-        1210,
-        120
-      ],
-      "size": [
-        140,
-        64
-      ],
-      "sources": [
-        {
-          "path": "lib/server/snapshot.ts",
-          "line": 1,
-          "end_line": 40
-        }
-      ]
-    },
-    {
-      "id": "consoleUi",
-      "type": "frontend",
-      "label": "Console UI Surface",
-      "sublabel": "Ledger, Dash, Nudges, Toasts",
-      "pos": [
-        1450,
-        210
-      ],
-      "size": [
-        150,
-        75
-      ],
-      "sources": [
-        {
-          "path": "app/page.tsx",
-          "line": 1,
-          "end_line": 13
-        }
-      ]
+      "id": "eventsDb", "type": "database", "label": "Raw events", "sublabel": "source_event_stream · today only",
+      "pos": [970, 610], "size": [200, 64],
+      "sources": [{ "path": "docs/data-architecture.md", "line": 572, "label": "emptied at midnight" }]
     }
   ],
   "boundaries": [
-    {
-      "kind": "region",
-      "label": "Ingestion & Streaming Core",
-      "wraps": [
-        "ingestPipeline",
-        "rulesEngine",
-        "nudgeDispatch",
-        "sseBroadcast"
-      ]
-    },
-    {
-      "kind": "security-group",
-      "label": "PostgreSQL Target Database Layer",
-      "wraps": [
-        "queueMapDb",
-        "eventStreamDb",
-        "rulesDb",
-        "instanceLedgerDb",
-        "incidentDb",
-        "notificationDb"
-      ]
-    },
-    {
-      "kind": "security-group",
-      "label": "Client Application Surface",
-      "wraps": [
-        "consoleUi"
-      ]
-    }
+    { "kind": "region", "label": "Next.js server · one process", "wraps": ["feed", "engine", "publish", "api", "upload", "store"] },
+    { "kind": "security-group", "label": "PostgreSQL rtm_console · 22 tables", "wraps": ["mappingDb", "rulesDb", "recordsDb", "eventsDb"] }
   ],
   "connections": [
-    {
-      "id": "feed-to-ingest",
-      "from": "gencloud",
-      "to": "ingestPipeline",
-      "label": "live events",
-      "variant": "emphasis",
-      "fromSide": "right",
-      "toSide": "left"
-    },
-    {
-      "id": "wfm-to-db",
-      "from": "wfmUpload",
-      "to": "queueMapDb",
-      "label": "upload hierarchy",
-      "variant": "default",
-      "fromSide": "right",
-      "toSide": "left"
-    },
-    {
-      "id": "ingest-to-streamdb",
-      "from": "ingestPipeline",
-      "to": "eventStreamDb",
-      "label": "save all live data",
-      "variant": "emphasis",
-      "fromSide": "right",
-      "toSide": "left",
-      "labelAt": [
-        445,
-        205
-      ]
-    },
-    {
-      "id": "streamdb-to-engine",
-      "from": "eventStreamDb",
-      "to": "rulesEngine",
-      "label": "stream to evaluate",
-      "variant": "emphasis",
-      "fromSide": "right",
-      "toSide": "left",
-      "labelDy": -28
-    },
-    {
-      "id": "rulesdb-to-engine",
-      "from": "rulesDb",
-      "to": "rulesEngine",
-      "label": "Tower-LOB rules",
-      "variant": "default",
-      "fromSide": "top",
-      "toSide": "bottom",
-      "labelDx": -40
-    },
-    {
-      "id": "engine-to-instances",
-      "from": "rulesEngine",
-      "to": "instanceLedgerDb",
-      "label": "broken rules (strikes)",
-      "variant": "emphasis",
-      "fromSide": "right",
-      "toSide": "left",
-      "labelDy": -28
-    },
-    {
-      "id": "engine-to-nudge",
-      "from": "rulesEngine",
-      "to": "nudgeDispatch",
-      "label": "evaluates strikes",
-      "variant": "emphasis",
-      "fromSide": "bottom",
-      "toSide": "top",
-      "labelDy": 24,
-      "labelAt": [
-        853,
-        198
-      ]
-    },
-    {
-      "id": "nudge-to-db",
-      "from": "nudgeDispatch",
-      "to": "notificationDb",
-      "label": "log delivery",
-      "variant": "default",
-      "fromSide": "right",
-      "toSide": "left",
-      "labelDy": 30
-    },
-    {
-      "id": "nudge-to-ui",
-      "from": "nudgeDispatch",
-      "to": "consoleUi",
-      "label": "nudges & toasts",
-      "variant": "emphasis",
-      "fromSide": "right",
-      "toSide": "bottom"
-    },
-    {
-      "id": "instances-to-incidents",
-      "from": "instanceLedgerDb",
-      "to": "incidentDb",
-      "label": "strike 3 / critical",
-      "variant": "emphasis",
-      "fromSide": "bottom",
-      "toSide": "top",
-      "labelAt": [
-        1095,
-        215
-      ]
-    },
-    {
-      "id": "engine-to-sse",
-      "from": "rulesEngine",
-      "to": "sseBroadcast",
-      "label": "state snapshot",
-      "variant": "emphasis",
-      "fromSide": "top",
-      "toSide": "top"
-    },
-    {
-      "id": "sse-to-ui",
-      "from": "sseBroadcast",
-      "to": "consoleUi",
-      "label": "live deltas",
-      "variant": "emphasis",
-      "fromSide": "right",
-      "toSide": "top"
-    },
-    {
-      "id": "db-to-ui",
-      "from": "incidentDb",
-      "to": "consoleUi",
-      "label": "actions & reports",
-      "variant": "default",
-      "fromSide": "right",
-      "toSide": "left"
-    }
+    { "id": "genesys-feed", "from": "genesys", "to": "feed", "label": "WS + REST", "variant": "emphasis" },
+    { "id": "feed-engine", "from": "feed", "to": "engine", "label": "states · queues", "variant": "emphasis" },
+    { "id": "engine-publish", "from": "engine", "to": "publish", "label": "deltas", "variant": "emphasis" },
+    { "id": "publish-browser", "from": "publish", "to": "browser", "label": "SSE", "variant": "emphasis" },
+    { "id": "publish-push", "from": "publish", "to": "pushSvc", "label": "Web Push", "variant": "dashed", "fromSide": "top", "toSide": "left" },
+    { "id": "push-browser", "from": "pushSvc", "to": "browser", "label": "alert", "variant": "dashed", "fromSide": "bottom", "toSide": "top" },
+    { "id": "browser-api", "from": "browser", "to": "api", "label": "acks · edits", "fromSide": "bottom", "toSide": "right" },
+    { "id": "api-engine", "from": "api", "to": "engine", "label": "apply", "fromSide": "left", "toSide": "bottom" },
+    { "id": "engine-store", "from": "engine", "to": "store", "label": "records · reload", "fromSide": "bottom", "toSide": "top" },
+    { "id": "admin-upload", "from": "admin", "to": "upload", "label": ".xlsx" },
+    { "id": "upload-feed", "from": "upload", "to": "feed", "label": "watch list", "variant": "dashed", "fromSide": "top", "toSide": "bottom" },
+    { "id": "upload-store", "from": "upload", "to": "store", "label": "towers" },
+    { "id": "store-mapping", "from": "store", "to": "mappingDb", "fromSide": "bottom", "toSide": "top" },
+    { "id": "store-rules", "from": "store", "to": "rulesDb", "fromSide": "bottom", "toSide": "top" },
+    { "id": "store-records", "from": "store", "to": "recordsDb", "fromSide": "bottom", "toSide": "top" },
+    { "id": "store-events", "from": "store", "to": "eventsDb", "fromSide": "bottom", "toSide": "top" }
   ],
   "cards": [
     {
-      "dot": "emerald",
-      "title": "All Live Feeds Flow to source_event_stream",
-      "items": [
-        "1. Every live event (triggered or not) is recorded in `source_event_stream`.",
-        "2. Events link directly to `person_id` (FK) and `queue_id` (FK), capturing full operational context.",
-        "3. Live floor KPIs on the Console Tab are computed directly from this continuous ingestion stream."
-      ]
-    },
-    {
       "dot": "cyan",
-      "title": "Team & Queue Organizational Hierarchy",
+      "title": "Thresholds by Tower, Sub-tower and LOB",
       "items": [
-        "1. `team` anchors the organizational tree (`Tower -> SubTower -> LOB -> Team -> TL -> Mgr`).",
-        "2. `queue_map` links contact center queues to their responsible team via `team_id` FK.",
-        "3. `person` belongs to a `team` via `team_id` FK, mapping agents and supervisors to their hierarchy."
+        "rule_override sets a rule for one Tower, Sub-tower or LOB, versioned over the rule_version default.",
+        "Per setting the most specific wins: LOB → Sub-tower → Tower → default; null inherits.",
+        "Agent rules use the agent's home queue; queue rules also run per overridden group; every call-out keeps the version and override that fired."
       ]
     },
     {
-      "dot": "violet",
-      "title": "Every Instance Notifies (Nudge, Toast, Incident)",
+      "dot": "emerald",
+      "title": "Queue-to-LOB mapping",
       "items": [
-        "1. **Every Broken Rule Fires:** Strike 1 sends a Pop-up Nudge; Strike 2 sends a Toast Alert to the TL.",
-        "2. **Ops Escalations:** Strike 3 creates a formal record in `incident_log` for investigative dashboard actions.",
-        "3. **Audit History:** Every dispatch is recorded in `notification_log` across Toast, Popup, and Email channels."
+        "Admin uploads the .xlsx (sheet \"Queue-to-LOB mapping\": Tower, Sub-tower, LOB, Queue); only the towers in the file are replaced.",
+        "Saved to queue_lob_map (today .rtm/queue-map.json) and cached in memory for the tree, the scope resolver and the feed's watch list."
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Writes never block the tick",
+      "items": [
+        "The engine hands records to the store, which writes them in order in batches and retries on failure.",
+        "At start-up the store reloads rules, overrides, the mapping, today's shift, strikes and open call-outs and incidents.",
+        "Raw events are kept for the current Eastern day only; call-outs and incidents carry over midnight."
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Built today",
+      "items": [
+        "Phase 0: rules and their versions survive a restart (PERSISTENCE_MODE=postgres).",
+        "Still in memory: shift, ledger, incidents, strikes. Build order and open decisions: docs/ideal-dataflow.md."
       ]
     }
   ]
