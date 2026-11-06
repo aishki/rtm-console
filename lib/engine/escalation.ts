@@ -64,14 +64,15 @@ export interface EngineState {
 export const firstName = (name: string): string => (name.includes(",") ? name.slice(name.indexOf(",") + 1) : name).trim().split(" ")[0];
 
 /** A capped route stops at its rung; a full ladder climbs with the strike count. */
-export const isFullLadder = (route: Route): boolean => route === "nudge" || route === "lead";
+export const isFullLadder = (route: Route): boolean => route === "nudge" || route === "lead" || route === "critical";
 
 /**
  * Stage for a call-out. Floor call-outs (strikes = 0) stay on the route's first rung.
- * Full ladders: strike 2 reaches the TL, strike 3 and later reach Ops.
+ * Full ladders: strike 2 reaches the TL, strike 3 and later reach Ops. The critical route starts
+ * with the leaders (its LOB Manager), and also nudges the agent on strikes 1 and 2 (see fire()).
  */
 export function stageFor(route: Route, strikes: number): Stage {
-  const first: Stage = route === "lead" || route === "leadonly" ? "lead" : "nudge";
+  const first: Stage = route === "nudge" || route === "nudgeonly" ? "nudge" : "lead";
   if (!isFullLadder(route)) return first;
   if (strikes >= 3) return "ops";
   if (strikes === 2) return "lead";
@@ -99,14 +100,21 @@ export function fire(S: EngineState, hooks: EngineHooks, counter: IncidentCounte
   };
   S.ledger.unshift(rec);
   if (S.quiet) return rec;
-  if (stage === "nudge" && agent) {
+  // The critical route tells the agent on strikes 1 and 2 as well as their leaders.
+  const critical = r.route === "critical";
+  if ((stage === "nudge" || (critical && stage === "lead")) && agent) {
     hooks.nudge?.({ n: rec.n, agent: agent.name, team: agent.team, first: firstName(agent.name), body: nudgeCopy(r, agent, S.rules) });
-  } else if (stage === "lead") {
-    const crit = r.sev === "crit";
+  }
+  if (stage === "lead") {
+    const crit = critical || r.sev === "crit";
+    const lead = agent ? teamOf(S.org, agent.team) : null;
+    const to = !critical ? `to TL ${lead ? lead.tl : "(floor)"}`
+      : strikes === 2 ? `to TL ${lead!.tl} and LOB Mgr ${lead!.mgr}`
+        : `to LOB Mgr ${lead ? lead.mgr : "(floor)"}`;
     hooks.toast?.({
       kind: crit ? "crit" : "warn", instance: rec,
       title: `${rec.agent} · ${r.name}${crit ? " · Critical" : ""}`,
-      body: `${rec.cond} · now ${val}${strikes > 1 ? ` · strike ${strikes}` : ""} · to TL ${agent ? teamOf(S.org, agent.team).tl : "(floor)"}`,
+      body: `${rec.cond} · now ${val}${strikes > 1 ? ` · strike ${strikes}` : ""} · ${to}`,
     });
   } else if (stage === "ops" && agent) {
     hooks.toast?.({

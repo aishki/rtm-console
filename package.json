@@ -15,7 +15,8 @@
     "db:make": "kysely migrate:make --no-outdated-check",
     "db:status": "kysely migrate:list --no-outdated-check",
     "db:rollback": "tsx tools/db/local-only.ts && kysely migrate:down --no-outdated-check",
-    "db:types": "tsx tools/db/types.ts"
+    "db:types": "tsx tools/db/types.ts",
+    "db:role-passwords": "node tools/db/role-passwords.mjs"
   },
   "dependencies": {
     "exceljs": "^4.4.0",

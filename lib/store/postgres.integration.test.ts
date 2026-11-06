@@ -1,7 +1,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { type Kysely, sql } from "kysely";
-import { FileMigrationProvider, Migrator } from "kysely/migration";
+import { FileMigrationProvider, Migrator, NO_MIGRATIONS } from "kysely/migration";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createDb } from "@/lib/db/client";
 import type { DB } from "@/lib/db/schema";
@@ -35,7 +35,7 @@ describe.skipIf(!url)("PostgreSQL: migrations and the store", () => {
   it("migrates an empty database, and a second run does nothing", async () => {
     const first = await migrator().migrateToLatest();
     expect(first.error).toBeUndefined();
-    expect(first.results?.map(r => r.status)).toEqual(["Success"]);
+    expect(first.results?.map(r => r.status)).toEqual(["Success", "Success"]);
     const second = await migrator().migrateToLatest();
     expect(second.error).toBeUndefined();
     expect(second.results).toEqual([]);
@@ -45,8 +45,8 @@ describe.skipIf(!url)("PostgreSQL: migrations and the store", () => {
     const count = async (t: keyof DB) => Number((await db.selectFrom(t).select(sql<string>`count(*)`.as("n")).executeTakeFirstOrThrow()).n);
     expect(await count("genesys_region")).toBe(2);
     expect(await count("genesys_org")).toBe(3);
-    expect(await count("notification_route")).toBe(4);
-    expect(await count("notification_route_step")).toBe(7);
+    expect(await count("notification_route")).toBe(5);
+    expect(await count("notification_route_step")).toBe(10);
     expect(await count("rules_master")).toBe(14);
     expect(await count("rule_version")).toBe(14);
     expect(await count("status_mapping")).toBe(9);
@@ -97,9 +97,9 @@ describe.skipIf(!url)("PostgreSQL: migrations and the store", () => {
     await store.close().catch(() => {});
   });
 
-  it("undoes the migration cleanly (local only)", async () => {
+  it("undoes every migration cleanly (local only)", async () => {
     db = createDb({ DB_SSLMODE: sslMode, DB_POOL_MAX: 2 }, url);
-    const down = await migrator().migrateDown();
+    const down = await migrator().migrateTo(NO_MIGRATIONS);
     expect(down.error).toBeUndefined();
     const tables = await db.introspection.getTables();
     expect(tables.map(t => t.name)).toEqual([]);

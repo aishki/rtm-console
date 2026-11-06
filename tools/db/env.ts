@@ -1,16 +1,16 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadEnvConfig } from "@next/env";
-import { type DbEnv, parseDbEnv } from "../../lib/env";
+import { type DbEnv, migrationLogin, parseDbEnv } from "../../lib/env";
 
 /** The repository root. */
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 
-/** The database settings, from the shell then .env.local (as Next.js reads them). Exits with the problems listed when they are not valid. */
+/** The database settings, from the shell then .env.local (as Next.js reads them), with the migration login when one is set. Exits with the problems listed when they are not valid. */
 export function dbEnv(): DbEnv {
   loadEnvConfig(ROOT, true, { info: () => {}, error: console.error });
   try {
-    return parseDbEnv(process.env);
+    return migrationLogin(parseDbEnv(process.env));
   } catch (e) {
     console.error(e instanceof Error ? e.message : e);
     process.exit(1);

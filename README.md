@@ -41,6 +41,7 @@ npm run dev        # http://localhost:3000
 | `npm run db:status` | Lists migrations and which have run |
 | `npm run db:rollback` | Undoes the last migration. Local only: refused for staging and production |
 | `npm run db:types` | Regenerates `lib/db/schema.ts` from a migrated database |
+| `npm run db:role-passwords` | Prints new passwords for the RTM database roles and the `ALTER ROLE` lines that set them from a hash (one-time pgAdmin setup). Run it in a terminal of your own |
 
 ### Environment
 
@@ -52,6 +53,7 @@ npm run dev        # http://localhost:3000
 | `PERSISTENCE_MODE` | Required: `postgres`, or `memory` (development and test only; nothing survives a restart). |
 | `DATABASE_URL` or `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD` | The database, for `postgres` mode and the `db:*` scripts. `DATABASE_URL` wins. The local container's values are in `.env.example`. |
 | `DB_SSLMODE`, `DB_CA_CERT` | TLS to the database. `verify-full` by default; `disable` for the local container. `DB_CA_CERT` adds a certificate authority, such as the RDS bundle. |
+| `DB_MIGRATE_USER`, `DB_MIGRATE_PASSWORD` | The login `npm run db:migrate` uses instead of `DB_USER` (`rtm_migrator` in production, while `DB_USER` is `rtm_app`). Both or neither. The app never uses it. |
 | `NEXT_PUBLIC_FEED=sim` | Start on the floor simulator. Set to a non-"sim" value (e.g., `gencloud`) to start on the Gencloud adapter. An admin can switch between the two while the server runs (see "Switching the data source"). |
 | `NEXT_PUBLIC_VIEW_AS=1` | Dev/admin flag for the "View as" role selector. **Without it every API route answers 401**, because no SSO exists yet. Required for Gencloud development. |
 | `GENESYS_TOKEN` | Hand-grabbed supervisor bearer token for **Anthem Commercial** from the browser DevTools Network tab (Authorization header of an api.mypurecloud.com request). Short-lived. Seeds Commercial's first start only: a token pasted on `/admin/token` replaces it (see "Refreshing the Genesys token"). `GBD_TOKEN` and `SPECIALTY_TOKEN` do the same for Anthem GBD and Anthem Specialty. |
