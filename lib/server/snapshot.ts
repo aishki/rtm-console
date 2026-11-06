@@ -39,7 +39,7 @@ export function tickMsg(rt: Runtime, view: View, since: Since | null, batch: Bat
       .filter(e => (replay ? e.kind === "info" : !e.instance || (leader && inScope(S, view, e.instance))))
       .map(({ kind, title, body, instance }) => ({ kind, title, body, n: instance?.n, team: instance && !instance.isFloor ? instance.team : undefined })),
     // A nudge is private: it goes to the agent it is about and to nobody else.
-    nudges: replay || leader ? [] : batch.nudges.filter(n => n.agent === view.who),
+    nudges: replay || leader ? [] : batch.nudges.filter(n => n.agentId === view.who),
   };
 }
 

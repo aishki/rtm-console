@@ -33,7 +33,8 @@ export interface Runtime {
   /** Push the current state to every subscriber now (call after a mutation). */
   publish(): void;
   /** The agent's latest nudge while it is still unacknowledged: shown again when they open the console. */
-  pendingNudge(agent: string): NudgeEvent | null;
+  /** The agent's (by uid) last nudge, while its call-out is still open. */
+  pendingNudge(agentId: string): NudgeEvent | null;
   /** Drop the feed's connection and open a fresh one. The engine's floor, ledger and strikes are kept. */
   restartFeed(): void;
   /** The Genesys org a Gencloud floor watches. */
@@ -56,7 +57,7 @@ function createRuntime(kind: Runtime["kind"], rules: Rule[], speed: number, engi
   const publish = () => {
     const out = batch;
     batch = { toasts: [], nudges: [] };
-    for (const e of out.nudges) lastNudge.set(e.agent, e);
+    for (const e of out.nudges) lastNudge.set(e.agentId, e);
     for (const fn of listeners) fn(out);
   };
   const step = () => {
@@ -70,9 +71,9 @@ function createRuntime(kind: Runtime["kind"], rules: Rule[], speed: number, engi
   return {
     kind, engine, feed, publish,
     subscribe(fn) { listeners.add(fn); return () => { listeners.delete(fn); }; },
-    pendingNudge(agent) {
-      const e = lastNudge.get(agent);
-      return e && engine.S.ledger.some(r => r.n === e.n && r.agent === agent && r.status === "open") ? e : null;
+    pendingNudge(agentId) {
+      const e = lastNudge.get(agentId);
+      return e && engine.S.ledger.some(r => r.n === e.n && r.agentId === agentId && r.status === "open") ? e : null;
     },
     restartFeed() { unsubscribe(); unsubscribe = feed.subscribe(engine.ingest); },
     stop() { clearInterval(timer); unsubscribe(); listeners.clear(); },
@@ -113,15 +114,18 @@ function createGencloud(rules: Rule[], org: OrgId, incidents: IncidentCounter): 
     engine.reset({ t });
     // Loading the roster takes minutes for hundreds of queues: start from the one saved last
     // time, everyone Offline until their state arrives. The feed marks the floor as loading.
+    // A file saved before agents had Genesys IDs is skipped: the live roster replaces it.
     const saved = loadRoster(org);
-    if (saved) engine.ingest.onRoster({ org: saved.org, agents: saved.agents.map(a => ({ ...a, state: "off" })), members: saved.members });
+    if (saved && saved.agents.every(a => a.uid)) {
+      engine.ingest.onRoster({ org: saved.org, agents: saved.agents.map(a => ({ ...a, uid: a.uid!, state: "off" })), members: saved.members });
+    }
   }, rollover);
   return { ...rt, genesysOrg: org };
 }
 
 function createSim(rules: Rule[], seed: SimSeed | undefined): Runtime {
   const rt = createRuntime("live", rules, 1, { deriveAdh: true },
-    engine => new SimFeed({ thr: engine.thr, strikes: (name, id) => engine.S.agents.find(a => a.name === name)?.strikes[id] ?? 0 }, Math.random, seed),
+    engine => new SimFeed({ thr: engine.thr, strikes: (uid, id) => engine.S.agents.find(a => a.uid === uid)?.strikes[id] ?? 0 }, Math.random, seed),
     engine => engine.reset({ t: 8 * 3600 }), // 08:00 shift start
     engine => simulateReplies(engine.S, engine.comment),
   );

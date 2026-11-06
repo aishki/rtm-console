@@ -10,11 +10,13 @@ const ORG: Team[] = [
   { team: "Team Bravo", tl: "Marco Tan", mgr: "Ava Santiago", lob: "PAP Intake" },
   { team: "Team Delta", tl: "Jon Rivera", mgr: "Leo Fernandez", lob: "Member Care" },
 ];
+/** A test agent's uid. Never the name itself, so a lookup by name instead of uid fails. */
+const u = (name: string) => `u-${name.toLowerCase().replace(/\W+/g, "-")}`;
 const ROSTER: RosterAgent[] = [
-  { name: "Amara Reyes", team: "Team Alpha", state: "avail" },
-  { name: "Joshua Lim", team: "Team Alpha", state: "avail" },
-  { name: "Bea Santos", team: "Team Bravo", state: "avail" },
-  { name: "Miguel Cruz", team: "Team Delta", state: "avail" },
+  { uid: u("Amara Reyes"), name: "Amara Reyes", team: "Team Alpha", state: "avail" },
+  { uid: u("Joshua Lim"), name: "Joshua Lim", team: "Team Alpha", state: "avail" },
+  { uid: u("Bea Santos"), name: "Bea Santos", team: "Team Bravo", state: "avail" },
+  { uid: u("Miguel Cruz"), name: "Miguel Cruz", team: "Team Delta", state: "avail" },
 ];
 
 function setup() {
@@ -23,11 +25,11 @@ function setup() {
   e.reset({ t: 8 * 3600 });
   e.ingest.onRoster({ org: ORG, agents: ROSTER });
   const run = (seconds: number) => { for (let i = 0; i < seconds; i++) { e.ingest.onHeartbeat(); e.tick(); } };
-  const set = (agent: string, state: AgentState, extra: Partial<AgentStateEvent> = {}) => e.ingest.onAgentState({ agent, state, ...extra });
+  const set = (name: string, state: AgentState, extra: Partial<AgentStateEvent> = {}) => e.ingest.onAgentState({ uid: u(name), state, ...extra });
   const agent = (name: string) => e.S.agents.find(a => a.name === name)!;
   /** One full episode of a duration rule: sit in `state` just past `seconds`, then go back to Available. */
   const episode = (name: string, state: AgentState, seconds: number) => { set(name, state); run(seconds + 1); set(name, "avail"); run(1); };
-  const of = (name: string, ruleId?: RuleId) => e.S.ledger.filter(r => r.agent === name && (!ruleId || r.ruleId === ruleId));
+  const of = (name: string, ruleId?: RuleId) => e.S.ledger.filter(r => r.agentId === u(name) && (!ruleId || r.ruleId === ruleId));
   return { e, toasts, nudges, run, set, agent, episode, of };
 }
 
@@ -134,9 +136,9 @@ describe("the 3× rule", () => {
       return e;
     });
     const strike = (e: (typeof floors)[number]) => {
-      e.ingest.onAgentState({ agent: "Amara Reyes", state: "acw" });
+      e.ingest.onAgentState({ uid: u("Amara Reyes"), state: "acw" });
       for (let i = 0; i < 122; i++) { e.ingest.onHeartbeat(); e.tick(); }
-      e.ingest.onAgentState({ agent: "Amara Reyes", state: "avail" });
+      e.ingest.onAgentState({ uid: u("Amara Reyes"), state: "avail" });
       e.ingest.onHeartbeat(); e.tick();
     };
     for (let i = 0; i < 3; i++) strike(floors[0]);
@@ -427,7 +429,7 @@ describe("re-arm logic", () => {
 describe("scoping", () => {
   const admin: View = { role: "admin", who: null }, senior: View = { role: "senior", who: null };
   const mgr: View = { role: "mgr", who: "Ava Santiago" }, tl: View = { role: "tl", who: "Rina Velasco" };
-  const agentV: View = { role: "agent", who: "Amara Reyes" };
+  const agentV: View = { role: "agent", who: u("Amara Reyes") };
 
   function floor() {
     const s = setup();
@@ -566,10 +568,10 @@ describe("roster resent mid-shift", () => {
     const { e, episode, agent } = setup();
     episode("Amara Reyes", "acw", 120);
     episode("Amara Reyes", "acw", 120);
-    e.ingest.onAgentState({ agent: "Joshua Lim", state: "avail", callEnded: { transferred: true } });
+    e.ingest.onAgentState({ uid: u("Joshua Lim"), state: "avail", callEnded: { transferred: true } });
     e.ingest.onHeartbeat(); e.tick();
     const ledger = e.S.ledger.length;
-    e.ingest.onRoster({ org: ORG, agents: [...ROSTER, { name: "Nina Ramos", team: "Team Bravo", state: "avail" }] });
+    e.ingest.onRoster({ org: ORG, agents: [...ROSTER, { uid: u("Nina Ramos"), name: "Nina Ramos", team: "Team Bravo", state: "avail" }] });
     expect(agent("Amara Reyes").strikes.acw).toBe(2);
     expect(agent("Joshua Lim").calls).toBe(1);
     expect(agent("Joshua Lim").transfers).toBe(1);
@@ -606,7 +608,7 @@ describe("call data from the feed", () => {
 
   it("takes AHT from the feed's handle time and stops estimating it from calls", () => {
     const { e, set, run, agent } = setup();
-    e.ingest.onAgentStats!([{ agent: "Amara Reyes", aht: 512.4 }, { agent: "Nobody Here", aht: 100 }]); run(1);
+    e.ingest.onAgentStats!([{ uid: u("Amara Reyes"), aht: 512.4 }, { uid: u("Nobody Here"), aht: 100 }]); run(1);
     expect(agent("Amara Reyes").aht).toBe(512);
     set("Amara Reyes", "oncall"); run(1);
     set("Amara Reyes", "acw", { callEnded: { durationSec: 60 } }); run(1);
@@ -632,8 +634,8 @@ describe("queue membership and per-queue counts", () => {
     const { e } = setup();
     e.ingest.onRoster({
       org: [{ team: "Q1", tl: "", mgr: "", lob: "Q1" }, { team: "Q2", tl: "", mgr: "", lob: "Q2" }],
-      agents: [{ name: "A", team: "Q1", state: "avail" }, { name: "B", team: "Q1", state: "avail" }],
-      members: { Q1: ["A", "B"], Q2: ["B", "Ghost"] },
+      agents: [{ uid: u("A"), name: "A", team: "Q1", state: "avail" }, { uid: u("B"), name: "B", team: "Q1", state: "avail" }],
+      members: { Q1: [u("A"), u("B")], Q2: [u("B"), u("Ghost")] },
     });
     expect(e.S.members).toEqual({ Q1: [id(e, "A"), id(e, "B")], Q2: [id(e, "B")] });
   });
@@ -673,5 +675,28 @@ describe("queue membership and per-queue counts", () => {
     e.ingest.onQueue({ cq: 4, sl: 70, asa: 11, ab: 20 });
     run(1);
     expect(e.S.queues.Q1).toEqual(counts);
+  });
+});
+
+describe("agents with the same name", () => {
+  it("keeps their strikes, call-outs, incidents and views apart, by uid", () => {
+    const e = createEngine({}, { year: () => 2026 });
+    e.reset({ t: 8 * 3600 });
+    e.ingest.onRoster({ org: ORG, agents: [
+      { uid: "g-1", name: "Amara Reyes", team: "Team Alpha", state: "avail" },
+      { uid: "g-2", name: "Amara Reyes", team: "Team Bravo", state: "avail" },
+    ] });
+    const run = (s: number) => { for (let i = 0; i < s; i++) { e.ingest.onHeartbeat(); e.tick(); } };
+    for (let i = 0; i < 3; i++) { e.ingest.onAgentState({ uid: "g-1", state: "acw" }); run(121); e.ingest.onAgentState({ uid: "g-1", state: "avail" }); run(1); }
+    const [one, two] = e.S.agents;
+    expect(one.strikes.acw).toBe(3);
+    expect(two.strikes).toEqual({});
+    expect(e.S.ledger.every(r => r.agentId === "g-1")).toBe(true);
+    expect(e.S.incidents.map(i => i.agentId)).toEqual(["g-1"]);
+    const asTwo: View = { role: "agent", who: "g-2" };
+    expect(scopeLedger(e.S, asTwo, e.S.ledger)).toEqual([]);
+    expect(scopeIncidents(e.S, asTwo, e.S.incidents)).toEqual([]);
+    expect(scopeTeams(e.S, asTwo).map(t => t.team)).toEqual(["Team Bravo"]);
+    expect(resolveView(e.S, asTwo)).toEqual(asTwo);
   });
 });

@@ -82,7 +82,7 @@ export function stageFor(route: Route, strikes: number): Stage {
 /** Every strike from 3 on opens its own incident: strike 5 on one rule means 3 incidents to investigate. `instances` is the strike that opened it. */
 export function openIncident(S: EngineState, counter: IncidentCounter, agent: Agent, r: Rule, strikes: number): string {
   const inc = counter.next();
-  S.incidents.unshift({ inc, t: S.t, agent: agent.name, team: agent.team, rule: r.name, ruleId: r.id, instances: strikes, status: "Open", disposition: "", closedT: null });
+  S.incidents.unshift({ inc, t: S.t, agent: agent.name, agentId: agent.uid, team: agent.team, rule: r.name, ruleId: r.id, instances: strikes, status: "Open", disposition: "", closedT: null });
   return inc;
 }
 
@@ -94,7 +94,7 @@ export function fire(S: EngineState, hooks: EngineHooks, counter: IncidentCounte
   if (agent && stage === "ops") inc = openIncident(S, counter, agent, r, strikes);
   const val = detail ?? (agent ? valueOf(r.id, agent) : "");
   const rec: Instance = {
-    n: ++S.seq, t: S.t, agent: agent ? agent.name : "Queue", isFloor: !agent, team: agent ? agent.team : "Floor",
+    n: ++S.seq, t: S.t, agent: agent ? agent.name : "Queue", agentId: agent ? agent.uid : null, isFloor: !agent, team: agent ? agent.team : "Floor",
     rule: r.name, ruleId: r.id, val, stage, sev: stage === "ops" ? "esc" : r.sev, status: "open", ackT: null,
     strikes, inc, cmt: null, cond: `${r.cond} ${r.thr}${r.unit}`, rev: ++S.rev,
   };
@@ -103,7 +103,7 @@ export function fire(S: EngineState, hooks: EngineHooks, counter: IncidentCounte
   // The critical route tells the agent on strikes 1 and 2 as well as their leaders.
   const critical = r.route === "critical";
   if ((stage === "nudge" || (critical && stage === "lead")) && agent) {
-    hooks.nudge?.({ n: rec.n, agent: agent.name, team: agent.team, first: firstName(agent.name), body: nudgeCopy(r, agent, S.rules) });
+    hooks.nudge?.({ n: rec.n, agentId: agent.uid, agent: agent.name, team: agent.team, first: firstName(agent.name), body: nudgeCopy(r, agent, S.rules) });
   }
   if (stage === "lead") {
     const crit = critical || r.sev === "crit";

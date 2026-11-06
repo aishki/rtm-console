@@ -76,12 +76,15 @@ export function FilterChip(props: FilterChipProps): JSX.Element;
 export interface ToggleProps { checked: boolean; onChange: (next: boolean) => void; /** Accessible name; not drawn. */ label: string; disabled?: boolean }
 export function Toggle(props: ToggleProps): JSX.Element;
 
-export interface PersonGroup { label: string; items: string[] }
+/** Someone to pick: `key` is what onChange gives back (an agent's uid), `name` is shown. */
+export interface Person { key: string; name: string }
+export interface PersonGroup { label: string; items: Person[] }
 export interface PersonSearchProps {
+  /** The chosen person's key. */
   value: string;
   groups: PersonGroup[];
-  onChange: (who: string) => void;
-  /** Each person's current state, shown at the right end of their row and of the box. Omit for people without one. */
+  onChange: (key: string) => void;
+  /** Each person's current state by key, shown at the right end of their row and of the box. Omit for people without one. */
   states?: Record<string, AgentState> | null;
   /** Lets the caller load `states` only while the list is on screen. */
   onOpenChange?: (open: boolean) => void;

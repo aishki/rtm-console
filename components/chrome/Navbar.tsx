@@ -4,6 +4,7 @@ import Link from "next/link";
 import { ROLE_LABEL } from "@/lib/engine/rules";
 import { useOpenCounts, usePerms } from "@/lib/client/hooks";
 import { useConsole } from "@/lib/client/store";
+import { viewerName } from "@/lib/engine/scope";
 import { TABS } from "@/lib/ui/palette";
 import type { TabId } from "@/lib/types";
 import { CarelonLogo, CarelonMark, RtmMark, carelonClearSpace } from "@/components/ui/LogoLockup";
@@ -13,10 +14,12 @@ const LOGO_HEIGHT = 22;
 /** Sticky white bar: logos, RTM mark and product name, role-filtered tabs with badges, viewer chip. */
 export function Navbar({ current }: { current: TabId | undefined }) {
   const view = useConsole(s => s.view);
+  const who = useConsole(s => (s.view ? viewerName(s.view, s.agents) : null));
   const perms = usePerms();
   const { openInstances, openInvestigations } = useOpenCounts();
   const tabs = TABS.filter(t => perms?.tabs.includes(t.id));
-  const name = view ? view.who ?? (view.role === "admin" ? "WFM Admin" : "Senior Leader") : "";
+  // An agent's name arrives with their own record, a moment after the view.
+  const name = view ? who ?? (view.role === "admin" ? "WFM Admin" : view.role === "senior" ? "Senior Leader" : "") : "";
   const initials = name.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase();
 
   return (

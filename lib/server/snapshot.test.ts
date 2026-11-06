@@ -13,9 +13,9 @@ const ORG: Team[] = [
   { team: "Team Bravo", tl: "Marco Tan", mgr: "Ava Santiago", lob: "PAP Intake" },
 ];
 const AGENTS = [
-  { name: "Amara Reyes", team: "Team Alpha", state: "avail" as const },
-  { name: "Joshua Lim", team: "Team Alpha", state: "avail" as const },
-  { name: "Bea Santos", team: "Team Bravo", state: "avail" as const },
+  { uid: "u-amara", name: "Amara Reyes", team: "Team Alpha", state: "avail" as const },
+  { uid: "u-joshua", name: "Joshua Lim", team: "Team Alpha", state: "avail" as const },
+  { uid: "u-bea", name: "Bea Santos", team: "Team Bravo", state: "avail" as const },
 ];
 const BATCH = { toasts: [], nudges: [] };
 const ADMIN: View = { role: "admin", who: null };
@@ -67,7 +67,7 @@ describe("tickMsg queue data", () => {
     const { rt } = setup();
     const m = tickMsg(rt, { role: "tl", who: "Rina Velasco" }, null, BATCH);
     expect(m.members).toEqual({ "Team Alpha": [0, 1], "Team Bravo": [] });
-    const agent = tickMsg(rt, { role: "agent", who: "Bea Santos" }, null, BATCH);
+    const agent = tickMsg(rt, { role: "agent", who: "u-bea" }, null, BATCH);
     expect(agent.members).toEqual({ "Team Alpha": [], "Team Bravo": [2] });
   });
 });

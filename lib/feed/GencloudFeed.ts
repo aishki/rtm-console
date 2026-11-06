@@ -139,7 +139,7 @@ export class GencloudFeed implements FeedSource {
           const now = new Date();
           const handle = await client.getAgentHandle(queueIds, { start: floorMidnight(now).toISOString(), end: now.toISOString() });
           if (stopped) return;
-          handlers.onAgentStats?.(handle.flatMap((h) => idToName[h.userId] ? [{ agent: idToName[h.userId], aht: h.handleSec / h.handled }] : []));
+          handlers.onAgentStats?.(handle.flatMap((h) => idToName[h.userId] ? [{ uid: h.userId, aht: h.handleSec / h.handled }] : []));
         } catch (e) {
           console.warn("GencloudFeed: handle time poll failed:", errMsg(e));
         }
@@ -233,12 +233,11 @@ export class GencloudFeed implements FeedSource {
         const teardown = await ws.subscribe(
           Object.keys(idToName),
           (ev) => {
-            const name = idToName[ev.userId];
-            if (!name) return;
+            if (!idToName[ev.userId]) return;
             const cur = (latest[ev.userId] ??= {});
             if (ev.systemPresence !== undefined) cur.presence = ev.systemPresence;
             if (ev.routingStatus !== undefined) cur.routing = ev.routingStatus;
-            handlers.onAgentState({ agent: name, state: stateOf(ev.userId) });
+            handlers.onAgentState({ uid: ev.userId, state: stateOf(ev.userId) });
           },
           handlers.onHeartbeat,
           {
@@ -246,8 +245,7 @@ export class GencloudFeed implements FeedSource {
             queueIds: queues.map((q) => q.id),
             onEvent: (body) => {
               for (const c of calls.update(body)) {
-                const name = idToName[c.userId];
-                if (!name) continue;
+                if (!idToName[c.userId]) continue;
                 const state = callStateOf(c.userId);
                 if (!state) continue; // the state snapshot fills this agent in
                 // A call first seen in ACW or on hold may have been there since before the console
@@ -255,7 +253,7 @@ export class GencloudFeed implements FeedSource {
                 const acwAtConnect = c.first && state === "acw" && c.acwSince !== null;
                 const holdAtConnect = c.first && c.hold?.on === true;
                 handlers.onAgentState({
-                  agent: name, state,
+                  uid: c.userId, state,
                   ...(c.ended && { callEnded: { transferred: c.ended.transferred, durationSec: c.ended.durationSec } }),
                   ...(c.hold && { onHold: c.hold.on, holdElapsed: c.hold.since !== undefined ? secondsSince(c.hold.since) : undefined }),
                   ...(acwAtConnect && { elapsed: secondsSince(c.acwSince!) }),
@@ -274,8 +272,7 @@ export class GencloudFeed implements FeedSource {
         try {
           for (const s of await readStates(Object.keys(idToName))) {
             if (stopped) return;
-            const name = idToName[s.id];
-            if (!name) continue;
+            if (!idToName[s.id]) continue;
             const changedLive = latest[s.id] !== undefined;
             const cur = (latest[s.id] ??= {});
             cur.presence ??= s.presence;
@@ -286,8 +283,8 @@ export class GencloudFeed implements FeedSource {
               : state === "acw" && acwSince !== null ? acwSince
               : stateSince(s.presence, s.routing, s.presenceSince, s.routingSince);
             handlers.onAgentState(since === undefined
-              ? { agent: name, state }
-              : { agent: name, state, elapsed: elapsedAtConnect(state, since, Date.now(), floorMidnight(new Date()).getTime()), seed: true });
+              ? { uid: s.id, state }
+              : { uid: s.id, state, elapsed: elapsedAtConnect(state, since, Date.now(), floorMidnight(new Date()).getTime()), seed: true });
           }
           if (!stopped) handlers.onAgentsLoading?.(false);
         } catch (e) {

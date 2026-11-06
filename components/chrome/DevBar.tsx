@@ -38,7 +38,7 @@ function ViewAs() {
   const asAgent = view?.role === "agent";
   const [picking, setPicking] = useState(false);
   const [floorStates, setFloorStates] = useState<Record<string, AgentState> | null>(null);
-  const ownState = useConsole(s => (s.view?.role === "agent" ? s.agents.find(a => a.name === s.view?.who)?.state : undefined));
+  const ownState = useConsole(s => (s.view?.role === "agent" ? s.agents.find(a => a.uid === s.view?.who)?.state : undefined));
   useEffect(() => {
     if (!asAgent || !picking) return;
     let live = true;

@@ -3,6 +3,13 @@ import { clock } from "@/lib/engine/format";
 
 export type MappedState = AgentState | "ignore";
 export interface CsvCols { agent: number; status: number; start: number; team: number }
+
+/**
+ * An imported agent's uid. Exports and workbooks name agents, with no Genesys ID, so the name
+ * (unique within one file) makes it. Imports stay private to a session and are never saved.
+ */
+export const csvUid = (name: string): string => `csv:${name}`;
+
 export interface ReplayEvent { agent: string; state: AgentState; team: string; abs: number; t: number; /** The call this status ended was transferred (set on the row that leaves On Call). */ transferred?: boolean }
 
 export function parseCSV(text: string): string[][] {

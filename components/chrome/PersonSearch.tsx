@@ -3,15 +3,16 @@
 import { type KeyboardEvent, useId, useMemo, useRef, useState } from "react";
 import { splitAgent } from "@/lib/engine/format";
 import { STATES } from "@/lib/engine/rules";
-import type { AgentState } from "@/lib/types";
+import type { AgentState, Person } from "@/lib/types";
 
-export interface PersonGroup { label: string; items: string[] }
+export interface PersonGroup { label: string; items: Person[] }
 
 interface Props {
+  /** The chosen person's key. */
   value: string;
   groups: PersonGroup[];
-  onChange: (who: string) => void;
-  /** Each person's current state, shown at the right end of their row and of the box. Omit for people without one. */
+  onChange: (key: string) => void;
+  /** Each person's current state by key, shown at the right end of their row and of the box. Omit for people without one. */
   states?: Record<string, AgentState> | null;
   /** Lets the caller load `states` only while the list is on screen. */
   onOpenChange?: (open: boolean) => void;
@@ -49,17 +50,19 @@ export function PersonSearch({ value, groups, onChange, states, onOpenChange, to
 
   const q = text.trim().toLowerCase();
   const matches = useMemo(
-    () => groups.flatMap(g => (q ? g.items.filter(p => p.toLowerCase().includes(q)) : g.items).map(name => ({ name, group: g.label }))),
+    () => groups.flatMap(g => (q ? g.items.filter(p => p.name.toLowerCase().includes(q)) : g.items).map(p => ({ ...p, group: g.label }))),
     [groups, q],
   );
+  // Shown in the closed box; the key itself (an agent's Genesys ID) means nothing to a person.
+  const valueName = useMemo(() => groups.flatMap(g => g.items).find(p => p.key === value)?.name ?? value, [groups, value]);
   const shown = matches.slice(0, MAX_SHOWN);
   const optionId = (i: number) => `${id}-${i}`;
 
-  const show = () => { setActive(Math.max(0, shown.findIndex(m => m.name === value))); setOpen(true); };
+  const show = () => { setActive(Math.max(0, shown.findIndex(m => m.key === value))); setOpen(true); };
   const close = () => { setOpen(false); inputRef.current?.blur(); };
-  const pick = (name: string | undefined) => {
+  const pick = (key: string | undefined) => {
     close();
-    if (name && name !== value) onChange(name);
+    if (key && key !== value) onChange(key);
   };
   const move = (i: number) => {
     const next = Math.max(0, Math.min(shown.length - 1, i));
@@ -68,7 +71,7 @@ export function PersonSearch({ value, groups, onChange, states, onOpenChange, to
   };
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     const keys: Record<string, () => void> = {
-      ArrowDown: () => move(active + 1), ArrowUp: () => move(active - 1), Enter: () => pick(shown[active]?.name), Escape: close,
+      ArrowDown: () => move(active + 1), ArrowUp: () => move(active - 1), Enter: () => pick(shown[active]?.key), Escape: close,
     };
     const run = keys[e.key];
     if (!run) return;
@@ -86,7 +89,7 @@ export function PersonSearch({ value, groups, onChange, states, onOpenChange, to
         ref={inputRef} type="text" role="combobox" aria-expanded={open} aria-controls={open ? id : undefined} aria-autocomplete="list"
         aria-activedescendant={open && shown[active] ? optionId(active) : undefined} aria-label={aria["aria-label"]}
         autoComplete="off" spellCheck={false} placeholder={open ? "Search name or ID" : undefined}
-        value={open ? text : value} title={open ? undefined : value}
+        value={open ? text : valueName} title={open ? undefined : valueName}
         onFocus={show} onBlur={() => setOpen(false)} onKeyDown={onKeyDown}
         onChange={e => { setText(e.target.value); setActive(0); }}
         className={`w-full truncate rounded-8 border pl-8 outline-none transition-colors duration-200 ease-standard ${dark
@@ -104,18 +107,18 @@ export function PersonSearch({ value, groups, onChange, states, onOpenChange, to
           {shown.map((m, i) => {
             const { who, id: domain } = splitAgent(m.name);
             return (
-              <div key={m.name}>
+              <div key={m.key}>
                 {m.group !== shown[i - 1]?.group && <div className="truncate px-3 pb-1 pt-2.5 font-ui text-[11px] font-semibold uppercase tracking-[0.04em] text-muted">{m.group}</div>}
                 <div
-                  id={optionId(i)} role="option" aria-selected={m.name === value}
-                  onMouseEnter={() => setActive(i)} onClick={() => pick(m.name)}
+                  id={optionId(i)} role="option" aria-selected={m.key === value}
+                  onMouseEnter={() => setActive(i)} onClick={() => pick(m.key)}
                   className={`flex cursor-pointer items-center justify-between gap-4 px-3 py-1.5 ${i === active ? "bg-pale-purple" : ""}`}
                 >
                   <span className="flex min-w-0 items-baseline gap-2">
-                    <span className={`truncate ${m.name === value ? "font-semibold text-purple" : ""}`}>{who}</span>
+                    <span className={`truncate ${m.key === value ? "font-semibold text-purple" : ""}`}>{who}</span>
                     {domain && <span className="num shrink-0 text-[11px] text-muted">{domain}</span>}
                   </span>
-                  <StateTag state={states?.[m.name]} />
+                  <StateTag state={states?.[m.key]} />
                 </div>
               </div>
             );

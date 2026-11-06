@@ -9,7 +9,7 @@ const org: Team[] = [
   { team: "Provider Support B", tl: "Sample, Ravi", mgr: "Sample, Morgan", lob: "Provider Support" },
 ];
 const a = (id: number, name: string, team: string, state: Agent["state"], stTime: number, more: Partial<Agent> = {}): Agent => ({
-  id, name, team, state, stTime, aht: 312, calls: 14, shortCalls: 0, transfers: 1, onHold: false, holdTime: 0, adh: 96, strikes: {}, fired: {}, ...more,
+  id, uid: `demo:${id}`, name, team, state, stTime, aht: 312, calls: 14, shortCalls: 0, transfers: 1, onHold: false, holdTime: 0, adh: 96, strikes: {}, fired: {}, ...more,
 });
 const A = "Member Services A", B = "Provider Support B";
 const agents: Agent[] = [
@@ -24,8 +24,10 @@ const agents: Agent[] = [
   a(9, "Example, Ivan - AH10009", B, "auxp", 128),
   a(10, "Example, Jo - AH10010", B, "oncall", 71),
 ];
+/** A sample agent's uid, from their name. */
+const uidOf = (name: string): string => agents.find(x => x.name === name)?.uid ?? "";
 const inst = (n: number, t: number, agent: string, rule: string, ruleId: Instance["ruleId"], val: string, more: Partial<Instance> = {}): Instance => ({
-  n, t, agent, isFloor: false, team: A, rule, ruleId, val, stage: "nudge", sev: "warn", status: "open", ackT: null, strikes: 1, inc: "", cmt: null, cond: "", rev: n, ...more,
+  n, t, agent, agentId: uidOf(agent), isFloor: false, team: A, rule, ruleId, val, stage: "nudge", sev: "warn", status: "open", ackT: null, strikes: 1, inc: "", cmt: null, cond: "", rev: n, ...more,
 });
 const ledger: Instance[] = [
   inst(14, 36420, "Example, Eli - AH10005", "Prolonged offline", "offl", "12:22 offline", { stage: "ops", sev: "esc", strikes: 3, inc: "IR-0003" }),
@@ -34,10 +36,10 @@ const ledger: Instance[] = [
   inst(11, 35990, "Example, Gio - AH10007", "Outbound call", "outb", "10:04 outbound", { team: B, stage: "lead", status: "acked", ackT: 36032 }),
 ];
 const incidents: Incident[] = [
-  { inc: "IR-0003", t: 36420, agent: "Example, Eli - AH10005", team: A, rule: "Prolonged offline", ruleId: "offl", instances: 3, status: "Open", disposition: "", closedT: null },
-  { inc: "IR-0002", t: 31200, agent: "Example, Gio - AH10007", team: B, rule: "Outbound call", ruleId: "outb", instances: 3, status: "Closed", disposition: "Coached & Documented", closedT: 33900 },
+  { inc: "IR-0003", t: 36420, agent: "Example, Eli - AH10005", agentId: uidOf("Example, Eli - AH10005"), team: A, rule: "Prolonged offline", ruleId: "offl", instances: 3, status: "Open", disposition: "", closedT: null },
+  { inc: "IR-0002", t: 31200, agent: "Example, Gio - AH10007", agentId: uidOf("Example, Gio - AH10007"), team: B, rule: "Outbound call", ruleId: "outb", instances: 3, status: "Closed", disposition: "Coached & Documented", closedT: 33900 },
 ];
-const nudge: NudgeEvent = { n: 12, agent: "Example, Carlo - AH10003", team: A, first: "Carlo", body: "Your member has been on hold for over 2 minutes. If you need more time, check back in with them or tell your TL what's holding things up." };
+const nudge: NudgeEvent = { n: 12, agentId: uidOf("Example, Carlo - AH10003"), agent: "Example, Carlo - AH10003", team: A, first: "Carlo", body: "Your member has been on hold for over 2 minutes. If you need more time, check back in with them or tell your TL what's holding things up." };
 
 /** Sample data, and `use()` to load it into the stand-in store that Navbar, ContextBar, the toasts and the nudge read. */
 export const demo = {

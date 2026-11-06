@@ -272,14 +272,14 @@ mount(h(Demo));`);
 card("PersonSearch", "Forms", 400, "components/chrome/PersonSearch.tsx", 20, `
 A search box for picking one person from a long list: type part of a name or a domain ID to narrow it, then pick with the mouse or the arrow keys and Enter. It is the person box beside "View as".
 
-- You provide \`value\` (the current person, written "Last, First - ID"), \`groups\` (labelled lists of names) and \`onChange\`.
-- Pass \`states\` to show each person's current state at the right end of their row and of the box; \`onOpenChange\` lets you load them only while the list is open.
+- You provide \`value\` (the current person's key), \`groups\` (labelled lists of people, each a \`{ key, name }\` with the name written "Last, First - ID") and \`onChange\`, which gets the picked person's key. An agent's key is their Genesys user ID, so two people with the same name stay apart.
+- Pass \`states\` (by key) to show each person's current state at the right end of their row and of the box; \`onOpenChange\` lets you load them only while the list is open.
 - At most 80 matches are drawn; the list says how many more there are. Escape or clicking away keeps the current person.
 `, `
 function Demo() {
-  var v = S('Example, Carlo - AH10003');
-  var groups = [R.demo.org[0], R.demo.org[1]].map(function (t) { return { label: t.team, items: R.demo.agents.filter(function (a) { return a.team === t.team; }).map(function (a) { return a.name; }) }; });
-  var states = {}; R.demo.agents.forEach(function (a) { states[a.name] = a.state; });
+  var v = S(R.demo.agents[2].uid);
+  var groups = [R.demo.org[0], R.demo.org[1]].map(function (t) { return { label: t.team, items: R.demo.agents.filter(function (a) { return a.team === t.team; }).map(function (a) { return { key: a.uid, name: a.name }; }) }; });
+  var states = {}; R.demo.agents.forEach(function (a) { states[a.uid] = a.state; });
   return h(R.PersonSearch, { value: v[0], onChange: v[1], groups: groups, states: states, 'aria-label': 'Person' });
 }
 mount(h(Demo));`);

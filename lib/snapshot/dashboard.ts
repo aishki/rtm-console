@@ -1,7 +1,7 @@
 import type { FeedKind, Incident, Instance, Role, View } from "@/lib/types";
 import type { EngineState } from "@/lib/engine/escalation";
 import { ROLE_LABEL } from "@/lib/engine/rules";
-import { PERMS, scopeAgents, scopeIncidents, scopeLedger, scopeTeams } from "@/lib/engine/scope";
+import { PERMS, scopeAgents, scopeIncidents, scopeLedger, scopeTeams, viewerName } from "@/lib/engine/scope";
 import { wallClock } from "@/lib/floorTime";
 
 // The Dashboards screen saved as one self-contained HTML file: the viewer's scoped data is
@@ -38,11 +38,12 @@ const UNNAMED: Partial<Record<Role, string>> = { admin: "WFM Admin", senior: "Se
 /** What the viewer's Dashboards screen shows right now, scoped to their span. */
 export function snapshotData(S: EngineState, view: View, feed: FeedKind, now: Date): DashboardSnapshot {
   const perms = PERMS[view.role];
+  const name = viewerName(view, S.agents);
   const headcount = new Map<string, number>();
   for (const a of scopeAgents(S, view)) headcount.set(a.team, (headcount.get(a.team) ?? 0) + 1);
   return {
     takenAt: now.toISOString(), shiftT: S.t,
-    viewer: view.who ?? UNNAMED[view.role] ?? "", role: ROLE_LABEL[view.role], span: perms.desc(view.who),
+    viewer: name ?? UNNAMED[view.role] ?? "", role: ROLE_LABEL[view.role], span: perms.desc(name),
     source: SOURCE[feed].label, notice: SOURCE[feed].notice, canExport: perms.export,
     teams: scopeTeams(S, view).map(t => ({ team: t.team, tl: t.tl, mgr: t.mgr, agents: headcount.get(t.team) ?? 0 })),
     ledger: scopeLedger(S, view, S.ledger).map(r => ({ t: r.t, agent: r.agent, team: r.team, rule: r.rule, stage: r.stage, ackT: r.ackT, floor: r.isFloor })),

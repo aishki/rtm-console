@@ -6,6 +6,7 @@ import { enableAlerts, useAlertState } from "@/lib/client/alerts";
 import { api, attempt } from "@/lib/client/api";
 import { usePerms } from "@/lib/client/hooks";
 import { useConsole } from "@/lib/client/store";
+import { viewerName } from "@/lib/engine/scope";
 import { orgOf } from "@/lib/orgs";
 import { PurpleButton } from "@/components/ui/buttons";
 
@@ -44,6 +45,7 @@ function useFeedPill() {
  */
 export function ContextBar() {
   const view = useConsole(s => s.view);
+  const who = useConsole(s => (s.view ? viewerName(s.view, s.agents) : null));
   const ready = useConsole(s => s.status === "ready");
   const t = useConsole(s => s.t);
   const isReplay = useConsole(s => s.mode === "replay");
@@ -67,7 +69,7 @@ export function ContextBar() {
       {view && (
         <span className="inline-flex h-6 shrink-0 items-center rounded-pill bg-tint px-2.5 text-xs font-semibold text-purple-900">{ROLE_LABEL[view.role]}</span>
       )}
-      <span className="text-pretty text-[13px] text-muted">{view && perms ? perms.desc(view.who) : ""}</span>
+      <span className="text-pretty text-[13px] text-muted">{view && perms ? perms.desc(who) : ""}</span>
       <div className="flex-1" />
       {isReplay && perms?.replay && (
         <PurpleButton

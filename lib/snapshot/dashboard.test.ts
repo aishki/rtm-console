@@ -8,9 +8,9 @@ const ORG: Team[] = [
   { team: "Team Delta", tl: "Jon Rivera", mgr: "Leo Fernandez", lob: "Member Care" },
 ];
 const ROSTER: RosterAgent[] = [
-  { name: "Amara Reyes", team: "Team Alpha", state: "avail" },
-  { name: "Joshua Lim", team: "Team Alpha", state: "avail" },
-  { name: "Miguel Cruz", team: "Team Delta", state: "avail" },
+  { uid: "u-amara", name: "Amara Reyes", team: "Team Alpha", state: "avail" },
+  { uid: "u-joshua", name: "Joshua Lim", team: "Team Alpha", state: "avail" },
+  { uid: "u-miguel", name: "Miguel Cruz", team: "Team Delta", state: "avail" },
 ];
 const NOW = new Date("2026-10-07T18:05:00Z"); // 14:05 in New York, the floor's time
 
@@ -20,9 +20,9 @@ function floor() {
   e.reset({ t: 8 * 3600 });
   e.ingest.onRoster({ org: ORG, agents: ROSTER });
   const run = (seconds: number) => { for (let i = 0; i < seconds; i++) { e.ingest.onHeartbeat(); e.tick(); } };
-  const overAcw = (agent: string) => { e.ingest.onAgentState({ agent, state: "acw" }); run(121); e.ingest.onAgentState({ agent, state: "avail" }); run(1); };
-  for (let i = 0; i < 3; i++) overAcw("Amara Reyes");
-  overAcw("Miguel Cruz");
+  const overAcw = (uid: string) => { e.ingest.onAgentState({ uid, state: "acw" }); run(121); e.ingest.onAgentState({ uid, state: "avail" }); run(1); };
+  for (let i = 0; i < 3; i++) overAcw("u-amara");
+  overAcw("u-miguel");
   return e.S;
 }
 

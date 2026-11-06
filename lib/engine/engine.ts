@@ -49,20 +49,20 @@ export function createEngine(hooks: EngineHooks = {}, opts: EngineOptions = {}) 
   const ingest: FeedHandlers = {
     /** A roster resent mid-shift (the feed reconnected) keeps each known agent's shift counters and strikes. */
     onRoster(r: Roster) {
-      const prev = new Map(S.agents.map(a => [a.name, a]));
+      const prev = new Map(S.agents.map(a => [a.uid, a]));
       S.org = r.org.map(t => ({ ...t }));
       S.agents = r.agents.map((a, i) => {
-        const p = prev.get(a.name);
+        const p = prev.get(a.uid);
         return {
-          id: i, name: a.name, team: a.team, state: a.state, stTime: a.stTime ?? 0, onHold: false, holdTime: 0,
+          id: i, uid: a.uid, name: a.name, team: a.team, state: a.state, stTime: a.stTime ?? 0, onHold: false, holdTime: 0,
           aht: p?.aht ?? a.aht ?? 420, calls: p?.calls ?? a.calls ?? 0, shortCalls: p?.shortCalls ?? 0, transfers: p?.transfers ?? 0,
           adh: p?.adh ?? a.adh ?? 96, ahtFromFeed: p?.ahtFromFeed, strikes: p?.strikes ?? {}, fired: p?.fired ?? {},
         };
       });
-      const ids = new Map(S.agents.map(a => [a.name, a.id]));
+      const ids = new Map(S.agents.map(a => [a.uid, a.id]));
       // Without membership from the feed (simulator, replay), a team's members are the agents whose team it is.
-      const byName = r.members ?? Object.fromEntries(S.org.map(t => [t.team, S.agents.filter(a => a.team === t.team).map(a => a.name)]));
-      S.members = Object.fromEntries(Object.entries(byName).map(([q, names]) => [q, names.flatMap(n => ids.get(n) ?? [])]));
+      const byUid = r.members ?? Object.fromEntries(S.org.map(t => [t.team, S.agents.filter(a => a.team === t.team).map(a => a.uid)]));
+      S.members = Object.fromEntries(Object.entries(byUid).map(([q, uids]) => [q, uids.flatMap(u => ids.get(u) ?? [])]));
       S.rosterRev++;
       beat = true;
     },
@@ -74,7 +74,7 @@ export function createEngine(hooks: EngineHooks = {}, opts: EngineOptions = {}) 
   };
 
   function applyAgentState(e: AgentStateEvent) {
-    const a = S.agents.find(x => x.name === e.agent);
+    const a = S.agents.find(x => x.uid === e.uid);
     if (!a) return;
     if (e.callEnded) {
       const dur = e.callEnded.durationSec !== undefined ? Math.round(e.callEnded.durationSec) : a.stTime;
@@ -104,7 +104,7 @@ export function createEngine(hooks: EngineHooks = {}, opts: EngineOptions = {}) 
     for (const e of pending) applyAgentState(e);
     pending = [];
     for (const s of pendingStats) {
-      const a = S.agents.find(x => x.name === s.agent);
+      const a = S.agents.find(x => x.uid === s.uid);
       if (a) { a.aht = Math.round(s.aht); a.ahtFromFeed = true; }
     }
     pendingStats = [];

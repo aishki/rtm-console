@@ -3,7 +3,7 @@ import type { NudgeEvent } from "@/lib/types";
 import { alertsFor } from "./alerts";
 import { parseSubscription } from "./server/push";
 
-const NUDGE: NudgeEvent = { n: 7, agent: "Amara Reyes", team: "Team Alpha", first: "Amara", body: "ACW is past 120s." };
+const NUDGE: NudgeEvent = { n: 7, agentId: "u-amara", agent: "Amara Reyes", team: "Team Alpha", first: "Amara", body: "ACW is past 120s." };
 const TOASTS = [{ title: "Amara Reyes · ACW overage", body: "strike 2", n: 8, team: "Team Alpha" }, { title: "Queue · Queue backlog", body: "now 14", n: 9 }, { title: "Gencloud not responding", body: "feed stale" }];
 
 describe("desktop alerts", () => {
