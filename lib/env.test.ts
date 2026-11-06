@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { EnvError, awsCredentials, parseDbEnv, parseEnv, parsePublicEnv } from "./env";
+import { EnvError, awsCredentials, migrationLogin, parseDbEnv, parseEnv, parsePublicEnv } from "./env";
 
 const BASE = { APP_ENV: "development", PERSISTENCE_MODE: "memory" };
 const DB = { DB_HOST: "localhost", DB_NAME: "rtm_console", DB_USER: "rtm_app", DB_PASSWORD: "p@ss:word/1" };
@@ -130,6 +130,23 @@ describe("parseDbEnv", () => {
 
   it("names the database settings in its message", () => {
     expect(() => parseDbEnv({})).toThrow(/^The server's database settings are not valid/);
+  });
+
+  it("takes the migration login as a pair, with the DB_* settings only", () => {
+    const login = { DB_MIGRATE_USER: "rtm_migrator", DB_MIGRATE_PASSWORD: "migrator-pw" };
+    expect(problems({ APP_ENV: "production", ...DB, ...login }, parseDbEnv)).toEqual([]);
+    expect(paths({ APP_ENV: "production", ...DB, DB_MIGRATE_USER: "rtm_migrator" }, parseDbEnv)).toEqual(["DB_MIGRATE_PASSWORD"]);
+    expect(paths({ APP_ENV: "production", ...DB, DB_MIGRATE_PASSWORD: "migrator-pw" }, parseDbEnv)).toEqual(["DB_MIGRATE_USER"]);
+    expect(paths({ APP_ENV: "production", DATABASE_URL: "postgres://a:b@h/d", ...login }, parseDbEnv)).toEqual(["DB_MIGRATE_USER"]);
+    expect(paths({ ...BASE, PERSISTENCE_MODE: "postgres", ...DB, DB_MIGRATE_USER: "rtm_migrator" })).toEqual(["DB_MIGRATE_PASSWORD"]);
+  });
+
+  it("logs the db:* tools in as the migration login, and leaves the app's login alone otherwise", () => {
+    const e = parseDbEnv({ APP_ENV: "production", ...DB, DB_MIGRATE_USER: "rtm_migrator", DB_MIGRATE_PASSWORD: "migrator-pw" });
+    expect(migrationLogin(e)).toMatchObject({ DB_USER: "rtm_migrator", DB_PASSWORD: "migrator-pw", DB_HOST: "localhost" });
+    expect(e.DB_USER).toBe("rtm_app");
+    const plain = parseDbEnv({ APP_ENV: "production", ...DB });
+    expect(migrationLogin(plain)).toBe(plain);
   });
 });
 
