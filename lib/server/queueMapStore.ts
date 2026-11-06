@@ -10,7 +10,8 @@ interface Store { rows?: QueueMapRow[]; rev: number }
 const g = globalThis as typeof globalThis & { __rtmQueueMap?: Store };
 const store: Store = (g.__rtmQueueMap ??= { rev: 1 });
 
-const DEFAULT_DIR = () => path.join(process.cwd(), ".rtm");
+// turbopackIgnore: read at run time only. The build must not trace .rtm/, whose files can be unreadable to the user who builds.
+const DEFAULT_DIR = () => path.join(/* turbopackIgnore: true */ process.cwd(), ".rtm");
 const fileIn = (dir: string) => path.join(dir, "queue-map.json");
 
 const filled = (v: unknown) => typeof v === "string" && v !== "";

@@ -9,7 +9,8 @@ import type { Roster, Team } from "@/lib/types";
 // Names and queue membership only, no states. The folder is gitignored: these are real people.
 
 /** Commercial keeps the file it had before there were several orgs. */
-const fileFor = (org: OrgId) => path.join(process.cwd(), ".rtm", org === "commercial" ? "roster.json" : `roster.${org}.json`);
+// turbopackIgnore: read at run time only. The build must not trace .rtm/, whose files can be unreadable to the user who builds.
+const fileFor = (org: OrgId) => path.join(/* turbopackIgnore: true */ process.cwd(), ".rtm", org === "commercial" ? "roster.json" : `roster.${org}.json`);
 
 export interface RosterNames { org: Team[]; agents: { name: string; team: string }[]; members?: Record<string, string[]> }
 

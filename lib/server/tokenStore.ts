@@ -8,7 +8,8 @@ import { env } from "@/lib/env";
 // floor watches. Kept on this machine so they outlive a restart; the folder is gitignored.
 // An org's env variable (TOKEN_ENV) only seeds it until a token is pasted. The token is never logged.
 
-const DIR = () => path.join(process.cwd(), ".rtm");
+// turbopackIgnore: read at run time only. The build must not trace .rtm/, whose files can be unreadable to the user who builds.
+const DIR = () => path.join(/* turbopackIgnore: true */ process.cwd(), ".rtm");
 
 /** The env variable that seeds each org's token. */
 type TokenVar = "GENESYS_TOKEN" | "GBD_TOKEN" | "SPECIALTY_TOKEN";
