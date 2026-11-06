@@ -190,7 +190,9 @@ describe("the 3× rule", () => {
     expect([1, 2, 3, 4].map(n => stageFor("lead", n))).toEqual(["lead", "lead", "ops", "ops"]);
     expect([1, 2, 3, 9].map(n => stageFor("nudgeonly", n))).toEqual(["nudge", "nudge", "nudge", "nudge"]);
     expect([1, 2, 3, 9].map(n => stageFor("leadonly", n))).toEqual(["lead", "lead", "lead", "lead"]);
+    expect([1, 2, 3, 4].map(n => stageFor("critical", n))).toEqual(["lead", "lead", "ops", "ops"]);
     expect(stageFor("lead", 0)).toBe("lead");
+    expect(stageFor("critical", 0)).toBe("lead");
   });
 });
 
@@ -228,6 +230,22 @@ describe("a new day at midnight Eastern", () => {
     run(30);
     expect(of("Amara Reyes", "acw")).toHaveLength(1);
     expect(agent("Amara Reyes").strikes).toEqual({});
+  });
+});
+
+describe("critical route", () => {
+  it("tells the agent and the LOB Manager on strike 1, adds the TL on strike 2, and opens an incident on strike 3", () => {
+    const { e, episode, of, nudges, toasts } = setup();
+    e.setRoute("acw", "critical");
+    for (let i = 0; i < 3; i++) episode("Amara Reyes", "acw", 120);
+    const rows = of("Amara Reyes", "acw").reverse();
+    expect(rows.map(r => r.stage)).toEqual(["lead", "lead", "ops"]);
+    expect(rows.map(r => r.inc)).toEqual(["", "", "INC-2026-0001"]);
+    expect(nudges).toHaveLength(2);
+    expect(toasts.map(t => t.kind)).toEqual(["crit", "crit", "esc"]);
+    expect(toasts[0].title).toBe("Amara Reyes · Extended ACW · Critical");
+    expect(toasts[0].body).toContain("· to LOB Mgr Ava Santiago");
+    expect(toasts[1].body).toContain("strike 2 · to TL Rina Velasco and LOB Mgr Ava Santiago");
   });
 });
 

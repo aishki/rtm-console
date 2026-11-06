@@ -3,7 +3,7 @@ import type { OrgId } from "@/lib/orgs";
 export type AgentState = "oncall" | "avail" | "acw" | "auxb" | "auxp" | "outb" | "off";
 export type Role = "admin" | "senior" | "mgr" | "tl" | "agent";
 export type Stage = "nudge" | "lead" | "ops";
-export type Route = "nudge" | "lead" | "nudgeonly" | "leadonly";
+export type Route = "nudge" | "lead" | "nudgeonly" | "leadonly" | "critical";
 export type Severity = "warn" | "crit";
 export type RuleType = "duration" | "event" | "ratio" | "queue" | "system";
 export type RuleId =

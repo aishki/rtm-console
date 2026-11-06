@@ -20,6 +20,7 @@ export const ROUTES: [Route, string][] = [
   ["lead", "TL first → Ops"],
   ["nudgeonly", "Agent nudge only (no escalation)"],
   ["leadonly", "TL only (no auto-Ops)"],
+  ["critical", "Critical: agent + LOB Manager → TL → Ops"],
 ];
 export const ROUTE_IDS = ROUTES.map(r => r[0]);
 /** Outcomes a leader can record when closing an investigation, in dropdown order. */
