@@ -19,14 +19,22 @@ describe("buildRoster", () => {
       [{id:"q1",name:"Alpha"},{id:"q2",name:"Bravo"}],
       { q1:[{id:"u1",name:"Amara"},{id:"u2",name:"Bea"}], q2:[{id:"u1",name:"Amara"}] });
     expect(r.agents.map(a=>a.name)).toEqual(["Amara","Bea"]);
-    expect(r.members).toEqual({ Alpha:["Amara","Bea"], Bravo:["Amara"] });
+    expect(r.members).toEqual({ Alpha:["u1","u2"], Bravo:["u1"] });
+  });
+
+  it("keys agents by Genesys user ID, so two people with the same name stay apart", () => {
+    const r = buildRoster(
+      [{id:"q1",name:"Alpha"}],
+      { q1:[{id:"u1",name:"Amara"},{id:"u2",name:"Amara"}] });
+    expect(r.agents.map(a=>[a.uid,a.name])).toEqual([["u1","Amara"],["u2","Amara"]]);
+    expect(r.members).toEqual({ Alpha:["u1","u2"] });
   });
 
   it("keeps the members of two watched queues with the same name", () => {
     const r = buildRoster(
       [{id:"q1",name:"Alpha"},{id:"q2",name:"Alpha"}],
       { q1:[{id:"u1",name:"Amara"}], q2:[{id:"u2",name:"Bea"}] });
-    expect(r.members).toEqual({ Alpha:["Amara","Bea"] });
+    expect(r.members).toEqual({ Alpha:["u1","u2"] });
   });
 });
 

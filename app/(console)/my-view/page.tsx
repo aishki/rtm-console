@@ -57,7 +57,7 @@ const LOG_COLUMNS: Column<Instance>[] = [
 
 export default function MyViewPage() {
   const who = useConsole(s => s.view?.who);
-  const me = useConsole(s => s.agents.find(a => a.name === who));
+  const me = useConsole(s => s.agents.find(a => a.uid === who));
   const { who: myName, id: myId } = splitAgent(me?.name ?? "");
   const rules = useConsole(s => s.rules);
   const org = useConsole(s => s.org);

@@ -31,6 +31,9 @@ function makeNames(n: number): string[] {
   return out;
 }
 
+/** A simulated agent's uid. Never a Genesys ID, so simulated records can't be taken for real people's. */
+export const simUid = (name: string): string => `sim:${name}`;
+
 /** Who sits on the simulated floor. `real`: the names were borrowed from the Gencloud roster. */
 export interface SimSeed { org: Team[]; seats: { name: string; team: string }[]; real: boolean }
 
@@ -49,7 +52,7 @@ export function seedFromRoster(roster: { org: Team[]; agents: { name: string; te
   if (!roster) return null;
   const byTeam = new Map<string, string[]>(), used = new Set<string>();
   for (const a of roster.agents) {
-    // The engine tells agents apart by name.
+    // A simulated agent's uid is made from their name, so each name sits once.
     if (used.has(a.name)) continue;
     used.add(a.name);
     byTeam.set(a.team, [...(byTeam.get(a.team) ?? []), a.name]);
@@ -79,12 +82,13 @@ const INTERVAL_CALLS = 1500;
 /** Chance per second of a backlog spike on the floor, and its size in calls. */
 const SPIKE_CHANCE = 0.004, SPIKE_CALLS = 7;
 
-interface SimAgent { name: string; team: string; state: AgentState; stTime: number; onHold: boolean; holdTime: number; rogue: Rogue | null }
+interface SimAgent { uid: string; name: string; team: string; state: AgentState; stTime: number; onHold: boolean; holdTime: number; rogue: Rogue | null }
 
 /** What the simulator reads back from the engine: live thresholds and strike counts. */
 export interface SimProbe {
   thr(id: RuleId): number;
-  strikes(agent: string, id: RuleId): number;
+  /** `uid`: the agent's uid. */
+  strikes(uid: string, id: RuleId): number;
 }
 
 export class SimFeed implements FeedSource {
@@ -137,13 +141,14 @@ export class SimFeed implements FeedSource {
   subscribe(handlers: FeedHandlers): () => void {
     this.h = handlers;
     const { org, seats } = this.seed;
+    // Seat names are unique (seedFromRoster skips repeats), so they make the made-up uids.
     const roster = seats.map(({ name, team }, i) => ({
-      name, team,
+      uid: simUid(name), name, team,
       state: (i % 12 === 11 ? "off" : this.rnd() < 0.55 ? "oncall" : "avail") as AgentState,
       stTime: Math.floor(this.rnd() * 200), aht: 380 + Math.floor(this.rnd() * 160),
       calls: Math.floor(this.rnd() * 8), adh: 93 + Math.floor(this.rnd() * 7),
     }));
-    this.agents = roster.map(a => ({ name: a.name, team: a.team, state: a.state, stTime: a.stTime, onHold: false, holdTime: 0, rogue: null }));
+    this.agents = roster.map(a => ({ uid: a.uid, name: a.name, team: a.team, state: a.state, stTime: a.stTime, onHold: false, holdTime: 0, rogue: null }));
     handlers.onRoster({ org, agents: roster });
     return () => { this.h = null; };
   }
@@ -164,11 +169,11 @@ export class SimFeed implements FeedSource {
     if (a.state === s && !callEnded) return;
     if (a.state === "oncall" && s !== "oncall") { a.onHold = false; a.holdTime = 0; }
     a.state = s; a.stTime = 0;
-    this.emit({ agent: a.name, state: s, callEnded });
+    this.emit({ uid: a.uid, state: s, callEnded });
   }
   private setHold(a: SimAgent, on: boolean) {
     a.onHold = on; a.holdTime = 0;
-    this.emit({ agent: a.name, state: a.state, onHold: on });
+    this.emit({ uid: a.uid, state: a.state, onHold: on });
   }
   private endCall(a: SimAgent) { this.toState(a, "acw", { transferred: this.rnd() < 0.1 }); }
 
@@ -218,7 +223,7 @@ export class SimFeed implements FeedSource {
     }
     // short/hold/acw rogues have no natural exit; retire them after a few strikes
     const rr = a.rogue ? ROGUE_RULE[a.rogue] : undefined;
-    if (rr && this.probe.strikes(a.name, rr) >= 4) a.rogue = null;
+    if (rr && this.probe.strikes(a.uid, rr) >= 4) a.rogue = null;
   }
 
   private tickQueue() {

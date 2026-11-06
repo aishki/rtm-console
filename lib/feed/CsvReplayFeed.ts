@@ -1,5 +1,5 @@
 import type { AgentState, Queue, ReplayMeta, RosterAgent, Team } from "@/lib/types";
-import type { ReplayEvent } from "@/lib/csv/parse";
+import { type ReplayEvent, csvUid } from "@/lib/csv/parse";
 import type { FeedHandlers, FeedSource } from "./FeedSource";
 
 /** Speed of a historical replay: engine seconds per wall-clock second. */
@@ -46,7 +46,7 @@ export class CsvReplayFeed implements FeedSource {
     const teams = [...new Set(ev.map(e => e.team).filter(Boolean))];
     const org: Team[] = this.extras.org ?? (teams.length ? teams : ["CSV import"]).map(t => ({ team: t, tl: "TL " + t, mgr: "Imported LOB", lob: t }));
     const agents: RosterAgent[] = this.extras.roster ?? [...new Set(ev.map(e => e.agent))].map(n => ({
-      name: n, team: ev.find(e => e.agent === n && e.team)?.team || org[0].team, state: "off" as const, stTime: 0, aht: 420, calls: 0, adh: 96,
+      uid: csvUid(n), name: n, team: ev.find(e => e.agent === n && e.team)?.team || org[0].team, state: "off" as const, stTime: 0, aht: 420, calls: 0, adh: 96,
     }));
     handlers.onRoster({ org, agents });
     return () => { this.h = null; };
@@ -61,12 +61,12 @@ export class CsvReplayFeed implements FeedSource {
       const prev = this.last.get(e.agent) ?? "off";
       this.last.set(e.agent, e.state);
       // Leaving On Call releases the call.
-      h.onAgentState({ agent: e.agent, state: e.state, callEnded: prev === "oncall" && e.state !== "oncall" ? { transferred: e.transferred } : undefined });
+      h.onAgentState({ uid: csvUid(e.agent), state: e.state, callEnded: prev === "oncall" && e.state !== "oncall" ? { transferred: e.transferred } : undefined });
     }
     while (this.holdIdx < holds.length && holds[this.holdIdx].t <= t) {
       const hold = holds[this.holdIdx++];
       // A hold only means something while the agent is on a call.
-      if (this.last.get(hold.agent) === "oncall") h.onAgentState({ agent: hold.agent, state: "oncall", onHold: hold.on });
+      if (this.last.get(hold.agent) === "oncall") h.onAgentState({ uid: csvUid(hold.agent), state: "oncall", onHold: hold.on });
     }
     while (this.queueIdx < queue.length && queue[this.queueIdx].t <= t) h.onQueue({ ...queue[this.queueIdx++].queue });
   }

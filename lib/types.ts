@@ -19,7 +19,11 @@ export type FloorSource = Exclude<FeedKind, "csv">;
 export interface Team { team: string; tl: string; mgr: string; lob: string }
 
 export interface Agent {
-  id: number; name: string; team: string; state: AgentState; stTime: number; aht: number;
+  /** The engine's index for this roster, used in queue membership sent to screens. */
+  id: number;
+  /** The agent's key, which never changes: the Genesys user ID, or a made-up one for the simulator (sim:…) and imports (csv:…). Names are for display only. */
+  uid: string;
+  name: string; team: string; state: AgentState; stTime: number; aht: number;
   calls: number; shortCalls: number; transfers: number; onHold: boolean; holdTime: number; adh: number;
   /** AHT is the feed's handle time for the day (talk, hold and ACW), not estimated from calls seen. */
   ahtFromFeed?: boolean;
@@ -32,7 +36,12 @@ export interface Rule {
 }
 
 export interface Instance {
-  n: number; t: number; agent: string; isFloor: boolean; team: string; rule: string; ruleId: RuleId;
+  n: number; t: number;
+  /** The agent's name for display ("Queue" on a floor call-out); `agentId` says whose it is. */
+  agent: string;
+  /** The agent's uid; null on a floor call-out. */
+  agentId: string | null;
+  isFloor: boolean; team: string; rule: string; ruleId: RuleId;
   val: string; stage: Stage; sev: Severity | "esc"; status: "open" | "acked"; ackT: number | null;
   strikes: number; inc: string; cmt: string | null;
   /** Rule condition at fire time, e.g. "State ACW longer than 120s". */
@@ -45,10 +54,16 @@ export interface Instance {
 export type InvAction = "start" | "reopen" | "record" | "close";
 
 export interface Incident {
-  inc: string; t: number; agent: string; team: string; rule: string; ruleId: RuleId;
+  inc: string; t: number;
+  /** The agent's name for display; `agentId` says whose it is. */
+  agent: string; agentId: string; team: string; rule: string; ruleId: RuleId;
   instances: number; status: "Open" | "Investigating" | "Closed"; disposition: string; closedT: number | null;
 }
 
+/**
+ * Who the console is viewed as. `who` is the person's key: an agent's uid, or (until leaders
+ * come from Genesys) a Team Lead's or Manager's name. Null for Admin and Senior Leader.
+ */
 export interface View { role: Role; who: string | null }
 
 /** Floor queue numbers. `sl` is null when the source has no service level yet (not 0%). */
@@ -85,28 +100,33 @@ export interface Perms {
 }
 
 export interface ToastEvent { kind: ToastKind; title: string; body: string; instance?: Instance }
-export interface NudgeEvent { n: number; agent: string; team: string; first: string; body: string }
+/** `agentId` is the agent's uid; `agent` their name, for display. */
+export interface NudgeEvent { n: number; agentId: string; agent: string; team: string; first: string; body: string }
 /** A desktop alert (system notification) for instance `n`. `nudge`: the nudge it stands for, which gives it the pop-up's buttons. */
 export interface AlertNote { tag: string; n: number; title: string; body: string; url: string; nudge: NudgeEvent | null }
 
 // ---------- feed ----------
 export interface RosterAgent {
+  /** See Agent.uid. */
+  uid: string;
   name: string; team: string; state: AgentState; stTime?: number; aht?: number; calls?: number; adh?: number;
 }
 export interface Roster {
   org: Team[]; agents: RosterAgent[];
-  /** Queue name to the names of everyone in it. An agent in two queues is listed under both; `team` is only the first. */
+  /** Queue name to the uids of everyone in it. An agent in two queues is listed under both; `team` is only the first. */
   members?: Record<string, string[]>;
 }
 /** An agent's figures for the day from the feed's own reporting. */
 export interface AgentStats {
-  agent: string;
+  /** The agent's uid. */
+  uid: string;
   /** Average handle time, seconds: talk, hold and after-call work. */
   aht: number;
 }
 
 export interface AgentStateEvent {
-  agent: string;
+  /** The agent's uid. */
+  uid: string;
   state: AgentState;
   /**
    * Set when this transition released a call; drives calls, AHT and the short-call rule.
@@ -131,7 +151,9 @@ export interface AgentStateEvent {
 }
 
 // ---------- stream (server -> client) ----------
-export interface PeopleDirectory { tls: string[]; mgrs: string[]; agentsByTeam: { team: string; agents: string[] }[] }
+/** Someone to view the console as: `key` goes in View.who, `name` is shown. */
+export interface Person { key: string; name: string }
+export interface PeopleDirectory { tls: Person[]; mgrs: Person[]; agentsByTeam: { team: string; agents: Person[] }[] }
 
 export interface TickMsg {
   type: "tick" | "init";

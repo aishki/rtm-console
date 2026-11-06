@@ -27,7 +27,8 @@ function measureCap(grid: HTMLElement): number | null {
 /** Agents with incident reports: one tile per agent, with why each incident was opened. */
 export function IncidentTiles({ incidents, agents, org }: { incidents: Incident[]; agents: Agent[]; org: Team[] }) {
   const byAgent = new Map<string, Incident[]>();
-  for (const i of incidents) byAgent.set(i.agent, [...(byAgent.get(i.agent) ?? []), i]);
+  // By uid: two agents with the same name keep separate tiles.
+  for (const i of incidents) byAgent.set(i.agentId, [...(byAgent.get(i.agentId) ?? []), i]);
 
   const panel = useRef<HTMLDivElement>(null);
   const grid = useRef<HTMLDivElement>(null);
@@ -87,12 +88,13 @@ export function IncidentTiles({ incidents, agents, org }: { incidents: Incident[
         title={cap === null ? undefined : expanded ? "Click to collapse" : "Click to show all agents"}
       >
         <div ref={grid} className="relative grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-3 px-5 pb-5 pt-4">
-          {[...byAgent].map(([name, list]) => {
-            const t = teamOf(org, agents.find(a => a.name === name)?.team ?? list[0].team);
+          {[...byAgent].map(([uid, list]) => {
+            const name = list[0].agent;
+            const t = teamOf(org, agents.find(a => a.uid === uid)?.team ?? list[0].team);
             const open = list.some(i => i.status !== "Closed");
             return (
               <div
-                key={name}
+                key={uid}
                 className={`flex min-w-0 flex-col gap-1.5 rounded-15 px-4 py-3.5 ${open ? "bg-error-fill shadow-[inset_0_0_0_1px_var(--error)]" : "bg-page opacity-75 shadow-[inset_0_0_0_1px_var(--neutral-300)]"}`}
               >
                 {/* The count stays in the top-right corner, however many lines the name takes. */}

@@ -17,21 +17,23 @@ import { type Kpi, KpiTile, PageTitle, StatusPill } from "@/components/ui/primit
 import { Select } from "@/components/ui/Select";
 
 type Counts = Record<Stage, number> & { total: number };
-interface Bar { label: string; counts: Counts }
+/** `key` tells bars apart (an agent's uid); `label` is shown. */
+interface Bar { key: string; label: string; counts: Counts }
 /** Picked instead of a disposition: the investigation is dropped and the incident goes back to Open. */
 const REOPEN = "reopen";
 const DISPOSITION_OPTIONS = [...DISPOSITIONS.map(d => ({ value: d, label: d })), { value: REOPEN, label: "None · back to Open" }];
 const NO_DISPOSITION = { value: "", label: "Select disposition" };
 
 /** Call-outs grouped by a key, biggest first. */
-function tally(rows: Instance[], key: (r: Instance) => string, cap?: number): Bar[] {
-  const m = new Map<string, Counts>();
+function tally(rows: Instance[], key: (r: Instance) => string, cap?: number, label: (r: Instance) => string = key): Bar[] {
+  const m = new Map<string, Bar>();
   for (const r of rows) {
-    const c = m.get(key(r)) ?? { nudge: 0, lead: 0, ops: 0, total: 0 };
-    c[r.stage]++; c.total++;
-    m.set(key(r), c);
+    const k = key(r);
+    const b = m.get(k) ?? { key: k, label: label(r), counts: { nudge: 0, lead: 0, ops: 0, total: 0 } };
+    b.counts[r.stage]++; b.counts.total++;
+    m.set(k, b);
   }
-  const out = [...m].map(([label, counts]) => ({ label, counts })).sort((a, b) => b.counts.total - a.counts.total);
+  const out = [...m.values()].sort((a, b) => b.counts.total - a.counts.total);
   return cap ? out.slice(0, cap) : out;
 }
 
@@ -50,7 +52,7 @@ function BarChart({ title, sub, bars, note, people }: { title: string; sub: stri
         {bars.map(b => {
           const { who, id } = people ? splitAgent(b.label) : { who: b.label, id: "" };
           return (
-          <div key={b.label} className={`grid items-center gap-3 text-[13px] ${people ? "grid-cols-[190px_minmax(0,1fr)_36px]" : "grid-cols-[150px_minmax(0,1fr)_36px]"}`}>
+          <div key={b.key} className={`grid items-center gap-3 text-[13px] ${people ? "grid-cols-[190px_minmax(0,1fr)_36px]" : "grid-cols-[150px_minmax(0,1fr)_36px]"}`}>
             <span title={b.label} className="flex min-w-0 flex-col text-strong">
               <span className="truncate">{who}</span>
               {id && <span className="num truncate text-[11px] text-muted">{id}</span>}
@@ -162,7 +164,7 @@ export default function DashboardsPage() {
     ];
   }, [ledger, incidents, openInv]);
   const byRule = useMemo(() => tally(ledger, r => r.rule), [ledger]);
-  const byAgent = useMemo(() => tally(ledger.filter(r => !r.isFloor), r => r.agent, 8), [ledger]);
+  const byAgent = useMemo(() => tally(ledger.filter(r => !r.isFloor), r => r.agentId ?? r.agent, 8, r => r.agent), [ledger]);
 
   const incidentColumns: Column<Incident>[] = [
     // Below 1280px the Opened time folds under the incident number and the count next to the rule,

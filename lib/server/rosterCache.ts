@@ -6,17 +6,18 @@ import type { Roster, Team } from "@/lib/types";
 // The last roster each org's Gencloud feed delivered, kept on this machine. The live floor starts
 // from it while the real roster loads (minutes, for hundreds of queues), and the simulator puts
 // its real team and agent names on its floor when Gencloud is not reachable (expired token, offline).
-// Names and queue membership only, no states. The folder is gitignored: these are real people.
+// Genesys user IDs, names and queue membership only, no states. The folder is gitignored: these are real people.
 
 /** Commercial keeps the file it had before there were several orgs. */
 // turbopackIgnore: read at run time only. The build must not trace .rtm/, whose files can be unreadable to the user who builds.
 const fileFor = (org: OrgId) => path.join(/* turbopackIgnore: true */ process.cwd(), ".rtm", org === "commercial" ? "roster.json" : `roster.${org}.json`);
 
-export interface RosterNames { org: Team[]; agents: { name: string; team: string }[]; members?: Record<string, string[]> }
+/** `uid` is missing from files saved before agents were keyed by Genesys ID, and `members` then holds names. */
+export interface RosterNames { org: Team[]; agents: { uid?: string; name: string; team: string }[]; members?: Record<string, string[]> }
 
 export function saveRoster(roster: Roster, org: OrgId = DEFAULT_ORG): void {
   if (!roster.agents.length) return;
-  const names: RosterNames = { org: roster.org, agents: roster.agents.map(({ name, team }) => ({ name, team })), members: roster.members };
+  const names: RosterNames = { org: roster.org, agents: roster.agents.map(({ uid, name, team }) => ({ uid, name, team })), members: roster.members };
   const file = fileFor(org);
   try {
     mkdirSync(path.dirname(file), { recursive: true });

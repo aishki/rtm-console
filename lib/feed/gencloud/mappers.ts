@@ -51,11 +51,11 @@ export function buildRoster(
     // Two watched queues can share a name; their members add up.
     members[q.name] ??= [];
     for (const m of membersByQueue[q.id] ?? []) {
-      members[q.name].push(m.name);
+      members[q.name].push(m.id);
       if (seen.has(m.id)) continue;
       seen.add(m.id);
       idToName[m.id] = m.name;
-      agents.push({ name: m.name, team: q.name, state: "off" });
+      agents.push({ uid: m.id, name: m.name, team: q.name, state: "off" });
     }
   }
   return { org, agents, idToName, members };
