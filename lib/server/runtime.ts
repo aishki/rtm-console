@@ -1,4 +1,4 @@
-import type { FloorSource, NudgeEvent, Rule, ToastEvent } from "@/lib/types";
+import type { FloorSource, NudgeEvent, Rule, ToastEvent, View } from "@/lib/types";
 import type { ReplayEvent } from "@/lib/csv/parse";
 import { type Engine, type EngineOptions, createEngine } from "@/lib/engine/engine";
 import { type IncidentCounter, type IncidentSeq, incidentCounter } from "@/lib/engine/escalation";
@@ -16,7 +16,8 @@ import { loadQueueMap, queueMapRev } from "./queueMapStore";
 import type { QueueMapRow } from "@/lib/import/queueMap";
 import { genesysToken } from "./tokenStore";
 import { DEFAULT_ORG, type OrgId, orgOf, queueMapFor, queueNamesFor } from "@/lib/orgs";
-import { floorDate, floorSeconds } from "@/lib/floorTime";
+import { floorDate, floorMidnight, floorSeconds } from "@/lib/floorTime";
+import { recordingEvents } from "@/lib/feed/recordingEvents";
 import { env } from "@/lib/env";
 import { bootActiveOrg, bootIncidentSeq, bootLastInstance, bootRules, store, takeBootFloor } from "./store";
 
@@ -151,15 +152,17 @@ function createGencloud(rules: Rule[], org: OrgId, incidents: IncidentCounter, i
   const rollover = (engine: Engine) => {
     const now = new Date();
     const today = floorDate(now);
-    if (today !== day) { day = today; engine.newDay(floorSeconds(now)); store().shiftStarted(org, day); }
+    if (today !== day) { day = today; engine.newDay(floorSeconds(now)); store().shiftStarted(org, day); store().eventsCleared(floorMidnight(now)); }
   };
   const record = recorderFor(org, () => day);
-  const rt = createRuntime("live", rules, 1, { incidents, ids, record, mapping: mappingFor(org) }, () => remembering(new GencloudFeed(gencloudConfig(org)), org), engine => {
+  const rt = createRuntime("live", rules, 1, { incidents, ids, record, mapping: mappingFor(org) }, () => recordingEvents(remembering(new GencloudFeed(gencloudConfig(org)), org), org, e => store().eventsReceived(e)), engine => {
     engine.reset({ t });
     // After a restart, carry on from what was saved: call-outs, incidents, today's strikes and the rules in breach.
     const saved = takeBootFloor(org);
     if (saved) engine.restore(saved, day);
     store().shiftStarted(org, day);
+    // Events left from an earlier day (the app was down at midnight) go first.
+    store().eventsCleared(floorMidnight(new Date()));
     // Loading the roster takes minutes for hundreds of queues: start from the one saved last
     // time, everyone Offline until their state arrives. The feed marks the floor as loading.
     // A file saved before agents had Genesys IDs is skipped: the live roster replaces it.
@@ -267,8 +270,9 @@ export const activeOrg = (): OrgId => registry.org;
  * keeps running once started, so its ledger, strikes and roster are there on the way back; a
  * simulation starts fresh each time. The org is remembered across restarts.
  */
-export function setFloorSource(source: FloorSource, org: OrgId = registry.org): Runtime {
+export function setFloorSource(source: FloorSource, org: OrgId = registry.org, by: View | null = null): Runtime {
   if (source === registry.source && org === registry.org) return liveRuntime();
+  store().feedSwitched({ source: registry.source, org: registry.org }, { source, org }, by, new Date());
   if (registry.source === "sim" && source !== "sim") { registry.floors.sim?.stop(); delete registry.floors.sim; }
   registry.source = source;
   if (org !== registry.org) { registry.org = org; store().activeOrgChanged(org); }

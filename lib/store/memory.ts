@@ -30,6 +30,7 @@ export function memoryStore(opts: { dir?: string | null } = {}): Store {
     subscriptionDelivered() {},
     subscriptionRemoved() {},
     activeOrgChanged(org) { if (dir !== null) saveActiveOrg(org, dir); },
+    feedSwitched() {},
     shiftStarted() {},
     instanceFired() {},
     instancesAcked() {},
@@ -37,6 +38,8 @@ export function memoryStore(opts: { dir?: string | null } = {}): Store {
     incidentMoved() {},
     floorFiredChanged() {},
     notificationSent() {},
+    eventsReceived() {},
+    eventsCleared() {},
     flush: async () => {},
     close: async () => {},
   };

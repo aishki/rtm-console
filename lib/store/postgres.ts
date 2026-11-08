@@ -6,13 +6,14 @@ import { domainIdOf } from "@/lib/engine/format";
 import type { QueueMapRow } from "@/lib/import/queueMap";
 import { ORGS, type OrgId, isOrgId } from "@/lib/orgs";
 import { queueKey } from "@/lib/queueStats";
-import type { Incident, Instance, InvAction, Place, Role, Rule, RuleId, RuleOverride } from "@/lib/types";
+import type { Incident, Instance, InvAction, Place, Role, Rule, RuleId, RuleOverride, View } from "@/lib/types";
 import type { AckVia } from "@/lib/engine/record";
-import { floorDate } from "@/lib/floorTime";
+import { floorDate, floorMidnight } from "@/lib/floorTime";
 import { loadActiveOrg } from "@/lib/server/tokenStore";
 import { readQueueMapFile } from "./files";
-import { hashOf, readCounters, readFloors, shiftFor, writeAcked, writeComment, writeFired, writeFloorFired, writeIncidentMove, writeNotifications } from "./floor";
-import type { FiredInfo, NotificationSent, RosterNames, SavedSubscription, Store } from "./store";
+import { clearEvents, readDayCalls, writeEvents } from "./events";
+import { actor, hashOf, personOrNull, readCounters, readFloors, shiftFor, writeAcked, writeComment, writeFired, writeFloorFired, writeIncidentMove, writeNotifications } from "./floor";
+import type { FiredInfo, FloorChoice, NotificationSent, RosterNames, SavedSubscription, SourceEvent, Store } from "./store";
 
 /** Edits to one rule by one person within this long become one version, so typing a threshold is not a version per keystroke. */
 export const FOLD_MS = 2000;
@@ -25,21 +26,26 @@ type Settings = Pick<Rule, "thr" | "unit" | "sev" | "route" | "on">;
 
 /** A write waiting in the queue. Each is written in its own transaction, in the order they happened. */
 type Pending =
-  | { kind: "rule"; ruleId: RuleId; by: string | null; settings: Settings }
-  | { kind: "override"; ruleId: RuleId; by: string | null; override: RuleOverride }
+  | { kind: "rule"; ruleId: RuleId; by: View | null; settings: Settings }
+  | { kind: "override"; ruleId: RuleId; by: View | null; override: RuleOverride }
   | { kind: "roster"; org: OrgId; roster: RosterNames }
   | { kind: "sub"; s: SavedSubscription }
   | { kind: "unsub"; endpoint: string }
   | { kind: "delivered"; endpoints: Set<string> }
   | { kind: "org"; org: OrgId }
+  | { kind: "feed"; from: FloorChoice; to: FloorChoice; by: View | null; at: Date }
   | { kind: "shift"; org: OrgId; date: string }
   | { kind: "fired"; org: OrgId; date: string; rec: Instance; x: FiredInfo }
-  | { kind: "acked"; ns: number[]; by: string | null; via: AckVia; at: Date }
+  | { kind: "acked"; ns: number[]; by: View | null; via: AckVia; at: Date }
   | { kind: "comment"; n: number; text: string; at: Date }
-  | { kind: "incident"; i: Incident; action: InvAction; by: string | null; at: Date }
+  | { kind: "incident"; i: Incident; action: InvAction; by: View | null; at: Date }
   | { kind: "floorFired"; org: OrgId; date: string; keys: string[] }
-  | { kind: "notes"; rows: NotificationSent[] };
+  | { kind: "notes"; rows: NotificationSent[] }
+  | { kind: "events"; rows: SourceEvent[] }
+  | { kind: "clearEvents"; since: Date };
 
+/** The same person in the same role: edits by one actor fold together. */
+const sameActor = (a: View | null, b: View | null) => a?.who === b?.who && a?.role === b?.role;
 const settingsOf = (r: Rule): Settings => ({ thr: r.thr, unit: r.unit, sev: r.sev, route: r.route, on: r.on });
 const chunks = <T>(xs: T[]): T[][] => Array.from({ length: Math.ceil(xs.length / CHUNK) }, (_, i) => xs.slice(i * CHUNK, (i + 1) * CHUNK));
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -56,8 +62,13 @@ async function writeRule(tx: Transaction<DB>, e: Extract<Pending, { kind: "rule"
   const same = Number(current.threshold) === s.thr && current.unit === s.unit && current.severity === s.sev && current.route_id === s.route && current.enabled === s.on;
   if (same) return; // changed and changed back: nothing new to keep
   const version = current.current_version + 1;
-  await tx.insertInto("rule_version").values({ rule_id: e.ruleId, version, threshold: s.thr, unit: s.unit, severity: s.sev, route_id: s.route, enabled: s.on, changed_by: e.by }).execute();
+  await tx.insertInto("rule_version").values({ rule_id: e.ruleId, version, threshold: s.thr, unit: s.unit, severity: s.sev, route_id: s.route, enabled: s.on, changed_by: personOrNull(e.by?.who) }).execute();
   await tx.updateTable("rules_master").set({ current_version: version }).where("rule_id", "=", e.ruleId).execute();
+  await tx.insertInto("audit_event").values({
+    ...actor(e.by), action: "rule.change", target_type: "rules_master", target_id: e.ruleId,
+    before: JSON.stringify({ version: current.current_version, threshold: Number(current.threshold), unit: current.unit, severity: current.severity, route_id: current.route_id, enabled: current.enabled }),
+    after: JSON.stringify({ version, threshold: s.thr, unit: s.unit, severity: s.sev, route_id: s.route, enabled: s.on }),
+  }).execute();
 }
 
 type PlaceColumn = "tower_id" | "sub_tower_id" | "lob_id";
@@ -89,9 +100,9 @@ async function writeOverride(tx: Transaction<DB>, e: Extract<Pending, { kind: "o
   // Unchanged, or removing one that was never kept: nothing new to keep.
   if (was ? JSON.stringify(was) === JSON.stringify(next) : empty(next)) return;
   const version = (current?.version ?? 0) + 1;
-  await tx.insertInto("rule_override").values({ rule_id: e.ruleId, [col]: id, version, ...next, changed_by: e.by }).execute();
+  await tx.insertInto("rule_override").values({ rule_id: e.ruleId, [col]: id, version, ...next, changed_by: personOrNull(e.by?.who) }).execute();
   await tx.insertInto("audit_event").values({
-    actor_id: e.by, action: empty(next) ? "rule_override.remove" : "rule_override.change", target_type: "rule_override", target_id: e.ruleId,
+    ...actor(e.by), action: empty(next) ? "rule_override.remove" : "rule_override.change", target_type: "rule_override", target_id: e.ruleId,
     before: JSON.stringify({ place: placeOf(o), ...(was ?? {}) }), after: JSON.stringify({ place: placeOf(o), version, ...next }),
   }).execute();
 }
@@ -162,7 +173,7 @@ async function lobIds(tx: Transaction<DB>, rows: QueueMapRow[]): Promise<Map<str
   return out;
 }
 
-async function writeQueueMap(tx: Transaction<DB>, rows: QueueMapRow[], by: string | null, action: string): Promise<void> {
+async function writeQueueMap(tx: Transaction<DB>, rows: QueueMapRow[], by: View | null, action: string): Promise<void> {
   const before = await tx.selectFrom("queue_lob_map").select(sql<string>`count(*)`.as("n")).executeTakeFirstOrThrow();
   const ids = await lobIds(tx, rows);
   await tx.deleteFrom("queue_lob_map").execute();
@@ -173,7 +184,7 @@ async function writeQueueMap(tx: Transaction<DB>, rows: QueueMapRow[], by: strin
   for (const part of chunks(values)) await tx.insertInto("queue_lob_map").values(part).execute();
   await refreshLobs(tx);
   await tx.insertInto("audit_event").values({
-    actor_id: by, action, target_type: "queue_lob_map", target_id: null,
+    ...actor(by), action, target_type: "queue_lob_map", target_id: null,
     before: JSON.stringify({ queues: Number(before.n) }),
     after: JSON.stringify({ queues: rows.length, towers: [...new Set(rows.map(r => r.tower))] }),
   }).execute();
@@ -289,9 +300,14 @@ export function postgresStore(db: Kysely<DB>, opts: { foldMs?: number; log?: (ms
   /** The write going to the database right now, which must not be changed under it. */
   let inFlight: Pending | null = null;
 
+  /** When the next flush is due. A write that can wait never puts off one already due sooner. */
+  let due = Infinity;
   const schedule = (ms: number) => {
+    const at = Date.now() + ms;
+    if (timer !== undefined && at >= due) return;
     clearTimeout(timer);
-    timer = setTimeout(() => { void flush(); }, ms);
+    due = at;
+    timer = setTimeout(() => { timer = undefined; due = Infinity; void flush(); }, ms);
     timer.unref?.();
   };
 
@@ -319,6 +335,13 @@ export function postgresStore(db: Kysely<DB>, opts: { foldMs?: number; log?: (ms
         await tx.updateTable("genesys_org").set({ on_screen: true }).where("org_id", "=", e.org).execute();
         return;
       }
+      case "feed": {
+        await tx.insertInto("audit_event").values({
+          at: e.at, ...actor(e.by), action: "feed.switch", target_type: "feed", target_id: e.to.source === "sim" ? "sim" : e.to.org,
+          before: JSON.stringify(e.from), after: JSON.stringify(e.to),
+        }).execute();
+        return;
+      }
       case "shift": { await shiftFor(tx, e.org, e.date); return; }
       case "fired": return writeFired(tx, e.org, e.date, e.rec, e.x);
       case "acked": return writeAcked(tx, e.ns, e.by, e.via, e.at);
@@ -326,6 +349,8 @@ export function postgresStore(db: Kysely<DB>, opts: { foldMs?: number; log?: (ms
       case "incident": return writeIncidentMove(tx, e.i, e.action, e.by, e.at);
       case "floorFired": return writeFloorFired(tx, e.org, e.date, e.keys);
       case "notes": return writeNotifications(tx, e.rows);
+      case "events": return writeEvents(tx, e.rows);
+      case "clearEvents": return clearEvents(tx, e.since);
     }
   });
 
@@ -335,6 +360,7 @@ export function postgresStore(db: Kysely<DB>, opts: { foldMs?: number; log?: (ms
       case "override": return "rule overrides";
       case "roster": return `the ${e.org} roster`;
       case "org": return "the org on screen";
+      case "feed": return "the floor switch";
       case "shift": return `the ${e.org} shift for ${e.date}`;
       case "fired": return `call-out ${e.rec.n}`;
       case "acked": return "acknowledgements";
@@ -342,12 +368,15 @@ export function postgresStore(db: Kysely<DB>, opts: { foldMs?: number; log?: (ms
       case "incident": return `incident ${e.i.inc}`;
       case "floorFired": return "the queue rules in breach";
       case "notes": return "desktop alert deliveries";
+      case "events": return `${e.rows.length} Genesys updates`;
+      case "clearEvents": return "emptying the day's Genesys updates";
       default: return "desktop alert subscriptions";
     }
   };
 
   function flush(): Promise<void> {
     clearTimeout(timer);
+    timer = undefined; due = Infinity;
     writing = writing.then(async () => {
       while (queue.length) {
         const e = (inFlight = queue[0]);
@@ -367,6 +396,16 @@ export function postgresStore(db: Kysely<DB>, opts: { foldMs?: number; log?: (ms
   }
 
   const enqueue = (e: Pending, ms = 0) => { queue.push(e); schedule(ms); };
+
+  /** Each org's saved floor for today, with its agents' calls rebuilt from today's events. */
+  async function floorsWithCalls() {
+    const now = new Date();
+    const today = floorDate(now);
+    const floors = await readFloors(db, today);
+    const calls = await readDayCalls(db, today, floorMidnight(now));
+    for (const [org, f] of Object.entries(floors)) if (f) f.calls = calls[org as OrgId] ?? {};
+    return floors;
+  }
 
   /** The files from before there was a database, read once while their tables are empty. */
   async function importFiles(): Promise<void> {
@@ -404,7 +443,7 @@ export function postgresStore(db: Kysely<DB>, opts: { foldMs?: number; log?: (ms
     ruleChanged(rule, by = null) {
       const last = queue.at(-1);
       // Folded into the last edit while it is still waiting, if it was the same rule by the same person.
-      if (last?.kind === "rule" && last !== inFlight && last.ruleId === rule.id && last.by === by) last.settings = settingsOf(rule);
+      if (last?.kind === "rule" && last !== inFlight && last.ruleId === rule.id && sameActor(last.by, by)) last.settings = settingsOf(rule);
       else queue.push({ kind: "rule", ruleId: rule.id, by, settings: settingsOf(rule) });
       schedule(foldMs);
     },
@@ -413,7 +452,7 @@ export function postgresStore(db: Kysely<DB>, opts: { foldMs?: number; log?: (ms
       const last = queue.at(-1);
       const o = { ...override };
       // Folded into the last edit while it is still waiting, if it was the same override by the same person.
-      if (last?.kind === "override" && last !== inFlight && last.ruleId === ruleId && last.by === by && placeKey(last.override) === placeKey(o)) last.override = o;
+      if (last?.kind === "override" && last !== inFlight && last.ruleId === ruleId && sameActor(last.by, by) && placeKey(last.override) === placeKey(o)) last.override = o;
       else queue.push({ kind: "override", ruleId, by, override: o });
       schedule(foldMs);
     },
@@ -426,7 +465,7 @@ export function postgresStore(db: Kysely<DB>, opts: { foldMs?: number; log?: (ms
       const subs = await db.selectFrom("push_subscription").select(["endpoint", "p256dh", "auth", "person_id", "role", "user_agent"]).execute();
       const shown = await db.selectFrom("genesys_org").select("org_id").where("on_screen", "=", true).executeTakeFirst();
       return {
-        queueMap, rosters, floors: await readFloors(db, floorDate(new Date())), ...(await readCounters(db)),
+        queueMap, rosters, floors: await floorsWithCalls(), ...(await readCounters(db)),
         subscriptions: subs.map(s => ({ sub: { endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } }, view: { role: s.role as Role, who: s.person_id }, ...(s.user_agent !== null && { userAgent: s.user_agent }) })),
         // Before the database knew it, the org on screen was in .rtm/genesys-org.
         ...(shown && isOrgId(shown.org_id) ? { activeOrg: shown.org_id } : opts.importDir !== null ? { activeOrg: loadActiveOrg(opts.importDir) } : {}),
@@ -453,6 +492,7 @@ export function postgresStore(db: Kysely<DB>, opts: { foldMs?: number; log?: (ms
     },
     subscriptionRemoved(endpoint) { enqueue({ kind: "unsub", endpoint }); },
     activeOrgChanged(org) { enqueue({ kind: "org", org }); },
+    feedSwitched(from, to, by, at) { enqueue({ kind: "feed", from: { ...from }, to: { ...to }, by, at }); },
 
     shiftStarted(org, date) { enqueue({ kind: "shift", org, date }); },
     // The engine hands over its own objects, which change later: each write keeps a copy as it was.
@@ -472,6 +512,14 @@ export function postgresStore(db: Kysely<DB>, opts: { foldMs?: number; log?: (ms
       if (waiting) waiting.rows.push(n);
       else enqueue({ kind: "notes", rows: [n] }, 5000);
     },
+    eventsReceived(events) {
+      if (!events.length) return;
+      // They join the last write when it is events too, so none jumps ahead of an emptying queued after it.
+      const last = queue.at(-1);
+      if (last?.kind === "events" && last !== inFlight) last.rows.push(...events);
+      else enqueue({ kind: "events", rows: [...events] }, 1000);
+    },
+    eventsCleared(since) { enqueue({ kind: "clearEvents", since }); },
 
     flush,
 

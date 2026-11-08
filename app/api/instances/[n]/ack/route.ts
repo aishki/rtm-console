@@ -12,7 +12,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ n: stri
   if (!rec || !canAck(ctx.S, ctx.view, rec)) return deny(404, "Instance not found in your span.");
   // ?via=push: from a desktop alert's Acknowledge button.
   const via = new URL(req.url).searchParams.get("via") === "push" ? "push" : "console";
-  const instance = ctx.rt.engine.ack(n, ctx.view.who, via);
+  const instance = ctx.rt.engine.ack(n, ctx.view, via);
   ctx.rt.publish();
   return Response.json({ instance });
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { AgentState, Incident, Instance, InvAction, RosterAgent, Team } from "@/lib/types";
+import type { AgentState, Incident, Instance, InvAction, RosterAgent, Team, View } from "@/lib/types";
 import { teamLines } from "@/lib/feed/teamLines";
 import { createEngine } from "./engine";
 import { type AckVia, type Recorder, type SavedFloor, firedKeys, readFiredKeys } from "./record";
@@ -16,9 +16,9 @@ const QUEUE_BUSY = { cq: 99, sl: 90, asa: 10, ab: 1 };
 function recorder() {
   const log = {
     fired: [] as { rec: Instance; thr: number; incident: Incident | null }[],
-    acked: [] as { ns: number[]; by: string | null; via: AckVia }[],
+    acked: [] as { ns: number[]; by: View | null; via: AckVia }[],
     commented: [] as number[],
-    moved: [] as { inc: string; action: InvAction; status: string; by: string | null }[],
+    moved: [] as { inc: string; action: InvAction; status: string; by: View | null }[],
     floor: [] as string[][],
   };
   const r: Recorder = {
@@ -67,25 +67,26 @@ describe("what the engine tells its recorder", () => {
     const { e, log, episode } = setup();
     for (let i = 0; i < 3; i++) episode("u-amara", "acw", 120);
     const [third, second, first] = e.S.ledger;
-    e.ack(first.n, "lead:Rina Velasco", "push");
-    e.ack(first.n, "lead:Rina Velasco"); // already acknowledged: nothing new
+    const lead: View = { role: "tl", who: "u-rina" }, mgr: View = { role: "mgr", who: "u-ava" }, admin: View = { role: "admin", who: null };
+    e.ack(first.n, lead, "push");
+    e.ack(first.n, lead); // already acknowledged: nothing new
     e.comment(second.n, "System was slow", true);
-    expect(e.ackAll({ role: "admin", who: null })).toBe(1);
+    expect(e.ackAll(admin)).toBe(1);
     expect(log.acked).toEqual([
-      { ns: [first.n], by: "lead:Rina Velasco", via: "push" },
-      { ns: [second.n], by: "u-amara", via: "console" },
-      { ns: [third.n], by: null, via: "ack_all" },
+      { ns: [first.n], by: lead, via: "push" },
+      { ns: [second.n], by: { role: "agent", who: "u-amara" }, via: "console" },
+      { ns: [third.n], by: admin, via: "ack_all" },
     ]);
     expect(log.commented).toEqual([second.n]);
 
-    e.invAction("INC-2026-0001", "start", undefined, "lead:Ava Santiago");
-    e.invAction("INC-2026-0001", "close", undefined, "lead:Ava Santiago"); // no disposition yet: refused
-    e.invAction("INC-2026-0001", "record", "Coached", "lead:Ava Santiago");
-    e.invAction("INC-2026-0001", "close", undefined, "lead:Ava Santiago");
+    e.invAction("INC-2026-0001", "start", undefined, mgr);
+    e.invAction("INC-2026-0001", "close", undefined, mgr); // no disposition yet: refused
+    e.invAction("INC-2026-0001", "record", "Coached", mgr);
+    e.invAction("INC-2026-0001", "close", undefined, mgr);
     expect(log.moved).toEqual([
-      { inc: "INC-2026-0001", action: "start", status: "Investigating", by: "lead:Ava Santiago" },
-      { inc: "INC-2026-0001", action: "record", status: "Investigating", by: "lead:Ava Santiago" },
-      { inc: "INC-2026-0001", action: "close", status: "Closed", by: "lead:Ava Santiago" },
+      { inc: "INC-2026-0001", action: "start", status: "Investigating", by: mgr },
+      { inc: "INC-2026-0001", action: "record", status: "Investigating", by: mgr },
+      { inc: "INC-2026-0001", action: "close", status: "Closed", by: mgr },
     ]);
   });
 
@@ -128,6 +129,22 @@ describe("carrying on after a restart", () => {
     expect(e.S.agents.find(a => a.uid === "u-amara")!.strikes).toEqual({ acw: 2 });
     episode("u-amara", "acw", 120);
     expect(log.fired[0].rec).toMatchObject({ n: 13, strikes: 3, stage: "ops" });
+  });
+
+  it("brings back today's calls, transfers, short calls and AHT as the roster brings each agent", () => {
+    const calls = { "u-amara": { calls: 14, transfers: 2, shortCalls: 1, aht: 380 }, "u-joshua": { calls: 3, transfers: 0, shortCalls: 0, aht: null } };
+    const { e, episode } = setup({ saved: { ...SAVED, calls } });
+    expect(e.S.agents.find(a => a.uid === "u-amara")).toMatchObject({ calls: 14, transfers: 2, shortCalls: 1, aht: 380 });
+    expect(e.S.agents.find(a => a.uid === "u-joshua")).toMatchObject({ calls: 3, aht: 420 });
+    // The next call counts on from there.
+    e.ingest.onAgentState({ uid: "u-amara", state: "avail", callEnded: { durationSec: 300 } });
+    episode("u-joshua", "avail", 0);
+    expect(e.S.agents.find(a => a.uid === "u-amara")!.calls).toBe(15);
+  });
+
+  it("leaves yesterday's calls behind", () => {
+    const { e } = setup({ saved: { ...SAVED, calls: { "u-amara": { calls: 14, transfers: 2, shortCalls: 1, aht: 380 } } }, today: "2026-11-10" });
+    expect(e.S.agents.find(a => a.uid === "u-amara")).toMatchObject({ calls: 0, transfers: 0, shortCalls: 0 });
   });
 
   it("does not raise a queue call-out again for a breach that was already running", () => {

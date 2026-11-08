@@ -69,6 +69,8 @@ export function createEngine(hooks: EngineHooks = {}, opts: EngineOptions = {}) 
   let counter = opts.incidents ?? incidentCounter(undefined, opts.year);
   /** Today's strikes from before a restart, by uid, for agents the roster has not brought back yet. */
   let carried: SavedFloor["strikes"] = {};
+  /** Today's calls from before a restart, by uid, likewise. */
+  let carriedCalls: NonNullable<SavedFloor["calls"]> = {};
   /** The rules in breach as last told to the recorder. */
   let firedSaid = "";
 
@@ -102,9 +104,10 @@ export function createEngine(hooks: EngineHooks = {}, opts: EngineOptions = {}) 
       S.org = r.org.map(t => ({ ...t }));
       S.agents = r.agents.map((a, i) => {
         const p = prev.get(a.uid);
+        const c = carriedCalls[a.uid];
         return {
           id: i, uid: a.uid, name: a.name, team: a.team, state: a.state, stTime: a.stTime ?? 0, onHold: false, holdTime: 0,
-          aht: p?.aht ?? a.aht ?? 420, calls: p?.calls ?? a.calls ?? 0, shortCalls: p?.shortCalls ?? 0, transfers: p?.transfers ?? 0,
+          aht: p?.aht ?? c?.aht ?? a.aht ?? 420, calls: p?.calls ?? c?.calls ?? a.calls ?? 0, shortCalls: p?.shortCalls ?? c?.shortCalls ?? 0, transfers: p?.transfers ?? c?.transfers ?? 0,
           adh: p?.adh ?? a.adh ?? 96, ahtFromFeed: p?.ahtFromFeed, strikes: { ...(p?.strikes ?? carried[a.uid]) }, fired: { ...p?.fired },
           ...(p?.place && { place: p.place }),
         };
@@ -266,12 +269,13 @@ export function createEngine(hooks: EngineHooks = {}, opts: EngineOptions = {}) 
       S.rev++;
       pending = []; pendingQueue = null; pendingQueues = null; pendingStats = []; beat = false;
       if (!opts.incidents) counter = incidentCounter(undefined, opts.year);
-      carried = {}; firedSaid = "";
+      carried = {}; carriedCalls = {}; firedSaid = "";
     },
     /**
      * Carry on from a floor's saved records after a restart, right after reset(): its call-outs and
      * incidents, and, when they are for `today`, the strikes and the rules in breach, so neither
-     * starts again at zero nor raises a call-out twice. Agents get their strikes as the roster brings them.
+     * starts again at zero nor raises a call-out twice, and today's calls, transfers and short calls.
+     * Agents get their strikes and calls as the roster brings them.
      */
     restore(saved: SavedFloor, today: string) {
       S.ledger = saved.ledger.map(r => ({ ...r, rev: ++S.rev }));
@@ -279,7 +283,12 @@ export function createEngine(hooks: EngineHooks = {}, opts: EngineOptions = {}) 
       S.seq = Math.max(S.seq, ...S.ledger.map(r => r.n));
       if (saved.date !== today) return;
       carried = saved.strikes;
-      for (const a of S.agents) if (carried[a.uid]) a.strikes = { ...carried[a.uid] };
+      carriedCalls = saved.calls ?? {};
+      for (const a of S.agents) {
+        if (carried[a.uid]) a.strikes = { ...carried[a.uid] };
+        const c = carriedCalls[a.uid];
+        if (c) Object.assign(a, { calls: c.calls, transfers: c.transfers, shortCalls: c.shortCalls }, c.aht !== null && !a.ahtFromFeed && { aht: c.aht });
+      }
       const { floor, groups } = readFiredKeys(saved.floorFired);
       for (const id of floor) S.floorFired[id] = true;
       for (const g of groups) S.groupFired[`${g.id}|${placeKey(g.place)}`] = true;
@@ -292,7 +301,7 @@ export function createEngine(hooks: EngineHooks = {}, opts: EngineOptions = {}) 
      */
     newDay(t: number) {
       S.t = t;
-      carried = {};
+      carried = {}; carriedCalls = {};
       for (const a of S.agents) {
         a.strikes = {}; a.calls = 0; a.shortCalls = 0; a.transfers = 0; a.fired = {};
         for (const r of S.rules) if (ruleApplies(r, a)) a.fired[r.id] = true;
@@ -306,8 +315,8 @@ export function createEngine(hooks: EngineHooks = {}, opts: EngineOptions = {}) 
         for (const r of S.rules) if (ruleApplies(r, a)) a.fired[r.id] = true;
       }
     },
-    /** Acknowledge one call-out. `by` is who did it (a uid; null for a view with no person). */
-    ack(n: number, by: string | null = null, via: AckVia = "console"): Instance | null {
+    /** Acknowledge one call-out. `by` is who did it, and as what role. */
+    ack(n: number, by: View | null = null, via: AckVia = "console"): Instance | null {
       const r = find(n);
       if (!r) return null;
       if (r.status === "open") { markAck(r); opts.record?.acked([r], by, via); }
@@ -317,7 +326,7 @@ export function createEngine(hooks: EngineHooks = {}, opts: EngineOptions = {}) 
     ackAll(v: View): number {
       const done: Instance[] = [];
       for (const r of scopeLedger(S, v, S.ledger)) if (r.status === "open") { markAck(r); done.push(r); }
-      if (done.length) opts.record?.acked(done, v.who, "ack_all");
+      if (done.length) opts.record?.acked(done, v, "ack_all");
       return done.length;
     },
     /** Attach the agent's reason. `ack` also acknowledges (the nudge's Send reason). */
@@ -326,14 +335,14 @@ export function createEngine(hooks: EngineHooks = {}, opts: EngineOptions = {}) 
       if (!r) return null;
       r.cmt = text; r.rev = ++S.rev;
       opts.record?.commented(r);
-      if (ack && r.status === "open") { markAck(r); opts.record?.acked([r], r.agentId, "console"); }
+      if (ack && r.status === "open") { markAck(r); opts.record?.acked([r], r.agentId ? { role: "agent", who: r.agentId } : null, "console"); }
       return r;
     },
     /**
      * Open -> Investigating -> Closed. An investigation can go back to Open, which drops its disposition,
      * and closes only once a disposition is recorded. A step that does not fit the status changes nothing.
      */
-    invAction(inc: string, action: InvAction, disposition?: string, by: string | null = null): Incident | null {
+    invAction(inc: string, action: InvAction, disposition?: string, by: View | null = null): Incident | null {
       const i = S.incidents.find(x => x.inc === inc);
       if (!i) return null;
       const was = `${i.status}|${i.disposition}`;

@@ -10,11 +10,11 @@ import { ensureNotificationPartitions } from "@/lib/db/partitions";
 import type { DB } from "@/lib/db/schema";
 import { databaseUrl, isTestDatabase, testDatabaseUrl } from "@/lib/db/url";
 import { defaultRules } from "@/lib/engine/rules";
-import { floorDate } from "@/lib/floorTime";
+import { floorDate, floorMidnight } from "@/lib/floorTime";
 import type { Incident, Instance } from "@/lib/types";
 import type { QueueMapRow } from "@/lib/import/queueMap";
 import { postgresStore } from "./postgres";
-import type { RosterNames } from "./store";
+import type { RosterNames, SourceEvent } from "./store";
 
 // Migrations and the PostgreSQL store against a real database. Skipped unless a database is
 // configured (TEST_DATABASE_URL, DATABASE_URL or DB_*), and refused unless it is a *_test one,
@@ -50,7 +50,7 @@ describe.skipIf(!url)("PostgreSQL: migrations and the store", () => {
   it("migrates an empty database, and a second run does nothing", async () => {
     const first = await migrator().migrateToLatest();
     expect(first.error).toBeUndefined();
-    expect(first.results?.map(r => r.status)).toEqual(["Success", "Success", "Success", "Success", "Success"]);
+    expect(first.results?.map(r => r.status)).toEqual(["Success", "Success", "Success", "Success", "Success", "Success"]);
     const second = await migrator().migrateToLatest();
     expect(second.error).toBeUndefined();
     expect(second.results).toEqual([]);
@@ -92,8 +92,8 @@ describe.skipIf(!url)("PostgreSQL: migrations and the store", () => {
     // changed_by points at person, so the editors must be people.
     await db.insertInto("person").values([{ person_id: "a", org_id: "commercial", name: "Editor A" }, { person_id: "b", org_id: "commercial", name: "Editor B" }]).execute();
     const sl = (await store.loadRules()).find(r => r.id === "sl")!;
-    sl.thr = 85; store.ruleChanged(sl, "a");
-    sl.thr = 90; store.ruleChanged(sl, "b");
+    sl.thr = 85; store.ruleChanged(sl, { role: "mgr", who: "a" });
+    sl.thr = 90; store.ruleChanged(sl, { role: "mgr", who: "b" });
     await store.flush();
     const auxp = (await store.loadRules()).find(r => r.id === "auxp")!;
     auxp.on = false; store.ruleChanged(auxp);
@@ -102,6 +102,25 @@ describe.skipIf(!url)("PostgreSQL: migrations and the store", () => {
     const rows = await db.selectFrom("rule_version").select(["rule_id", "version", "threshold", "changed_by"]).where("rule_id", "in", ["sl", "auxp"]).orderBy("rule_id").orderBy("version").execute();
     expect(rows.map(r => [r.rule_id, r.version, Number(r.threshold), r.changed_by])).toEqual([
       ["auxp", 1, 300, null], ["sl", 1, 80, null], ["sl", 2, 85, "a"], ["sl", 3, 90, "b"],
+    ]);
+    // Each new version has an audit entry with who made it and as what role, and what it was before.
+    const audit = await db.selectFrom("audit_event").select(["actor_id", "actor_role", "target_id", "before", "after"]).where("action", "=", "rule.change").orderBy("audit_id").execute();
+    expect(audit.map(a => [a.actor_id, a.actor_role, a.target_id, (a.before as { threshold: number }).threshold, (a.after as { threshold: number }).threshold]))
+      .toEqual([[null, null, "acw", 120, 180], ["a", "mgr", "sl", 80, 85], ["b", "mgr", "sl", 85, 90]]);
+  });
+
+  it("keeps an admin's rule edit with the role, and a switch of the floor", async () => {
+    const store = postgresStore(db, { foldMs: 20, importDir: null });
+    const ab = (await store.loadRules()).find(r => r.id === "aband")!;
+    ab.thr += 1; store.ruleChanged(ab, { role: "admin", who: null });
+    store.feedSwitched({ source: "gencloud", org: "commercial" }, { source: "gencloud", org: "gbd" }, { role: "admin", who: null }, new Date());
+    store.feedSwitched({ source: "gencloud", org: "gbd" }, { source: "sim", org: "gbd" }, { role: "senior", who: null }, new Date());
+    await store.flush();
+    const audit = await db.selectFrom("audit_event").select(["action", "actor_id", "actor_role", "target_id", "after"]).where("action", "in", ["rule.change", "feed.switch"]).where("actor_role", "in", ["admin", "senior"]).orderBy("audit_id").execute();
+    expect(audit).toEqual([
+      { action: "rule.change", actor_id: null, actor_role: "admin", target_id: "aband", after: expect.objectContaining({ threshold: ab.thr }) },
+      { action: "feed.switch", actor_id: null, actor_role: "admin", target_id: "gbd", after: { source: "gencloud", org: "gbd" } },
+      { action: "feed.switch", actor_id: null, actor_role: "senior", target_id: "sim", after: { source: "sim", org: "gbd" } },
     ]);
   });
 
@@ -144,13 +163,13 @@ describe.skipIf(!url)("PostgreSQL: migrations and the store", () => {
 
   it("saves the queue map with its hierarchy, and an upload keeps the old towers' rows", async () => {
     const store = postgresStore(db, { importDir: null });
-    await store.saveQueueMap(MAP.slice(2), "admin-1");
+    await store.saveQueueMap(MAP.slice(2), { role: "admin", who: null });
     expect((await store.loadBoot()).queueMap).toEqual(MAP.slice(2));
     const towers = await db.selectFrom("tower").select("name").orderBy("name").execute();
     expect(towers.map(t => t.name)).toEqual(["Member", "Provider"]);
     const gbd = await db.selectFrom("queue_lob_map").select(["org_id", "org_name"]).where("queue_key", "=", "Q_GBD").executeTakeFirstOrThrow();
     expect(gbd).toEqual({ org_id: "gbd", org_name: "Anthem GBD" });
-    await store.saveQueueMap(MAP, "admin-1");
+    await store.saveQueueMap(MAP, { role: "admin", who: null });
     expect((await store.loadBoot()).queueMap).toEqual(MAP);
     expect(Number((await db.selectFrom("lob").select(sql<string>`count(*)`.as("n")).executeTakeFirstOrThrow()).n)).toBe(3);
   });
@@ -275,9 +294,9 @@ describe.skipIf(!url)("PostgreSQL: migrations and the store", () => {
       store.instanceFired("commercial", today, floor, { thr: 4, overrideAt: null, incident: null, at });
       store.instancesAcked([102], null, "console", at);
       store.instanceCommented(201, "System was slow", at);
-      store.instancesAcked([201], "u-floor-agent", "console", at);
-      store.instancesAcked([202, 204], "lead:someone-without-a-row", "ack_all", at);
-      store.incidentMoved({ ...incident, status: "Investigating" }, "start", null, at);
+      store.instancesAcked([201], { role: "agent", who: "u-floor-agent" }, "console", at);
+      store.instancesAcked([202, 204], { role: "tl", who: "someone-without-a-row" }, "ack_all", at);
+      store.incidentMoved({ ...incident, status: "Investigating" }, "start", { role: "mgr", who: null }, at);
       store.floorFiredChanged("commercial", today, ["cq"]);
       await store.flush();
 
@@ -294,8 +313,12 @@ describe.skipIf(!url)("PostgreSQL: migrations and the store", () => {
       expect(await db.selectFrom("incident_log").select(["incident_number", "instance_id", "strike", "status"]).execute())
         .toEqual([{ incident_number: "INC-2026-0042", instance_id: "203", strike: 3, status: "Investigating" }]);
       expect(await db.selectFrom("incident_counter").selectAll().execute()).toEqual([{ year: 2026, last_value: 42 }]);
-      const audit = await db.selectFrom("audit_event").select(["action", "target_id"]).where("target_type", "in", ["monitoring_instance", "incident_log"]).orderBy("audit_id").execute();
-      expect(audit).toEqual([{ action: "monitoring_instance.ack_all", target_id: null }, { action: "incident.start", target_id: "INC-2026-0042" }]);
+      const audit = await db.selectFrom("audit_event").select(["action", "target_id", "actor_id", "actor_role"]).where("target_type", "in", ["monitoring_instance", "incident_log"]).orderBy("audit_id").execute();
+      // The actor is kept as given, even without a person row; the call-out's acknowledged_by stays null.
+      expect(audit).toEqual([
+        { action: "monitoring_instance.ack_all", target_id: null, actor_id: "someone-without-a-row", actor_role: "tl" },
+        { action: "incident.start", target_id: "INC-2026-0042", actor_id: null, actor_role: "mgr" },
+      ]);
 
       const boot = await postgresStore(db, { importDir: null }).loadBoot();
       expect(boot.lastInstance).toBe(204);
@@ -320,6 +343,33 @@ describe.skipIf(!url)("PostgreSQL: migrations and the store", () => {
       await store.flush();
       const shifts = await db.selectFrom("shift").select(["shift_date", "status", sql<string>`extract(epoch FROM ends_at - starts_at) / 3600`.as("hours")]).where("org_id", "=", "gbd").orderBy("shift_date").execute();
       expect(shifts.map(s => [s.status, Number(s.hours)])).toEqual([["closed", 24], ["closed", 24], ["active", 23]]);
+    });
+
+    it("keeps the day's Genesys updates, rebuilds today's calls from them, and empties them at midnight", async () => {
+      const store = postgresStore(db, { importDir: null });
+      const now = new Date();
+      const yesterday = new Date(floorMidnight(now).getTime() - 3600_000);
+      const end = (uid: string, at: Date, durationSec: number, transferred = false): SourceEvent =>
+        ({ org: "commercial", at, entityType: "agent", entityId: uid, metric: "call.end", value: "acw", payload: { state: "acw", callEnded: { transferred, durationSec } } });
+      store.eventsReceived([end("u-floor-agent", yesterday, 999)]);
+      store.eventsReceived([
+        end("u-floor-agent", now, 200, true), end("u-floor-agent", now, 300),
+        { org: "commercial", at: now, entityType: "agent", entityId: "u-floor-agent", metric: "state", value: "avail", payload: { state: "avail" } },
+        { org: "commercial", at: now, entityType: "system", entityId: "floor", metric: "queue", value: null, payload: { cq: 3 } },
+      ]);
+      // Another org's floor already started today: only yesterday's row goes.
+      store.eventsCleared(floorMidnight(now));
+      await store.flush();
+      const count = async () => Number((await db.selectFrom("source_event_stream").select(sql<string>`count(*)`.as("n")).executeTakeFirstOrThrow()).n);
+      expect(await count()).toBe(4);
+
+      const boot = await postgresStore(db, { importDir: null }).loadBoot();
+      expect(boot.floors.commercial!.calls).toEqual({ "u-floor-agent": { calls: 2, transfers: 1, shortCalls: 0, aht: 250 } });
+
+      // The next midnight, with nothing newer yet: the table is emptied.
+      store.eventsCleared(new Date(now.getTime() + 60_000));
+      await store.flush();
+      expect(await count()).toBe(0);
     });
 
     it("logs desktop alerts, leaving out a call-out, person or browser it has no row for", async () => {

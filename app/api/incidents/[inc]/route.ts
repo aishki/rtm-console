@@ -29,7 +29,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ inc: st
         : "Record a disposition before closing the incident.");
     }
   } else return deny(400, "Unknown action.");
-  ctx.rt.engine.invAction(inc, body.action, typeof body.disposition === "string" ? body.disposition : undefined, ctx.view.who);
+  ctx.rt.engine.invAction(inc, body.action, typeof body.disposition === "string" ? body.disposition : undefined, ctx.view);
   ctx.rt.publish();
   return Response.json({ incident });
 }
