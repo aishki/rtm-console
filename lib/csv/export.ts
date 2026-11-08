@@ -1,5 +1,5 @@
-import type { Incident, Instance } from "@/lib/types";
-import { clock } from "@/lib/engine/format";
+import type { Incident, Instance, Unsupervised } from "@/lib/types";
+import { clock, splitAgent } from "@/lib/engine/format";
 
 const q = (s: unknown) => `"${String(s).replace(/"/g, '""')}"`;
 
@@ -13,4 +13,10 @@ export function ledgerCsv(rows: Instance[]): string {
 export function incidentsCsv(rows: Incident[]): string {
   const h = "incident,opened,agent,team,rule,instances,status,disposition,closed\n";
   return h + [...rows].reverse().map(i => [i.inc, clock(i.t), q(i.agent), q(i.team), q(i.rule), i.instances, i.status, q(i.disposition || ""), i.closedT !== null ? clock(i.closedT) : ""].join(",")).join("\n");
+}
+
+/** Agents with no supervisor, by name, for an admin to have their supervisor set in Genesys. */
+export function unsupervisedCsv(rows: Unsupervised[]): string {
+  const h = "agent,domain_id,queue\n";
+  return h + rows.map(a => { const { who, id } = splitAgent(a.name); return [q(who), q(id), q(a.team)].join(","); }).join("\n");
 }

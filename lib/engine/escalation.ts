@@ -1,6 +1,7 @@
 import type { Agent, Incident, Instance, NudgeEvent, Queue, QueueCounts, ReplayMeta, Route, Rule, RuleId, Stage, Team, ToastEvent } from "@/lib/types";
 import { nudgeCopy, valueOf } from "./rules";
-import { teamOf } from "./scope";
+import { leadersOf } from "./scope";
+import { NO_LEADER } from "./format";
 import { wallClock } from "@/lib/floorTime";
 
 export interface EngineHooks {
@@ -52,6 +53,8 @@ export interface EngineState {
   queues: Record<string, QueueCounts>;
   /** Queue name to the ids of its agents. An agent in several queues is in each. */
   members: Record<string, number[]>;
+  /** Reporting lines by uid: agents and the leaders above them. Kept across rosters; a reset clears it. */
+  people: Record<string, { name: string; supervisor: string | null }>;
   /** Bumped on every roster, so a reader can tell the membership changed. Never reset. */
   rosterRev: number;
   /** Floor-level rules currently in breach; they re-arm on recovery. */
@@ -105,12 +108,11 @@ export function fire(S: EngineState, hooks: EngineHooks, counter: IncidentCounte
   if ((stage === "nudge" || (critical && stage === "lead")) && agent) {
     hooks.nudge?.({ n: rec.n, agentId: agent.uid, agent: agent.name, team: agent.team, first: firstName(agent.name), body: nudgeCopy(r, agent, S.rules) });
   }
+  const lead = agent ? leadersOf(S.people, agent.uid) : null;
+  const tl = lead ? lead.tl?.name ?? NO_LEADER : "(floor)", mgr = lead ? lead.mgr?.name ?? NO_LEADER : "(floor)";
   if (stage === "lead") {
     const crit = critical || r.sev === "crit";
-    const lead = agent ? teamOf(S.org, agent.team) : null;
-    const to = !critical ? `to TL ${lead ? lead.tl : "(floor)"}`
-      : strikes === 2 ? `to TL ${lead!.tl} and LOB Mgr ${lead!.mgr}`
-        : `to LOB Mgr ${lead ? lead.mgr : "(floor)"}`;
+    const to = !critical ? `to TL ${tl}` : strikes === 2 ? `to TL ${tl} and LOB Mgr ${mgr}` : `to LOB Mgr ${mgr}`;
     hooks.toast?.({
       kind: crit ? "crit" : "warn", instance: rec,
       title: `${rec.agent} · ${r.name}${crit ? " · Critical" : ""}`,
@@ -120,7 +122,7 @@ export function fire(S: EngineState, hooks: EngineHooks, counter: IncidentCounte
     hooks.toast?.({
       kind: "esc", instance: rec,
       title: `Ops escalation · ${rec.agent}`,
-      body: `${r.name}: strike ${strikes}. ${inc} opened · Mgr ${teamOf(S.org, agent.team).mgr} notified.`,
+      body: `${r.name}: strike ${strikes}. ${inc} opened · Mgr ${mgr} notified.`,
     });
   }
   return rec;

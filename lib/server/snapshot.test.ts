@@ -1,5 +1,6 @@
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { teamLines } from "@/lib/feed/teamLines";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { createEngine } from "@/lib/engine/engine";
@@ -23,7 +24,7 @@ const ADMIN: View = { role: "admin", who: null };
 function setup() {
   const engine = createEngine({});
   engine.reset({ t: 8 * 3600 });
-  engine.ingest.onRoster({ org: ORG, agents: AGENTS });
+  engine.ingest.onRoster({ org: ORG, agents: AGENTS, people: teamLines(ORG, AGENTS, "") });
   const rt = { engine } as unknown as Runtime;
   const now = (): Since => ({ rev: engine.S.rev, rosterRev: engine.S.rosterRev, mapRev: queueMapRev() });
   return { engine, rt, now };
@@ -49,7 +50,7 @@ describe("tickMsg queue data", () => {
   it("resends membership after the roster reloads", () => {
     const { rt, engine, now } = setup();
     const since = now();
-    engine.ingest.onRoster({ org: ORG, agents: AGENTS });
+    engine.ingest.onRoster({ org: ORG, agents: AGENTS, people: teamLines(ORG, AGENTS, "") });
     const m = tickMsg(rt, ADMIN, since, BATCH);
     expect(m.members).toBeDefined();
     expect(m.queueMap).toBeUndefined();
@@ -65,7 +66,7 @@ describe("tickMsg queue data", () => {
 
   it("scopes membership to the viewer's agents", () => {
     const { rt } = setup();
-    const m = tickMsg(rt, { role: "tl", who: "Rina Velasco" }, null, BATCH);
+    const m = tickMsg(rt, { role: "tl", who: "lead:Rina Velasco" }, null, BATCH);
     expect(m.members).toEqual({ "Team Alpha": [0, 1], "Team Bravo": [] });
     const agent = tickMsg(rt, { role: "agent", who: "u-bea" }, null, BATCH);
     expect(agent.members).toEqual({ "Team Alpha": [], "Team Bravo": [2] });

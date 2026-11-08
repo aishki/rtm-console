@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { queueKey } from "@/lib/queueStats";
+import { domainIdOf } from "@/lib/engine/format";
 
 type Json = any;
 
@@ -33,6 +34,11 @@ export interface QueueMember {
   /** ISO time of the account's last login, when Genesys sends it. */
   lastLogin?: string;
 }
+
+/** A user's name and their supervisor's user ID (Genesys `manager.id`), null when none is set. */
+export interface UserLine { id: string; name: string; managerId: string | null }
+
+const userLine = (u: Json): UserLine => ({ id: u.id, name: typeof u.name === "string" ? u.name : u.id, managerId: typeof u.manager?.id === "string" ? u.manager.id : null });
 
 /** A user's presence and routing status, each with the ISO time it took effect. */
 export interface UserState {
@@ -162,13 +168,13 @@ export class GencloudClient {
     private readonly bulkPerSecond = BULK_PER_SECOND,
   ) {}
 
-  /** A one-off GET, spaced to `bulkPerSecond` across all callers. The queue poll is not paced. */
-  private async bulk(path: string): Promise<Json> {
+  /** A one-off request, spaced to `bulkPerSecond` across all callers. The queue poll is not paced. */
+  private async bulk(path: string, method: "GET" | "POST" = "GET", body?: unknown): Promise<Json> {
     const now = Date.now(), at = Math.max(now, this.nextBulkAt);
     const rate = now < this.limitedUntil ? Math.min(this.bulkPerSecond, BULK_PER_SECOND_LIMITED) : this.bulkPerSecond;
     this.nextBulkAt = at + 1000 / rate;
     if (at > now) await new Promise((r) => setTimeout(r, at - now));
-    return this.request("GET", path);
+    return this.request(method, path, body);
   }
 
   private async request(method: "GET" | "POST", path: string, body?: unknown, attempt = 0): Promise<Json> {
@@ -293,6 +299,28 @@ export class GencloudClient {
       for (const u of (r?.entities ?? []) as Json[]) if (u?.id) out.push({ id: u.id, lastLogin: u.dateLastLogin });
     }
     return out;
+  }
+
+  /** Each of these active users' name and supervisor (`manager.id`), 100 a request. Inactive and deleted accounts are not returned. */
+  async getUserLines(userIds: string[]): Promise<UserLine[]> {
+    const out: UserLine[] = [];
+    for (let i = 0; i < userIds.length; i += 100) {
+      const q = userIds.slice(i, i + 100).map((id) => `id=${encodeURIComponent(id)}`).join("&");
+      const r = await this.bulk(`/api/v2/users?pageSize=100&${q}`);
+      for (const u of (r?.entities ?? []) as Json[]) if (u?.id) out.push(userLine(u));
+    }
+    return out;
+  }
+
+  /**
+   * The active user whose name ends in " - <domainId>" (how this org names accounts), or null.
+   * Used to find a supervisor the CGS directory names by Domain ID.
+   */
+  async findUserByDomainId(domainId: string): Promise<UserLine | null> {
+    const want = domainId.trim().toUpperCase();
+    const r = await this.bulk("/api/v2/users/search", "POST", { pageSize: 25, query: [{ type: "CONTAINS", fields: ["name"], value: ` - ${want}` }] });
+    const hit = ((r?.results ?? []) as Json[]).find((u) => u?.id && u.state === "active" && typeof u.name === "string" && domainIdOf(u.name) === want);
+    return hit ? userLine(hit) : null;
   }
 
   /**

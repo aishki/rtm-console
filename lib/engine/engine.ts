@@ -32,7 +32,7 @@ export type Engine = ReturnType<typeof createEngine>;
 export function createEngine(hooks: EngineHooks = {}, opts: EngineOptions = {}) {
   const S: EngineState = {
     t: 0, mode: "live", replay: null, org: [], agents: [], rules: opts.rules ?? defaultRules(),
-    ledger: [], incidents: [], seq: 0, staleFor: 0, agentsLoading: false, quiet: false, queue: null, queues: {}, members: {}, rosterRev: 0, floorFired: {}, rev: 0,
+    ledger: [], incidents: [], seq: 0, staleFor: 0, agentsLoading: false, quiet: false, queue: null, queues: {}, members: {}, people: {}, rosterRev: 0, floorFired: {}, rev: 0,
   };
   let beat = false;
   let pending: AgentStateEvent[] = [];
@@ -56,15 +56,21 @@ export function createEngine(hooks: EngineHooks = {}, opts: EngineOptions = {}) 
         return {
           id: i, uid: a.uid, name: a.name, team: a.team, state: a.state, stTime: a.stTime ?? 0, onHold: false, holdTime: 0,
           aht: p?.aht ?? a.aht ?? 420, calls: p?.calls ?? a.calls ?? 0, shortCalls: p?.shortCalls ?? 0, transfers: p?.transfers ?? 0,
-          adh: p?.adh ?? a.adh ?? 96, ahtFromFeed: p?.ahtFromFeed, strikes: p?.strikes ?? {}, fired: p?.fired ?? {},
+          adh: p?.adh ?? a.adh ?? 96, ahtFromFeed: p?.ahtFromFeed, strikes: { ...p?.strikes }, fired: { ...p?.fired },
         };
       });
       const ids = new Map(S.agents.map(a => [a.uid, a.id]));
       // Without membership from the feed (simulator, replay), a team's members are the agents whose team it is.
       const byUid = r.members ?? Object.fromEntries(S.org.map(t => [t.team, S.agents.filter(a => a.team === t.team).map(a => a.uid)]));
       S.members = Object.fromEntries(Object.entries(byUid).map(([q, uids]) => [q, uids.flatMap(u => ids.get(u) ?? [])]));
+      // A roster without reporting lines keeps the ones already known (they arrive after it from Genesys).
+      if (r.people) S.people = Object.fromEntries(r.people.map(p => [p.uid, { name: p.name, supervisor: p.supervisor }]));
       S.rosterRev++;
       beat = true;
+    },
+    onPeople(people) {
+      for (const p of people) S.people[p.uid] = { name: p.name, supervisor: p.supervisor };
+      S.rosterRev++;
     },
     onAgentState(e) { pending.push(e); beat = true; },
     onQueue(q, byQueue) { pendingQueue = q; if (byQueue) pendingQueues = byQueue; beat = true; },
@@ -173,7 +179,7 @@ export function createEngine(hooks: EngineHooks = {}, opts: EngineOptions = {}) 
     S, ingest, tick, thr,
     /** Clear the shift (ledger, incidents, strikes) and set the clock. Rule configuration is kept. */
     reset(o: { t: number; mode?: "live" | "replay"; replay?: ReplayMeta | null }) {
-      Object.assign(S, { t: o.t, mode: o.mode ?? "live", replay: o.replay ?? null, org: [], agents: [], ledger: [], incidents: [], seq: 0, staleFor: 0, agentsLoading: false, queue: null, queues: {}, members: {}, floorFired: {} });
+      Object.assign(S, { t: o.t, mode: o.mode ?? "live", replay: o.replay ?? null, org: [], agents: [], ledger: [], incidents: [], seq: 0, staleFor: 0, agentsLoading: false, queue: null, queues: {}, members: {}, people: {}, floorFired: {} });
       S.rev++;
       pending = []; pendingQueue = null; pendingQueues = null; pendingStats = []; beat = false;
       if (!opts.incidents) counter = incidentCounter(undefined, opts.year);

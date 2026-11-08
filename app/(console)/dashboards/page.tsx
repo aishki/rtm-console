@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useMemo, useRef, useState } from "react";
 import { clock, splitAgent } from "@/lib/engine/format";
+import { type LeadRow, agentQueues, leadRows } from "@/lib/engine/leadRows";
 import { DISPOSITIONS, PENDING_DISPOSITION, canClose } from "@/lib/engine/rules";
 import { api, attempt, download } from "@/lib/client/api";
 import { avgResponse, useMorph, usePerms } from "@/lib/client/hooks";
@@ -124,13 +125,19 @@ function IncidentAction({ incident: i, canAct }: { incident: Incident; canAct: b
   );
 }
 
-interface TeamRow { team: string; tl: string; mgr: string; agents: number; n: number; l: number; o: number; ir: number; top: string }
 const stageHead = "";
-const TEAM_COLUMNS: Column<TeamRow>[] = [
-  { key: "team", header: "Team", tdClass: "font-semibold", cell: t => t.team },
-  { key: "tl", header: "Team Lead", cell: t => t.tl },
+const LEAD_COLUMNS: Column<LeadRow>[] = [
+  { key: "tl", header: "Team Lead", tdClass: "font-semibold", cell: t => t.tl },
   { key: "mgr", header: "Manager", tdClass: "text-muted", cell: t => t.mgr },
   { key: "agents", header: "Agents", align: "right", tdClass: "font-ui", cell: t => t.agents },
+  // Where the Team Lead's agents sit: the first two queues, then a count; hover for the full list.
+  {
+    key: "queues", header: "Queues", tdClass: "text-muted", cell: t => (
+      <span title={t.queues.join("\n")} className="whitespace-nowrap">
+        {t.queues.slice(0, 2).join(", ") || "—"}{t.queues.length > 2 && <span className="font-ui font-semibold text-strong"> +{t.queues.length - 2}</span>}
+      </span>
+    ),
+  },
   { key: "n", header: "Nudges", align: "right", thClass: `${stageHead} !text-turquoise-text`, tdClass: "font-ui font-semibold", cell: t => t.n },
   { key: "l", header: "Leader", align: "right", thClass: `${stageHead} !text-warning-text`, tdClass: "font-ui font-semibold", cell: t => t.l },
   { key: "o", header: "Ops", align: "right", thClass: `${stageHead} !text-purple`, tdClass: "font-ui font-semibold", cell: t => t.o },
@@ -142,8 +149,10 @@ export default function DashboardsPage() {
   const perms = usePerms();
   const ledger = useConsole(s => s.ledger);
   const incidents = useConsole(s => s.incidents);
-  const teams = useConsole(s => s.org);
+  const leads = useConsole(s => s.leads);
   const agents = useConsole(s => s.agents);
+  const members = useConsole(s => s.members);
+  const unsupervised = useConsole(s => s.unsupervised);
   const toast = useConsole(s => s.toast);
   // Importing a file starts a replay, which is not offered on the live Genesys feed.
   const canImport = useConsole(s => s.feed !== "gencloud") && !!perms?.replay;
@@ -199,15 +208,15 @@ export default function DashboardsPage() {
     { key: "action", header: "Action", cell: i => <IncidentAction incident={i} canAct={canAct} /> },
   ];
 
-  const teamRows = useMemo<TeamRow[]>(() => teams.map(t => {
-    const rows = ledger.filter(r => !r.isFloor && r.team === t.team);
-    const top = tally(rows, r => r.rule, 1)[0];
-    return {
-      team: t.team, tl: t.tl, mgr: t.mgr, agents: agents.filter(a => a.team === t.team).length,
-      n: rows.filter(r => r.stage === "nudge").length, l: rows.filter(r => r.stage === "lead").length, o: rows.filter(r => r.stage === "ops").length,
-      ir: incidents.filter(i => i.team === t.team && i.status !== "Closed").length, top: top ? `${top.label} ×${top.counts.total}` : "—",
-    };
-  }), [teams, ledger, agents, incidents]);
+  const queuesByAgent = useMemo(() => agentQueues(agents, members), [agents, members]);
+  const queueNames = useMemo(() => [...new Set([...queuesByAgent.values()].flat())].sort((a, b) => a.localeCompare(b)), [queuesByAgent]);
+  const [queuePick, setQueuePick] = useState("");
+  // A queue that has left the viewer's span (a new roster, another "View as") stops filtering.
+  const queue = queueNames.includes(queuePick) ? queuePick : "";
+  const leadTable = useMemo(
+    () => leadRows(agents, uid => leads[uid], uid => queuesByAgent.get(uid) ?? [], ledger, incidents, queue),
+    [agents, leads, queuesByAgent, ledger, incidents, queue],
+  );
 
   return (
     <section className="flex flex-col gap-6">
@@ -231,6 +240,11 @@ export default function DashboardsPage() {
           <span className="panel-sub">{openInv} open · {incidents.length - openInv} closed · your span</span>
           <div className="flex-1" />
           {perms?.export && <PurpleButton variant="outline" onClick={() => download("/api/export/incidents")}>Export incidents CSV</PurpleButton>}
+          {perms?.mapping && unsupervised > 0 && (
+            <PurpleButton variant="outline" title="Agents with no supervisor in Genesys or the CGS directory: their call-outs reach admins only until one is set in Genesys" onClick={() => download("/api/export/no-supervisor")}>
+              No supervisor ({unsupervised}) CSV
+            </PurpleButton>
+          )}
         </div>
         <div className="overflow-x-auto">
           <DataTable
@@ -241,12 +255,19 @@ export default function DashboardsPage() {
       </div>
 
       <div className="panel overflow-hidden">
-        <div className="panel-head">
-          <h2 className="panel-title">Breakdown by team</h2>
+        <div className="flex min-h-[38px] flex-wrap items-center gap-3 border-b border-pale-purple px-5 py-3.5">
+          <h2 className="panel-title">Breakdown by Team Lead</h2>
           <span className="panel-sub">Instances by stage, incidents and top cause, scoped to your view</span>
+          <div className="flex-1" />
+          {queueNames.length > 1 && (
+            <Select
+              value={queue} onChange={setQueuePick} aria-label="Show only agents in this queue" className="field h-8 px-2 text-[13px]"
+              options={[{ value: "", label: "All queues" }, ...queueNames.map(q => ({ value: q, label: q }))]}
+            />
+          )}
         </div>
         <div className="overflow-x-auto">
-          <DataTable columns={TEAM_COLUMNS} rows={teamRows} rowKey={t => t.team} padY={12} />
+          <DataTable columns={LEAD_COLUMNS} rows={leadTable} rowKey={t => t.tl} padY={12} empty="No agents in this queue are in your view." />
         </div>
       </div>
 

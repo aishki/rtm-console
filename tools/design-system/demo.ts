@@ -1,5 +1,5 @@
 import { defaultRules } from "@/lib/engine/rules";
-import { peopleDirectory } from "@/lib/engine/scope";
+import { type People, leadersOf, peopleDirectory } from "@/lib/engine/scope";
 import type { Agent, Incident, Instance, NudgeEvent, Team } from "@/lib/types";
 import { useConsole } from "@/lib/client/store";
 
@@ -24,6 +24,14 @@ const agents: Agent[] = [
   a(9, "Example, Ivan - AH10009", B, "auxp", 128),
   a(10, "Example, Jo - AH10010", B, "oncall", 71),
 ];
+// Reporting lines: each team's agents report to its Team Lead, and both Team Leads to one Manager.
+const people: People = {
+  "demo:mgr": { name: "Sample, Morgan", supervisor: null },
+  "demo:tl1": { name: "Sample, Tessa", supervisor: "demo:mgr" },
+  "demo:tl2": { name: "Sample, Ravi", supervisor: "demo:mgr" },
+  ...Object.fromEntries(agents.map(x => [x.uid, { name: x.name, supervisor: x.team === A ? "demo:tl1" : "demo:tl2" }])),
+};
+const leads = Object.fromEntries(agents.map(x => { const l = leadersOf(people, x.uid); return [x.uid, { tl: l.tl?.name ?? null, mgr: l.mgr?.name ?? null }]; }));
 /** A sample agent's uid, from their name. */
 const uidOf = (name: string): string => agents.find(x => x.name === name)?.uid ?? "";
 const inst = (n: number, t: number, agent: string, rule: string, ruleId: Instance["ruleId"], val: string, more: Partial<Instance> = {}): Instance => ({
@@ -46,7 +54,7 @@ export const demo = {
   org, agents, ledger, incidents, nudge, rules: defaultRules(),
   use(patch: Record<string, unknown> = {}): void {
     useConsole.setState({
-      status: "ready", view: { role: "mgr", who: "Sample, Morgan" }, org, people: peopleDirectory({ org, agents }), t: 36500, mode: "live", feed: "sim",
+      status: "ready", view: { role: "mgr", who: "demo:mgr" }, viewerName: "Sample, Morgan", leads, org, people: peopleDirectory({ org, agents, people }), t: 36500, mode: "live", feed: "sim",
       realNames: false, genesysOrg: null, canSwitchFeed: false, staleFor: 0, agentsLoading: false, replay: null, rules: defaultRules(), agents, incidents, ledger, toasts: [], nudge: null, ...patch,
     });
   },

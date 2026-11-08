@@ -70,6 +70,10 @@ const fields = {
   GENCLOUD_CLIENT_ID: text().optional(),
   GENCLOUD_CLIENT_SECRET: secret(8).optional(),
 
+  /** The CGS associate directory: fills in supervisors Genesys does not have. */
+  CGS_AUTH_API_KEY: secret(16).optional(),
+  CGS_AUTH_BASE_URL: text().regex(/^https:\/\//, "must start with https://").default("https://teamcgs.io"),
+
   VAPID_PUBLIC_KEY: text().optional(),
   VAPID_PRIVATE_KEY: secret(8).optional(),
   VAPID_SUBJECT: text().regex(/^(mailto:|https:\/\/)/, "must start with mailto: or https://").optional(),

@@ -3,6 +3,7 @@ import type { AgentState, AgentStateEvent, NudgeEvent, QueueCounts, RosterAgent,
 import { createEngine } from "./engine";
 import { firstName, incidentCounter, stageFor } from "./escalation";
 import { isBreach, myTargets } from "./rules";
+import { teamLines } from "@/lib/feed/teamLines";
 import { PERMS, canAck, canComment, inScope, resolveView, scopeAgents, scopeIncidents, scopeLedger, scopeTeams } from "./scope";
 
 const ORG: Team[] = [
@@ -12,6 +13,8 @@ const ORG: Team[] = [
 ];
 /** A test agent's uid. Never the name itself, so a lookup by name instead of uid fails. */
 const u = (name: string) => `u-${name.toLowerCase().replace(/\W+/g, "-")}`;
+/** A test leader's uid, as teamLines makes it with no prefix. */
+const lead = (name: string) => `lead:${name}`;
 const ROSTER: RosterAgent[] = [
   { uid: u("Amara Reyes"), name: "Amara Reyes", team: "Team Alpha", state: "avail" },
   { uid: u("Joshua Lim"), name: "Joshua Lim", team: "Team Alpha", state: "avail" },
@@ -23,7 +26,7 @@ function setup() {
   const toasts: ToastEvent[] = [], nudges: NudgeEvent[] = [];
   const e = createEngine({ toast: t => toasts.push(t), nudge: n => nudges.push(n) }, { year: () => 2026 });
   e.reset({ t: 8 * 3600 });
-  e.ingest.onRoster({ org: ORG, agents: ROSTER });
+  e.ingest.onRoster({ org: ORG, agents: ROSTER, people: teamLines(ORG, ROSTER, "") });
   const run = (seconds: number) => { for (let i = 0; i < seconds; i++) { e.ingest.onHeartbeat(); e.tick(); } };
   const set = (name: string, state: AgentState, extra: Partial<AgentStateEvent> = {}) => e.ingest.onAgentState({ uid: u(name), state, ...extra });
   const agent = (name: string) => e.S.agents.find(a => a.name === name)!;
@@ -132,7 +135,7 @@ describe("the 3× rule", () => {
     const floors = [0, 1].map(() => {
       const e = createEngine({}, { incidents: shared });
       e.reset({ t: 8 * 3600 });
-      e.ingest.onRoster({ org: ORG, agents: ROSTER });
+      e.ingest.onRoster({ org: ORG, agents: ROSTER, people: teamLines(ORG, ROSTER, "") });
       return e;
     });
     const strike = (e: (typeof floors)[number]) => {
@@ -148,7 +151,7 @@ describe("the 3× rule", () => {
     expect(floors[1].S.incidents.map(i => i.inc)).toEqual(["INC-2026-0002"]);
     // A reset clears the floor but never reuses a shared number.
     floors[1].reset({ t: 8 * 3600 });
-    floors[1].ingest.onRoster({ org: ORG, agents: ROSTER });
+    floors[1].ingest.onRoster({ org: ORG, agents: ROSTER, people: teamLines(ORG, ROSTER, "") });
     for (let i = 0; i < 3; i++) strike(floors[1]);
     expect(floors[1].S.incidents.map(i => i.inc)).toEqual(["INC-2026-0004"]);
   });
@@ -428,7 +431,7 @@ describe("re-arm logic", () => {
 
 describe("scoping", () => {
   const admin: View = { role: "admin", who: null }, senior: View = { role: "senior", who: null };
-  const mgr: View = { role: "mgr", who: "Ava Santiago" }, tl: View = { role: "tl", who: "Rina Velasco" };
+  const mgr: View = { role: "mgr", who: lead("Ava Santiago") }, tl: View = { role: "tl", who: lead("Rina Velasco") };
   const agentV: View = { role: "agent", who: u("Amara Reyes") };
 
   function floor() {
@@ -468,7 +471,7 @@ describe("scoping", () => {
     const { e } = floor();
     expect(scopeIncidents(e.S, admin, e.S.incidents)).toHaveLength(4);
     expect(names(scopeIncidents(e.S, mgr, e.S.incidents))).toEqual(["Amara Reyes", "Bea Santos", "Joshua Lim"]);
-    expect(names(scopeIncidents(e.S, { role: "mgr", who: "Leo Fernandez" }, e.S.incidents))).toEqual(["Miguel Cruz"]);
+    expect(names(scopeIncidents(e.S, { role: "mgr", who: lead("Leo Fernandez") }, e.S.incidents))).toEqual(["Miguel Cruz"]);
     expect(names(scopeIncidents(e.S, tl, e.S.incidents))).toEqual(["Amara Reyes", "Joshua Lim"]);
     expect(names(scopeIncidents(e.S, agentV, e.S.incidents))).toEqual(["Amara Reyes"]);
   });
@@ -495,8 +498,9 @@ describe("scoping", () => {
 
   it("snaps an unknown person onto the first one for the role", () => {
     const { e } = floor();
-    expect(resolveView(e.S, { role: "tl", who: "Nobody" })).toEqual({ role: "tl", who: "Rina Velasco" });
-    expect(resolveView(e.S, { role: "mgr", who: "Leo Fernandez" })).toEqual({ role: "mgr", who: "Leo Fernandez" });
+    // Leaders are listed by name, so the first Team Lead is the alphabetically first.
+    expect(resolveView(e.S, { role: "tl", who: "Nobody" })).toEqual({ role: "tl", who: lead("Jon Rivera") });
+    expect(resolveView(e.S, { role: "mgr", who: lead("Leo Fernandez") })).toEqual({ role: "mgr", who: lead("Leo Fernandez") });
     expect(resolveView(e.S, { role: "admin", who: "Anyone" })).toEqual({ role: "admin", who: null });
   });
 
@@ -582,6 +586,22 @@ describe("roster resent mid-shift", () => {
     expect(agent("Amara Reyes").strikes.acw).toBe(3);
     expect(e.S.ledger[0].stage).toBe("ops");
   });
+
+  // Two roster entries once shared one set of counters: an agent offline for hours was counted
+  // again every second while the other entry's timer climbed to the limit.
+  it("gives every agent their own counters, even when the roster lists one twice", () => {
+    const { e } = setup();
+    const twin: RosterAgent = { uid: u("Sam Twin"), name: "Sam Twin", team: "Team Bravo", state: "off" };
+    e.ingest.onRoster({ org: ORG, agents: [...ROSTER, twin, twin] });
+    e.ingest.onRoster({ org: ORG, agents: [...ROSTER, twin, twin] });
+    const [a, b] = e.S.agents.filter(x => x.uid === twin.uid);
+    expect(a.strikes).not.toBe(b.strikes);
+    expect(a.fired).not.toBe(b.fired);
+    e.ingest.onAgentState({ uid: twin.uid, state: "off", elapsed: 3 * 3600, seed: true });
+    for (let i = 0; i < e.thr("offl") + 60; i++) { e.ingest.onHeartbeat(); e.tick(); }
+    // Only the second entry's own breach, once its timer reaches the limit.
+    expect(e.S.ledger.filter(r => r.ruleId === "offl" && r.agentId === twin.uid)).toHaveLength(1);
+  });
 });
 
 describe("call data from the feed", () => {
@@ -653,13 +673,13 @@ describe("queue membership and per-queue counts", () => {
     const { e } = setup();
     const first = e.S.rosterRev;
     expect(first).toBeGreaterThan(0);
-    e.ingest.onRoster({ org: ORG, agents: ROSTER });
+    e.ingest.onRoster({ org: ORG, agents: ROSTER, people: teamLines(ORG, ROSTER, "") });
     expect(e.S.rosterRev).toBe(first + 1);
     e.reset({ t: 0 });
     expect(e.S.rosterRev).toBe(first + 1);
     expect(e.S.members).toEqual({});
     expect(e.S.queues).toEqual({});
-    e.ingest.onRoster({ org: ORG, agents: ROSTER });
+    e.ingest.onRoster({ org: ORG, agents: ROSTER, people: teamLines(ORG, ROSTER, "") });
     expect(e.S.rosterRev).toBe(first + 2);
   });
 

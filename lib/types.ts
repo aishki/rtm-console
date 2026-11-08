@@ -18,6 +18,13 @@ export type FloorSource = Exclude<FeedKind, "csv">;
 
 export interface Team { team: string; tl: string; mgr: string; lob: string }
 
+/**
+ * Someone in the reporting lines: an agent, or a leader above one. `supervisor` is their
+ * supervisor's uid (Genesys first, then the CGS directory), null when neither has one.
+ * An agent's supervisor is their Team Lead; the Team Lead's supervisor is their Manager.
+ */
+export interface OrgPerson { uid: string; name: string; supervisor: string | null }
+
 export interface Agent {
   /** The engine's index for this roster, used in queue membership sent to screens. */
   id: number;
@@ -60,10 +67,7 @@ export interface Incident {
   instances: number; status: "Open" | "Investigating" | "Closed"; disposition: string; closedT: number | null;
 }
 
-/**
- * Who the console is viewed as. `who` is the person's key: an agent's uid, or (until leaders
- * come from Genesys) a Team Lead's or Manager's name. Null for Admin and Senior Leader.
- */
+/** Who the console is viewed as. `who` is the person's uid (agent, Team Lead or Manager); null for Admin and Senior Leader. */
 export interface View { role: Role; who: string | null }
 
 /** Floor queue numbers. `sl` is null when the source has no service level yet (not 0%). */
@@ -115,6 +119,8 @@ export interface Roster {
   org: Team[]; agents: RosterAgent[];
   /** Queue name to the uids of everyone in it. An agent in two queues is listed under both; `team` is only the first. */
   members?: Record<string, string[]>;
+  /** The reporting lines: the agents and the leaders above them. Left out when the feed has none yet. */
+  people?: OrgPerson[];
 }
 /** An agent's figures for the day from the feed's own reporting. */
 export interface AgentStats {
@@ -155,6 +161,12 @@ export interface AgentStateEvent {
 export interface Person { key: string; name: string }
 export interface PeopleDirectory { tls: Person[]; mgrs: Person[]; agentsByTeam: { team: string; agents: Person[] }[] }
 
+/** An agent's Team Lead and Manager by name; null where Genesys and the CGS directory have none. */
+export interface AgentLeads { tl: string | null; mgr: string | null }
+
+/** An agent on the floor with no supervisor in Genesys or the CGS directory, for admins to have fixed. */
+export interface Unsupervised { uid: string; name: string; team: string }
+
 export interface TickMsg {
   type: "tick" | "init";
   t: number; mode: "live" | "replay"; staleFor: number; replay: ReplayMeta | null;
@@ -171,6 +183,12 @@ export interface TickMsg {
   queues: Record<string, QueueCounts>;
   /** Queue name to the ids of the viewer's agents in it. Sent on a snapshot and whenever the roster reloads; otherwise left out. */
   members?: Record<string, number[]>;
+  /** Each of the viewer's agents' Team Lead and Manager, by uid. Sent with `members`. */
+  leads?: Record<string, AgentLeads>;
+  /** Admin only: how many agents on the floor have no supervisor. Sent with `members`. */
+  unsupervised?: number;
+  /** The name of the person the console is viewed as; null for Admin and Senior Leader, or while it is not known yet. */
+  viewerName: string | null;
   /** The uploaded queue-to-LOB mapping. Sent on a snapshot and whenever it changes; otherwise left out. */
   queueMap?: QueueMapRow[];
   /** `n` and `team` come from the instance behind a call-out toast; feed notices have neither. */
