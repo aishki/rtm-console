@@ -6,7 +6,7 @@ import type { Store } from "./store";
 
 /**
  * Keeps nothing in a database: development without one, unit tests and CSV replays. Rules and their
- * overrides reset on a restart; the queue map, each org's last roster and the org on screen are kept in `dir`
+ * overrides, call-outs, incidents and strikes reset on a restart; the queue map, each org's last roster and the org on screen are kept in `dir`
  * (.rtm/ by default); desktop-alert subscriptions stay in memory.
  * `dir: null` keeps nothing at all (unit tests).
  */
@@ -18,10 +18,11 @@ export function memoryStore(opts: { dir?: string | null } = {}): Store {
     ruleChanged() {},
     overrideChanged() {},
     async loadBoot() {
-      if (dir === null) return { queueMap: [], rosters: {}, subscriptions: [] };
+      const none = { floors: {}, lastInstance: 0, incidentSeq: null };
+      if (dir === null) return { queueMap: [], rosters: {}, subscriptions: [], ...none };
       // Rosters are read when an org first needs one.
       const org = loadActiveOrg(dir);
-      return { queueMap: readQueueMapFile(dir), rosters: {}, subscriptions: [], ...(isOrgId(org) && { activeOrg: org }) };
+      return { queueMap: readQueueMapFile(dir), rosters: {}, subscriptions: [], ...none, ...(isOrgId(org) && { activeOrg: org }) };
     },
     async saveQueueMap(rows) { if (dir !== null) writeQueueMapFile(rows, dir); },
     rosterChanged(org, roster) { if (dir !== null) writeRosterFile(org, roster, dir); },
@@ -29,6 +30,13 @@ export function memoryStore(opts: { dir?: string | null } = {}): Store {
     subscriptionDelivered() {},
     subscriptionRemoved() {},
     activeOrgChanged(org) { if (dir !== null) saveActiveOrg(org, dir); },
+    shiftStarted() {},
+    instanceFired() {},
+    instancesAcked() {},
+    instanceCommented() {},
+    incidentMoved() {},
+    floorFiredChanged() {},
+    notificationSent() {},
     flush: async () => {},
     close: async () => {},
   };

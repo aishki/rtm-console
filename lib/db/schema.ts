@@ -27,6 +27,14 @@ export type Numeric = ColumnType<string, number | string, number | string>;
 
 export type Timestamp = ColumnType<Date, Date | string, Date | string>;
 
+export interface AgentRuleState {
+  person_id: string;
+  rule_id: string;
+  shift_id: Int8;
+  strikes: number;
+  updated_at: Generated<Timestamp>;
+}
+
 export interface AuditEvent {
   action: string;
   actor_id: string | null;
@@ -56,11 +64,84 @@ export interface GenesysRegion {
   region_id: string;
 }
 
+export interface IncidentCounter {
+  last_value: number;
+  year: number;
+}
+
+export interface IncidentLog {
+  closed_at: Timestamp | null;
+  comments: string | null;
+  disposition: string | null;
+  incident_id: Generated<Int8>;
+  incident_number: string;
+  instance_id: Int8;
+  lob: string | null;
+  modified_at: Generated<Timestamp>;
+  opened_at: Generated<Timestamp>;
+  owner_id: string | null;
+  person_id: string;
+  priority: string | null;
+  resolution: string | null;
+  root_cause: string | null;
+  rule_id: string;
+  shift_id: Int8;
+  source: Generated<string>;
+  status: Generated<string>;
+  strike: number;
+  sub_tower: string | null;
+  team: string | null;
+  tower: string | null;
+}
+
 export interface Lob {
   created_at: Generated<Timestamp>;
   lob_id: Generated<number>;
   name: string;
   sub_tower_id: number;
+}
+
+export interface MonitoringInstance {
+  ack_via: string | null;
+  acknowledged_at: Timestamp | null;
+  acknowledged_by: string | null;
+  agent_comment: string | null;
+  agent_comment_at: Timestamp | null;
+  condition_text: string;
+  created_at: Generated<Timestamp>;
+  instance_id: Generated<Int8>;
+  lob: string | null;
+  metric_value: string;
+  notification_level: string;
+  occurrence_count: number;
+  person_id: string | null;
+  rule_id: string;
+  rule_override_id: Int8 | null;
+  rule_version: number;
+  severity: string;
+  shift_id: Int8;
+  source: Generated<string>;
+  source_event_id: Int8 | null;
+  status: Generated<string>;
+  sub_tower: string | null;
+  team: string | null;
+  threshold_value: Numeric;
+  tower: string | null;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface NotificationLog {
+  action: string | null;
+  action_at: Timestamp | null;
+  channel: string;
+  delivery_status: string;
+  endpoint_hash: string | null;
+  instance_id: Int8 | null;
+  notification_level: string;
+  notification_log_id: Generated<Int8>;
+  notification_ts: Generated<Timestamp>;
+  recipient_id: string | null;
+  recipient_role: string;
 }
 
 export interface NotificationRoute {
@@ -183,6 +264,17 @@ export interface RuleVersion {
   version: number;
 }
 
+export interface Shift {
+  ends_at: Timestamp;
+  floor_fired: Generated<string[]>;
+  org_id: string;
+  shift_date: Timestamp;
+  shift_id: Generated<Int8>;
+  source: Generated<string>;
+  starts_at: Timestamp;
+  status: Generated<string>;
+}
+
 export interface StatusMapping {
   console_state: string;
   genesys_status: string;
@@ -206,10 +298,15 @@ export interface Tower {
 }
 
 export interface DB {
+  agent_rule_state: AgentRuleState;
   audit_event: AuditEvent;
   genesys_org: GenesysOrg;
   genesys_region: GenesysRegion;
+  incident_counter: IncidentCounter;
+  incident_log: IncidentLog;
   lob: Lob;
+  monitoring_instance: MonitoringInstance;
+  notification_log: NotificationLog;
   notification_route: NotificationRoute;
   notification_route_step: NotificationRouteStep;
   person: Person;
@@ -220,6 +317,7 @@ export interface DB {
   rule_override: RuleOverride;
   rule_version: RuleVersion;
   rules_master: RulesMaster;
+  shift: Shift;
   status_mapping: StatusMapping;
   sub_tower: SubTower;
   tower: Tower;

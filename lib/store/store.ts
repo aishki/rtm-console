@@ -1,13 +1,16 @@
 import type { QueueMapRow } from "@/lib/import/queueMap";
 import type { OrgId } from "@/lib/orgs";
-import type { OrgPerson, Role, Rule, RuleId, RuleOverride, Team } from "@/lib/types";
+import type { Incident, Instance, InvAction, OrgPerson, Place, Role, Rule, RuleId, RuleOverride, Team } from "@/lib/types";
+import type { IncidentSeq } from "@/lib/engine/escalation";
+import type { AckVia, SavedFloor } from "@/lib/engine/record";
 
 // Where the console keeps what must outlive a restart. The engine stays in charge, in memory; it
 // hands each record to the store, which keeps it without making the engine wait.
 // PERSISTENCE_MODE picks the store: postgres, or memory (development and test only).
 // Phase 0 keeps the rules; Phase 1 the queue map, people, queues, desktop-alert subscriptions and
 // the rules' overrides by Tower, Sub-Tower and LOB.
-// Later phases add call-outs, incidents and the day's events.
+// Phase 2 the Genesys floors' shifts, call-outs, incidents, strikes and desktop-alert deliveries.
+// Phase 3 adds the day's events.
 
 /** An org's last roster. `uid` is missing from files saved before agents were keyed by Genesys ID, and `members` then holds names. */
 export interface RosterNames {
@@ -35,6 +38,36 @@ export interface BootData {
   subscriptions: SavedSubscription[];
   /** The org the floor showed last; undefined when none was saved. */
   activeOrg?: OrgId;
+  /** Each Genesys org's saved floor, to carry on from. Missing for an org with none, and with the memory store. */
+  floors: Partial<Record<OrgId, SavedFloor>>;
+  /** The highest call-out number saved: new ones carry on from it. */
+  lastInstance: number;
+  /** The incident counter as saved, for the latest year; null when none was. */
+  incidentSeq: IncidentSeq | null;
+}
+
+/** What a call-out was raised with, besides what the ledger shows. */
+export interface FiredInfo {
+  /** The threshold that applied. */
+  thr: number;
+  /** The place of the most specific override that applied; null for the rule's defaults. */
+  overrideAt: Place | null;
+  /** The incident it opened (strike 3 and later). */
+  incident: Incident | null;
+  at: Date;
+}
+
+/** One desktop alert to one browser. */
+export interface NotificationSent {
+  /** The call-out it is about. */
+  n: number | null;
+  /** Who the browser is signed in as (a uid), and as what role. */
+  who: string | null; role: Role;
+  level: "nudge" | "lead" | "ops" | "info";
+  endpoint: string;
+  /** sent: the push service took it; gone: the browser unsubscribed; failed: anything else. */
+  status: "sent" | "gone" | "failed";
+  at: Date;
 }
 
 export interface Store {
@@ -63,6 +96,22 @@ export interface Store {
   subscriptionRemoved(endpoint: string): void;
   /** The floor now shows this org. */
   activeOrgChanged(org: OrgId): void;
+
+  // A Genesys org's floor. `date` is the floor date (Eastern, YYYY-MM-DD) a record belongs to.
+  /** The org's floor is on `date`: its shift starts, and the one before ends. */
+  shiftStarted(org: OrgId, date: string): void;
+  /** A call-out was raised, with the strike it counted and the incident it opened. */
+  instanceFired(org: OrgId, date: string, rec: Instance, x: FiredInfo): void;
+  /** Call-outs were acknowledged. Acknowledge all also leaves an audit entry. */
+  instancesAcked(ns: number[], by: string | null, via: AckVia, at: Date): void;
+  /** The agent attached a reason to a call-out. */
+  instanceCommented(n: number, text: string, at: Date): void;
+  /** An investigation moved, with an audit entry. */
+  incidentMoved(i: Incident, action: InvAction, by: string | null, at: Date): void;
+  /** The queue and system rules in breach changed (firedKeys() in lib/engine/record.ts). */
+  floorFiredChanged(org: OrgId, date: string, keys: string[]): void;
+  /** A desktop alert went to a browser. These gather and are written a few at a time. */
+  notificationSent(e: NotificationSent): void;
 
   /** Write whatever is waiting. */
   flush(): Promise<void>;

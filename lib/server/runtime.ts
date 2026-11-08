@@ -2,6 +2,7 @@ import type { FloorSource, NudgeEvent, Rule, ToastEvent } from "@/lib/types";
 import type { ReplayEvent } from "@/lib/csv/parse";
 import { type Engine, type EngineOptions, createEngine } from "@/lib/engine/engine";
 import { type IncidentCounter, type IncidentSeq, incidentCounter } from "@/lib/engine/escalation";
+import type { Recorder } from "@/lib/engine/record";
 import { defaultRules } from "@/lib/engine/rules";
 import type { FeedSource } from "@/lib/feed/FeedSource";
 import { CsvReplayFeed, REPLAY_SPEED, type ReplayExtras } from "@/lib/feed/CsvReplayFeed";
@@ -17,7 +18,7 @@ import { genesysToken } from "./tokenStore";
 import { DEFAULT_ORG, type OrgId, orgOf, queueMapFor, queueNamesFor } from "@/lib/orgs";
 import { floorDate, floorSeconds } from "@/lib/floorTime";
 import { env } from "@/lib/env";
-import { bootActiveOrg, bootRules, store } from "./store";
+import { bootActiveOrg, bootIncidentSeq, bootLastInstance, bootRules, store, takeBootFloor } from "./store";
 
 // Server-side home of the rules engine. One live runtime serves the whole floor; a CSV
 // replay gets its own runtime per session so reviewing history never disturbs the live feed.
@@ -131,7 +132,18 @@ export const gencloudConfig = (org: OrgId): GencloudConfig => ({
   directory: cgsDirectory(),
 });
 
-function createGencloud(rules: Rule[], org: OrgId, incidents: IncidentCounter): Runtime {
+/** Keeps a Genesys floor's call-outs, incidents, strikes and shifts in the store. `day` is the floor date they belong to. */
+function recorderFor(org: OrgId, day: () => string): Recorder {
+  return {
+    fired: (rec, x) => store().instanceFired(org, day(), rec, { ...x, at: new Date() }),
+    acked: (recs, by, via) => store().instancesAcked(recs.map(r => r.n), by, via, new Date()),
+    commented: r => store().instanceCommented(r.n, r.cmt ?? "", new Date()),
+    incidentMoved: (i, action, by) => store().incidentMoved(i, action, by, new Date()),
+    floorFired: keys => store().floorFiredChanged(org, day(), keys),
+  };
+}
+
+function createGencloud(rules: Rule[], org: OrgId, incidents: IncidentCounter, ids: { n: number }): Runtime {
   // The shift clock reads the floor's time (US Eastern), not the server's.
   const t = floorSeconds(new Date());
   let day = floorDate(new Date());
@@ -139,16 +151,21 @@ function createGencloud(rules: Rule[], org: OrgId, incidents: IncidentCounter): 
   const rollover = (engine: Engine) => {
     const now = new Date();
     const today = floorDate(now);
-    if (today !== day) { day = today; engine.newDay(floorSeconds(now)); }
+    if (today !== day) { day = today; engine.newDay(floorSeconds(now)); store().shiftStarted(org, day); }
   };
-  const rt = createRuntime("live", rules, 1, { incidents, mapping: mappingFor(org) }, () => remembering(new GencloudFeed(gencloudConfig(org)), org), engine => {
+  const record = recorderFor(org, () => day);
+  const rt = createRuntime("live", rules, 1, { incidents, ids, record, mapping: mappingFor(org) }, () => remembering(new GencloudFeed(gencloudConfig(org)), org), engine => {
     engine.reset({ t });
+    // After a restart, carry on from what was saved: call-outs, incidents, today's strikes and the rules in breach.
+    const saved = takeBootFloor(org);
+    if (saved) engine.restore(saved, day);
+    store().shiftStarted(org, day);
     // Loading the roster takes minutes for hundreds of queues: start from the one saved last
     // time, everyone Offline until their state arrives. The feed marks the floor as loading.
     // A file saved before agents had Genesys IDs is skipped: the live roster replaces it.
-    const saved = loadRoster(org);
-    if (saved && saved.agents.every(a => a.uid)) {
-      engine.ingest.onRoster({ org: saved.org, agents: saved.agents.map(a => ({ ...a, uid: a.uid!, state: "off" })), members: saved.members, people: saved.people });
+    const roster = loadRoster(org);
+    if (roster && roster.agents.every(a => a.uid)) {
+      engine.ingest.onRoster({ org: roster.org, agents: roster.agents.map(a => ({ ...a, uid: a.uid!, state: "off" })), members: roster.members, people: roster.people });
     }
   }, rollover);
   return { ...rt, genesysOrg: org };
@@ -198,18 +215,22 @@ interface Registry {
   watchers: Set<() => void>;
   /** The last incident number handed out, and its year. One counter for every org's floor, so numbers never repeat. */
   incidentSeq: IncidentSeq;
+  /** The last call-out number the Genesys floors handed out: the saved call-outs' IDs, so one counter for every org. */
+  instanceSeq: { n: number };
 }
 const g = globalThis as typeof globalThis & { __rtmRegistry?: Registry };
 const registry: Registry = (g.__rtmRegistry ??= {
   // The rules the store loaded at start-up; the defaults outside a server (unit tests).
   rules: bootRules() ?? defaultRules(), source: env().NEXT_PUBLIC_FEED === "sim" ? "sim" : "gencloud", org: bootActiveOrg() ?? DEFAULT_ORG,
-  floors: {}, orgs: {}, replays: new Map(), watchers: new Set(), incidentSeq: { year: 0, n: 0 },
+  // Both counters carry on from the database after a restart.
+  floors: {}, orgs: {}, replays: new Map(), watchers: new Set(), incidentSeq: { ...(bootIncidentSeq() ?? { year: 0, n: 0 }) }, instanceSeq: { n: bootLastInstance() },
 });
 // A registry from before there were several orgs (a dev reload) gets the new fields.
 registry.org ??= bootActiveOrg() ?? DEFAULT_ORG;
 registry.orgs ??= {};
 // A registry from before numbers carried their year (a dev reload) held a plain count.
 if (typeof registry.incidentSeq !== "object" || registry.incidentSeq === null) registry.incidentSeq = { year: 0, n: 0 };
+registry.instanceSeq ??= { n: bootLastInstance() };
 const sharedIncidents: IncidentCounter = incidentCounter(registry.incidentSeq);
 
 /** The floor on screen, if it is running. */
@@ -227,10 +248,11 @@ export function liveRuntime(): Runtime {
   if (running) return running;
   const rt = registry.source === "sim"
     ? (registry.floors.sim = createSim(registry.rules, realSeed()))
-    : (registry.orgs[registry.org] = createGencloud(registry.rules, registry.org, sharedIncidents));
+    : (registry.orgs[registry.org] = createGencloud(registry.rules, registry.org, sharedIncidents, registry.instanceSeq));
   // Desktop alerts reach people who have no stream open (browser minimized or closed).
   // Only the floor on screen alerts: the other orgs, and Gencloud behind a simulation, keep running quietly.
-  rt.subscribe(batch => { if (onScreen() === rt) pushBatch(rt.engine.S, batch); });
+  // A Genesys floor's alerts are logged; the simulator's call-outs are not saved, so neither are its alerts.
+  rt.subscribe(batch => { if (onScreen() === rt) pushBatch(rt.engine.S, batch, !!rt.genesysOrg); });
   return rt;
 }
 

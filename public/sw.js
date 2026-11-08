@@ -52,7 +52,7 @@ self.addEventListener("notificationclick", e => {
   e.notification.close();
   e.waitUntil((async () => {
     if (e.action === "ack") {
-      const res = await fetch(`/api/instances/${note.n}/ack`, { method: "POST" }).catch(() => null);
+      const res = await fetch(`/api/instances/${note.n}/ack?via=push`, { method: "POST" }).catch(() => null);
       if (res?.ok) return;
       // Not acknowledged (signed out, or the server is away): open the console instead.
     }

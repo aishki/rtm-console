@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { type Kysely, type Transaction, sql } from "kysely";
 import type { DB } from "@/lib/db/schema";
 import { defaultRules } from "@/lib/engine/rules";
@@ -7,10 +6,13 @@ import { domainIdOf } from "@/lib/engine/format";
 import type { QueueMapRow } from "@/lib/import/queueMap";
 import { ORGS, type OrgId, isOrgId } from "@/lib/orgs";
 import { queueKey } from "@/lib/queueStats";
-import type { Place, Role, Rule, RuleId, RuleOverride } from "@/lib/types";
+import type { Incident, Instance, InvAction, Place, Role, Rule, RuleId, RuleOverride } from "@/lib/types";
+import type { AckVia } from "@/lib/engine/record";
+import { floorDate } from "@/lib/floorTime";
 import { loadActiveOrg } from "@/lib/server/tokenStore";
 import { readQueueMapFile } from "./files";
-import type { RosterNames, SavedSubscription, Store } from "./store";
+import { hashOf, readCounters, readFloors, shiftFor, writeAcked, writeComment, writeFired, writeFloorFired, writeIncidentMove, writeNotifications } from "./floor";
+import type { FiredInfo, NotificationSent, RosterNames, SavedSubscription, Store } from "./store";
 
 /** Edits to one rule by one person within this long become one version, so typing a threshold is not a version per keystroke. */
 export const FOLD_MS = 2000;
@@ -29,10 +31,16 @@ type Pending =
   | { kind: "sub"; s: SavedSubscription }
   | { kind: "unsub"; endpoint: string }
   | { kind: "delivered"; endpoints: Set<string> }
-  | { kind: "org"; org: OrgId };
+  | { kind: "org"; org: OrgId }
+  | { kind: "shift"; org: OrgId; date: string }
+  | { kind: "fired"; org: OrgId; date: string; rec: Instance; x: FiredInfo }
+  | { kind: "acked"; ns: number[]; by: string | null; via: AckVia; at: Date }
+  | { kind: "comment"; n: number; text: string; at: Date }
+  | { kind: "incident"; i: Incident; action: InvAction; by: string | null; at: Date }
+  | { kind: "floorFired"; org: OrgId; date: string; keys: string[] }
+  | { kind: "notes"; rows: NotificationSent[] };
 
 const settingsOf = (r: Rule): Settings => ({ thr: r.thr, unit: r.unit, sev: r.sev, route: r.route, on: r.on });
-const hashOf = (endpoint: string) => createHash("sha256").update(endpoint).digest("hex");
 const chunks = <T>(xs: T[]): T[][] => Array.from({ length: Math.ceil(xs.length / CHUNK) }, (_, i) => xs.slice(i * CHUNK, (i + 1) * CHUNK));
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
 /** The org a queue map row's Org column names, as queueNamesFor() in lib/orgs.ts reads it. */
@@ -309,11 +317,34 @@ export function postgresStore(db: Kysely<DB>, opts: { foldMs?: number; log?: (ms
         // Two statements: the one-on-screen index would refuse a moment with two orgs on screen.
         await tx.updateTable("genesys_org").set({ on_screen: false }).where("on_screen", "=", true).execute();
         await tx.updateTable("genesys_org").set({ on_screen: true }).where("org_id", "=", e.org).execute();
+        return;
       }
+      case "shift": { await shiftFor(tx, e.org, e.date); return; }
+      case "fired": return writeFired(tx, e.org, e.date, e.rec, e.x);
+      case "acked": return writeAcked(tx, e.ns, e.by, e.via, e.at);
+      case "comment": return writeComment(tx, e.n, e.text, e.at);
+      case "incident": return writeIncidentMove(tx, e.i, e.action, e.by, e.at);
+      case "floorFired": return writeFloorFired(tx, e.org, e.date, e.keys);
+      case "notes": return writeNotifications(tx, e.rows);
     }
   });
 
-  const describe = (e: Pending) => (e.kind === "rule" ? "rule changes" : e.kind === "override" ? "rule overrides" : e.kind === "roster" ? `the ${e.org} roster` : e.kind === "org" ? "the org on screen" : "desktop alert subscriptions");
+  const describe = (e: Pending): string => {
+    switch (e.kind) {
+      case "rule": return "rule changes";
+      case "override": return "rule overrides";
+      case "roster": return `the ${e.org} roster`;
+      case "org": return "the org on screen";
+      case "shift": return `the ${e.org} shift for ${e.date}`;
+      case "fired": return `call-out ${e.rec.n}`;
+      case "acked": return "acknowledgements";
+      case "comment": return `the reason on call-out ${e.n}`;
+      case "incident": return `incident ${e.i.inc}`;
+      case "floorFired": return "the queue rules in breach";
+      case "notes": return "desktop alert deliveries";
+      default: return "desktop alert subscriptions";
+    }
+  };
 
   function flush(): Promise<void> {
     clearTimeout(timer);
@@ -395,7 +426,7 @@ export function postgresStore(db: Kysely<DB>, opts: { foldMs?: number; log?: (ms
       const subs = await db.selectFrom("push_subscription").select(["endpoint", "p256dh", "auth", "person_id", "role", "user_agent"]).execute();
       const shown = await db.selectFrom("genesys_org").select("org_id").where("on_screen", "=", true).executeTakeFirst();
       return {
-        queueMap, rosters,
+        queueMap, rosters, floors: await readFloors(db, floorDate(new Date())), ...(await readCounters(db)),
         subscriptions: subs.map(s => ({ sub: { endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } }, view: { role: s.role as Role, who: s.person_id }, ...(s.user_agent !== null && { userAgent: s.user_agent }) })),
         // Before the database knew it, the org on screen was in .rtm/genesys-org.
         ...(shown && isOrgId(shown.org_id) ? { activeOrg: shown.org_id } : opts.importDir !== null ? { activeOrg: loadActiveOrg(opts.importDir) } : {}),
@@ -422,6 +453,25 @@ export function postgresStore(db: Kysely<DB>, opts: { foldMs?: number; log?: (ms
     },
     subscriptionRemoved(endpoint) { enqueue({ kind: "unsub", endpoint }); },
     activeOrgChanged(org) { enqueue({ kind: "org", org }); },
+
+    shiftStarted(org, date) { enqueue({ kind: "shift", org, date }); },
+    // The engine hands over its own objects, which change later: each write keeps a copy as it was.
+    instanceFired(org, date, rec, x) { enqueue({ kind: "fired", org, date, rec: { ...rec }, x: { ...x, incident: x.incident && { ...x.incident } } }); },
+    instancesAcked(ns, by, via, at) { enqueue({ kind: "acked", ns: [...ns], by, via, at }); },
+    instanceCommented(n, text, at) { enqueue({ kind: "comment", n, text, at }); },
+    incidentMoved(i, action, by, at) { enqueue({ kind: "incident", i: { ...i }, action, by, at }); },
+    floorFiredChanged(org, date, keys) {
+      // Only the latest matters: one still waiting for the same org and day is replaced where it stands.
+      const waiting = queue.findIndex(e => e !== inFlight && e.kind === "floorFired" && e.org === org && e.date === date);
+      if (waiting >= 0) queue[waiting] = { kind: "floorFired", org, date, keys: [...keys] };
+      else enqueue({ kind: "floorFired", org, date, keys: [...keys] });
+    },
+    notificationSent(n) {
+      // Many go out at once: they gather in one waiting write.
+      const waiting = queue.find((e): e is Extract<Pending, { kind: "notes" }> => e !== inFlight && e.kind === "notes");
+      if (waiting) waiting.rows.push(n);
+      else enqueue({ kind: "notes", rows: [n] }, 5000);
+    },
 
     flush,
 
