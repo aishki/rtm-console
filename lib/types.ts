@@ -114,6 +114,8 @@ export interface RosterAgent {
   /** See Agent.uid. */
   uid: string;
   name: string; team: string; state: AgentState; stTime?: number; aht?: number; calls?: number; adh?: number;
+  /** ISO time of the account's last Genesys login, when the feed has it. */
+  lastLogin?: string;
 }
 export interface Roster {
   org: Team[]; agents: RosterAgent[];
@@ -121,6 +123,8 @@ export interface Roster {
   members?: Record<string, string[]>;
   /** The reporting lines: the agents and the leaders above them. Left out when the feed has none yet. */
   people?: OrgPerson[];
+  /** The watched queues with their Genesys IDs, in roster order. Only the Gencloud feed has them. */
+  queues?: { id: string; name: string; division?: string }[];
 }
 /** An agent's figures for the day from the feed's own reporting. */
 export interface AgentStats {

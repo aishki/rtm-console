@@ -3,7 +3,9 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { QueueMapRow } from "@/lib/import/queueMap";
-import { loadQueueMap, queueMapRev, saveQueueMap } from "./queueMapStore";
+import { readQueueMapFile as loadQueueMap, writeQueueMapFile } from "@/lib/store/files";
+import { memoryStore } from "@/lib/store/memory";
+import { firstPerQueue, queueMapRev, saveQueueMap } from "./queueMapStore";
 
 const ROWS: QueueMapRow[] = [
   { tower: "Voice", subTower: "Billing", lob: "Cards", queue: "CARDS_EN" },
@@ -20,15 +22,21 @@ describe("queue map store", () => {
   });
 
   it("round-trips what was saved", () => {
-    saveQueueMap(ROWS, dir);
+    writeQueueMapFile(ROWS, dir);
     expect(loadQueueMap(dir)).toEqual(ROWS);
   });
 
-  it("bumps the rev on every save", () => {
+  it("bumps the rev on every save, and saves through the store", async () => {
     const before = queueMapRev();
-    saveQueueMap(ROWS, dir);
-    saveQueueMap([], dir);
+    await saveQueueMap(ROWS, null, memoryStore({ dir }));
+    expect(loadQueueMap(dir)).toEqual(ROWS);
+    await saveQueueMap([], null, memoryStore({ dir }));
     expect(queueMapRev()).toBe(before + 2);
+  });
+
+  it("keeps the first row for a queue named twice", () => {
+    const again = { tower: "Chat", subTower: "Care", lob: "Loans", queue: " cards_en " };
+    expect(firstPerQueue([...ROWS, again])).toEqual(ROWS);
   });
 
   it("drops malformed rows on load", () => {
@@ -44,8 +52,8 @@ describe("queue map store", () => {
   });
 
   it("writes through a temp file, leaving only the mapping behind", () => {
-    saveQueueMap(ROWS, dir);
-    saveQueueMap(ROWS, dir);
+    writeQueueMapFile(ROWS, dir);
+    writeQueueMapFile(ROWS, dir);
     expect(readdirSync(dir)).toEqual(["queue-map.json"]);
   });
 

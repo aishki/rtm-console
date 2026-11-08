@@ -5,6 +5,7 @@ import type { EngineState } from "@/lib/engine/escalation";
 import { inScope } from "@/lib/engine/scope";
 import { env } from "@/lib/env";
 import type { Batch } from "./runtime";
+import { bootSubscriptions, store } from "./store";
 
 // Web Push: delivers nudges and escalations as system notifications, including to people
 // whose browser is minimized or closed. Each browser registers a subscription for the
@@ -24,10 +25,11 @@ const TTL_SECONDS = 60;
 const PUSH_HOSTS = [".googleapis.com", ".notify.windows.com", ".push.services.mozilla.com", ".push.apple.com"];
 
 interface Entry { sub: PushSubscription; view: View }
-// TODO(DB): subscriptions live in memory, so a restart drops them until each person reopens the console.
+// Kept by the store (push_subscription with PostgreSQL), so a restart keeps everyone's alerts.
 // TODO(SSO): `view` is the "View as" person; bind subscriptions to the signed-in user instead.
 const g = globalThis as typeof globalThis & { __rtmPushSubs?: Map<string, Entry> };
-const subs = (g.__rtmPushSubs ??= new Map());
+/** Read from what the store loaded at start-up the first time it is needed. */
+const subs = (): Map<string, Entry> => (g.__rtmPushSubs ??= new Map(bootSubscriptions().map(e => [e.sub.endpoint, e])));
 
 export function parseSubscription(x: unknown): PushSubscription | null {
   const s = x as { endpoint?: unknown; keys?: { p256dh?: unknown; auth?: unknown } } | null;
@@ -39,25 +41,40 @@ export function parseSubscription(x: unknown): PushSubscription | null {
 }
 
 /** One entry per browser: re-registering moves the browser to the person now using it. */
-export function saveSubscription(view: View, sub: PushSubscription): void {
-  subs.set(sub.endpoint, { sub, view });
+export function saveSubscription(view: View, sub: PushSubscription, userAgent?: string): void {
+  const entry = {
+    sub: { endpoint: sub.endpoint, keys: { p256dh: sub.keys.p256dh, auth: sub.keys.auth } }, view: { role: view.role, who: view.who },
+    ...(userAgent && { userAgent: userAgent.slice(0, 300) }),
+  };
+  subs().set(sub.endpoint, entry);
+  store().subscriptionSaved(entry);
 }
 
 export function removeSubscription(endpoint: string): void {
-  subs.delete(endpoint);
+  if (subs().delete(endpoint)) store().subscriptionRemoved(endpoint);
+}
+
+/** Each browser's last recorded delivery, so a busy floor records at most one every few minutes per browser. */
+const lastNoted = new Map<string, number>();
+const NOTE_EVERY_MS = 5 * 60_000;
+function delivered(endpoint: string): void {
+  const now = Date.now();
+  if (now - (lastNoted.get(endpoint) ?? 0) < NOTE_EVERY_MS) return;
+  lastNoted.set(endpoint, now);
+  store().subscriptionDelivered(endpoint);
 }
 
 function send(sub: PushSubscription, note: AlertNote): void {
-  webpush.sendNotification(sub, JSON.stringify(note), { TTL: TTL_SECONDS, urgency: "high" }).catch((e: { statusCode?: number }) => {
+  webpush.sendNotification(sub, JSON.stringify(note), { TTL: TTL_SECONDS, urgency: "high" }).then(() => delivered(sub.endpoint)).catch((e: { statusCode?: number }) => {
     // The browser unsubscribed or the subscription expired.
-    if (e.statusCode === 404 || e.statusCode === 410) subs.delete(sub.endpoint);
+    if (e.statusCode === 404 || e.statusCode === 410) removeSubscription(sub.endpoint);
   });
 }
 
 /** Push what the live floor just raised to every subscriber it is in scope for. */
 export function pushBatch(S: EngineState, batch: Batch): void {
-  if (!pushKey || !subs.size || (!batch.nudges.length && !batch.toasts.length)) return;
-  for (const { sub, view } of subs.values()) {
+  if (!pushKey || !subs().size || (!batch.nudges.length && !batch.toasts.length)) return;
+  for (const { sub, view } of subs().values()) {
     const notes = alertsFor(
       view.role,
       // The same nudges the stream sends: an agent's own, none for leaders.

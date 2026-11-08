@@ -1,50 +1,35 @@
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import path from "node:path";
 import type { QueueMapRow } from "@/lib/import/queueMap";
+import { queueKey } from "@/lib/queueStats";
+import { readQueueMapFile } from "@/lib/store/files";
+import type { Store } from "@/lib/store/store";
+import { bootQueueMap, store } from "./store";
 
-// The WFM queue-to-LOB mapping an admin uploaded, kept on this machine in .rtm/ (gitignored).
-// The rows are cached on globalThis so a dev reload keeps them. `dir` points the store
-// somewhere else (tests) and bypasses that cache.
+// The WFM queue-to-LOB mapping an admin uploaded. With PostgreSQL it lives in queue_lob_map (and
+// the tower, sub_tower and lob tables); without, in .rtm/queue-map.json (gitignored). The rows are
+// cached on globalThis so a dev reload keeps them.
 
-interface Store { rows?: QueueMapRow[]; rev: number }
-const g = globalThis as typeof globalThis & { __rtmQueueMap?: Store };
-const store: Store = (g.__rtmQueueMap ??= { rev: 1 });
+interface Cache { rows?: QueueMapRow[]; rev: number }
+const g = globalThis as typeof globalThis & { __rtmQueueMap?: Cache };
+const cache: Cache = (g.__rtmQueueMap ??= { rev: 1 });
 
-// turbopackIgnore: read at run time only. The build must not trace .rtm/, whose files can be unreadable to the user who builds.
-const DEFAULT_DIR = () => path.join(/* turbopackIgnore: true */ process.cwd(), ".rtm");
-const fileIn = (dir: string) => path.join(dir, "queue-map.json");
-
-const filled = (v: unknown) => typeof v === "string" && v !== "";
-const optional = (v: unknown) => v === undefined || typeof v === "string";
-/** A row the tree can place: tower, sub-tower, LOB and queue filled in; region and org text if present. */
-function isRow(x: unknown): x is QueueMapRow {
-  if (typeof x !== "object" || x === null) return false;
-  const r = x as Record<string, unknown>;
-  return filled(r.tower) && filled(r.subTower) && filled(r.lob) && filled(r.queue) && optional(r.region) && optional(r.org);
+/** One row per queue: where two rows name the same queue, the first wins, as in the upload. */
+export function firstPerQueue(rows: QueueMapRow[]): QueueMapRow[] {
+  const seen = new Set<string>();
+  return rows.filter(r => { const k = queueKey(r.queue); if (seen.has(k)) return false; seen.add(k); return true; });
 }
 
-function readRows(dir: string): QueueMapRow[] {
-  try {
-    const x: unknown = JSON.parse(readFileSync(fileIn(dir), "utf8"));
-    return Array.isArray(x) ? x.filter(isRow) : [];
-  } catch { return []; }
+/** The mapping: as the store loaded it at start-up, then as last saved. */
+export function loadQueueMap(): QueueMapRow[] {
+  return (cache.rows ??= bootQueueMap() ?? readQueueMapFile());
 }
 
-export function loadQueueMap(dir?: string): QueueMapRow[] {
-  if (dir) return readRows(dir);
-  return (store.rows ??= readRows(DEFAULT_DIR()));
-}
-
-export function saveQueueMap(rows: QueueMapRow[], dir?: string): void {
-  const target = dir ?? DEFAULT_DIR();
-  mkdirSync(target, { recursive: true });
-  // Written beside the mapping and renamed over it, so a crash mid-write never leaves half a file.
-  const temp = `${fileIn(target)}.${process.pid}.tmp`;
-  writeFileSync(temp, JSON.stringify(rows));
-  renameSync(temp, fileIn(target));
-  if (!dir) store.rows = rows;
-  store.rev++;
+/** Save the whole mapping. Resolves once it is kept; throws, keeping the old mapping, when it could not be. */
+export async function saveQueueMap(rows: QueueMapRow[], by: string | null = null, s: Store = store()): Promise<void> {
+  const one = firstPerQueue(rows);
+  await s.saveQueueMap(one, by);
+  cache.rows = one;
+  cache.rev++;
 }
 
 /** Starts at 1 and goes up on every save, so readers can tell when the mapping changed. */
-export const queueMapRev = (): number => store.rev;
+export const queueMapRev = (): number => cache.rev;

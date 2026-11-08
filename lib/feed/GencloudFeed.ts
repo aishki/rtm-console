@@ -210,7 +210,7 @@ export class GencloudFeed implements FeedSource {
 
     /** Load the roster and open the presence/routing WebSocket. Runs in the background; a
      *  failure here is logged and never stops the queue poll. */
-    const loadRosterAndSubscribe = async (queues: { id: string; name: string }[]): Promise<void> => {
+    const loadRosterAndSubscribe = async (queues: { id: string; name: string; division?: { name: string } }[]): Promise<void> => {
       try {
         const allMembers = await fetchAllMembers(queues);
         if (stopped) return;
@@ -241,7 +241,7 @@ export class GencloudFeed implements FeedSource {
         const stale = people(activeByQueue) - people(membersByQueue);
         if (stale > 0) console.info(`GencloudFeed: left ${stale} accounts with no login in ${LAST_LOGIN_DAYS} days out of the roster`);
         const { org, agents, idToName, members } = buildRoster(queues, membersByQueue);
-        handlers.onRoster({ org, agents, members });
+        handlers.onRoster({ org, agents, members, queues: queues.map(({ id, name, division }) => ({ id, name, ...(division && { division: division.name }) })) });
         void loadLines(agents);
         if (Object.keys(idToName).length === 0) {
           console.warn("GencloudFeed: roster is empty (no queue members loaded)");

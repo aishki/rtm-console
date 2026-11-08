@@ -39,7 +39,7 @@ export function recentMembers(
 
 export function buildRoster(
   queues: { id: string; name: string }[],
-  membersByQueue: Record<string, { id: string; name: string }[]>,
+  membersByQueue: Record<string, { id: string; name: string; lastLogin?: string }[]>,
 ): { org: Team[]; agents: RosterAgent[]; idToName: Record<string, string>; members: Record<string, string[]> } {
   const org: Team[] = [];
   const agents: RosterAgent[] = [];
@@ -55,7 +55,7 @@ export function buildRoster(
       if (seen.has(m.id)) continue;
       seen.add(m.id);
       idToName[m.id] = m.name;
-      agents.push({ uid: m.id, name: m.name, team: q.name, state: "off" });
+      agents.push({ uid: m.id, name: m.name, team: q.name, state: "off", ...(m.lastLogin && { lastLogin: m.lastLogin }) });
     }
   }
   return { org, agents, idToName, members };

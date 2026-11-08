@@ -28,7 +28,10 @@ export async function POST(req: Request) {
 
   const before = new Set(loadQueueMap().map(r => queueKey(r.queue)));
   const merged = mergeQueueMap(loadQueueMap(), parsed.rows);
-  saveQueueMap(merged);
+  try { await saveQueueMap(merged, ctx.view.who); } catch (e) {
+    console.error("Saving the queue map failed:", e instanceof Error ? e.message : e);
+    return deny(503, "The mapping could not be saved. Nothing was changed; try again.");
+  }
 
   const mapped = new Set(merged.map(r => queueKey(r.queue)));
   if (mapped.size !== before.size || [...mapped].some(q => !before.has(q))) restartGencloud();

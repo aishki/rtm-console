@@ -43,6 +43,7 @@ export interface GenesysOrg {
   genesys_org_id: string | null;
   name: string;
   oauth_client_id: string | null;
+  on_screen: Generated<boolean>;
   org_id: string;
   region_id: string;
   view_config_id: string | null;
@@ -53,6 +54,13 @@ export interface GenesysRegion {
   login_host: string;
   name: string;
   region_id: string;
+}
+
+export interface Lob {
+  created_at: Generated<Timestamp>;
+  lob_id: Generated<number>;
+  name: string;
+  sub_tower_id: number;
 }
 
 export interface NotificationRoute {
@@ -73,6 +81,63 @@ export interface NotificationRouteStep {
   route_id: string;
   stage: string;
   step_no: number;
+}
+
+export interface Person {
+  active: Generated<boolean>;
+  domain_id: string | null;
+  first_seen: Generated<Timestamp>;
+  last_login_at: Timestamp | null;
+  last_seen: Generated<Timestamp>;
+  lines_at: Timestamp | null;
+  lob_id: number | null;
+  name: string;
+  org_id: string;
+  person_id: string;
+  roster_pos: number | null;
+  supervisor_id: string | null;
+}
+
+export interface PushSubscription {
+  auth: string;
+  created_at: Generated<Timestamp>;
+  endpoint: string;
+  endpoint_hash: string;
+  last_success_at: Timestamp | null;
+  p256dh: string;
+  person_id: string | null;
+  role: string;
+  updated_at: Generated<Timestamp>;
+  user_agent: string | null;
+}
+
+export interface Queue {
+  division: string | null;
+  first_seen: Generated<Timestamp>;
+  last_seen: Generated<Timestamp>;
+  name: string;
+  name_key: string;
+  org_id: string;
+  position: number | null;
+  queue_id: string;
+  watched: Generated<boolean>;
+}
+
+export interface QueueLobMap {
+  lob_id: number;
+  org_id: string | null;
+  org_name: string | null;
+  position: number;
+  queue_key: string;
+  queue_name: string;
+  region: string | null;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface QueueMember {
+  person_id: string;
+  position: number;
+  queue_id: string;
 }
 
 export interface RulesMaster {
@@ -110,13 +175,34 @@ export interface StatusMapping {
   updated_by: string | null;
 }
 
+export interface SubTower {
+  created_at: Generated<Timestamp>;
+  name: string;
+  sub_tower_id: Generated<number>;
+  tower_id: number;
+}
+
+export interface Tower {
+  created_at: Generated<Timestamp>;
+  name: string;
+  tower_id: Generated<number>;
+}
+
 export interface DB {
   audit_event: AuditEvent;
   genesys_org: GenesysOrg;
   genesys_region: GenesysRegion;
+  lob: Lob;
   notification_route: NotificationRoute;
   notification_route_step: NotificationRouteStep;
+  person: Person;
+  push_subscription: PushSubscription;
+  queue: Queue;
+  queue_lob_map: QueueLobMap;
+  queue_member: QueueMember;
   rule_version: RuleVersion;
   rules_master: RulesMaster;
   status_mapping: StatusMapping;
+  sub_tower: SubTower;
+  tower: Tower;
 }
