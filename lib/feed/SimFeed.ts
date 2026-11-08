@@ -1,6 +1,7 @@
 import { rollUp } from "@/lib/queueStats";
 import type { AgentState, AgentStateEvent, Instance, Queue, QueueCounts, RuleId, Team } from "@/lib/types";
 import type { FeedHandlers, FeedSource } from "./FeedSource";
+import { teamLines } from "./teamLines";
 
 // Stand-in for the Gencloud feed so the console moves without a live floor: organic state
 // changes, a drifting queue, a few repeat offenders and one feed outage. It runs, in dev and
@@ -149,7 +150,8 @@ export class SimFeed implements FeedSource {
       calls: Math.floor(this.rnd() * 8), adh: 93 + Math.floor(this.rnd() * 7),
     }));
     this.agents = roster.map(a => ({ uid: a.uid, name: a.name, team: a.team, state: a.state, stTime: a.stTime, onHold: false, holdTime: 0, rogue: null }));
-    handlers.onRoster({ org, agents: roster });
+    // Each team's agents report to its Team Lead, and the Team Lead to the team's Manager.
+    handlers.onRoster({ org, agents: roster, people: teamLines(org, roster, "sim:") });
     return () => { this.h = null; };
   }
 

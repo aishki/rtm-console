@@ -8,7 +8,9 @@ import { CsvReplayFeed, REPLAY_SPEED, type ReplayExtras } from "@/lib/feed/CsvRe
 import { type GencloudConfig, GencloudFeed } from "@/lib/feed/GencloudFeed";
 import { type SimSeed, SimFeed, seedFromRoster, simulateReplies } from "@/lib/feed/SimFeed";
 import { pushBatch } from "./push";
-import { loadRoster, saveRoster } from "./rosterCache";
+import { loadRoster, savePeople, saveRoster } from "./rosterCache";
+import { fileManagerCache } from "./cgsManagerCache";
+import { cgsManagerLookup } from "@/lib/directory/cgsManagers";
 import { loadQueueMap } from "./queueMapStore";
 import { genesysToken, loadActiveOrg, saveActiveOrg } from "./tokenStore";
 import { type OrgId, orgOf, queueNamesFor } from "@/lib/orgs";
@@ -83,8 +85,25 @@ function createRuntime(kind: Runtime["kind"], rules: Rule[], speed: number, engi
 /** Keeps the org's real roster on disk, so its floor starts from it next time and the simulator can use its names. */
 const remembering = (feed: FeedSource, org: OrgId): FeedSource => ({
   kind: feed.kind,
-  subscribe: h => feed.subscribe({ ...h, onRoster(r) { saveRoster(r, org); h.onRoster(r); } }),
+  subscribe: h => feed.subscribe({
+    ...h,
+    onRoster(r) { saveRoster(r, org); h.onRoster(r); },
+    onPeople(p) { savePeople(p, org); h.onPeople?.(p); },
+  }),
 });
+
+let directory: GencloudConfig["directory"] | null | undefined;
+/** The CGS directory, set up once: one cache and one request pace for every org's feed. Undefined without CGS_AUTH_API_KEY. */
+function cgsDirectory(): GencloudConfig["directory"] {
+  if (directory === undefined) {
+    const apiKey = env().CGS_AUTH_API_KEY;
+    const cache = apiKey ? fileManagerCache() : null;
+    directory = apiKey && cache
+      ? { managerOf: cgsManagerLookup({ baseUrl: env().CGS_AUTH_BASE_URL, apiKey, cache, warn: m => console.warn(m) }), done: () => cache.flush() }
+      : null;
+  }
+  return directory ?? undefined;
+}
 
 /** Where an org's API is. GENCLOUD_API_BASE can still move Commercial's. */
 export const orgApiBase = (org: OrgId): string => (org === "commercial" && env().GENCLOUD_API_BASE) || orgOf(org).apiBase;
@@ -98,6 +117,7 @@ export const gencloudConfig = (org: OrgId): GencloudConfig => ({
   viewConfigId: org === "commercial" ? env().RTM_VIEW_CONFIG_ID : "",
   getQueueNames: () => queueNamesFor(loadQueueMap(), org),
   clientId: env().GENCLOUD_CLIENT_ID, clientSecret: env().GENCLOUD_CLIENT_SECRET,
+  directory: cgsDirectory(),
 });
 
 function createGencloud(rules: Rule[], org: OrgId, incidents: IncidentCounter): Runtime {
@@ -117,7 +137,7 @@ function createGencloud(rules: Rule[], org: OrgId, incidents: IncidentCounter): 
     // A file saved before agents had Genesys IDs is skipped: the live roster replaces it.
     const saved = loadRoster(org);
     if (saved && saved.agents.every(a => a.uid)) {
-      engine.ingest.onRoster({ org: saved.org, agents: saved.agents.map(a => ({ ...a, uid: a.uid!, state: "off" })), members: saved.members });
+      engine.ingest.onRoster({ org: saved.org, agents: saved.agents.map(a => ({ ...a, uid: a.uid!, state: "off" })), members: saved.members, people: saved.people });
     }
   }, rollover);
   return { ...rt, genesysOrg: org };

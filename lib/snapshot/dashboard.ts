@@ -1,16 +1,22 @@
 import type { FeedKind, Incident, Instance, Role, View } from "@/lib/types";
 import type { EngineState } from "@/lib/engine/escalation";
 import { ROLE_LABEL } from "@/lib/engine/rules";
-import { PERMS, scopeAgents, scopeIncidents, scopeLedger, scopeTeams, viewerName } from "@/lib/engine/scope";
+import { PERMS, leadersOf, scopeAgents, scopeIncidents, scopeLedger, viewerName } from "@/lib/engine/scope";
+import { agentQueues, byLead, leadNames } from "@/lib/engine/leadRows";
 import { wallClock } from "@/lib/floorTime";
 
 // The Dashboards screen saved as one self-contained HTML file: the viewer's scoped data is
 // frozen inside it, and a small script redraws the tiles, charts and tables as the reader
 // filters and sorts. It never calls the console, so nothing in it can change floor data.
 
-export interface SnapshotTeam { team: string; tl: string; mgr: string; agents: number }
-export type SnapshotCallout = Pick<Instance, "t" | "agent" | "team" | "rule" | "stage" | "ackT"> & { floor: boolean };
-export type SnapshotIncident = Pick<Incident, "inc" | "t" | "agent" | "team" | "rule" | "instances" | "status" | "disposition" | "closedT">;
+/** A Team Lead in the viewer's span: how many of their agents it holds, and how many sit in each queue. */
+export interface SnapshotLead { tl: string; mgr: string; agents: number; queues: Record<string, number> }
+/**
+ * `tl` is the agent's Team Lead as shown in the table, "" on a floor call-out. `a` is the agent's
+ * place in `agentQueues`, -1 on a floor call-out.
+ */
+export type SnapshotCallout = Pick<Instance, "t" | "agent" | "team" | "rule" | "stage" | "ackT"> & { floor: boolean; tl: string; a: number };
+export type SnapshotIncident = Pick<Incident, "inc" | "t" | "agent" | "team" | "rule" | "instances" | "status" | "disposition" | "closedT"> & { tl: string; a: number };
 
 export interface DashboardSnapshot {
   /** When the snapshot was taken, as an ISO timestamp. */
@@ -23,7 +29,11 @@ export interface DashboardSnapshot {
   /** Set when the activity is not real floor activity; shown as a banner. */
   notice: string;
   canExport: boolean;
-  teams: SnapshotTeam[];
+  leads: SnapshotLead[];
+  /** Queue names, sorted; `agentQueues` points into it. */
+  queues: string[];
+  /** Each agent's queues, as places in `queues`. Rows point here with `a`. */
+  agentQueues: number[][];
   ledger: SnapshotCallout[];
   incidents: SnapshotIncident[];
 }
@@ -38,17 +48,32 @@ const UNNAMED: Partial<Record<Role, string>> = { admin: "WFM Admin", senior: "Se
 /** What the viewer's Dashboards screen shows right now, scoped to their span. */
 export function snapshotData(S: EngineState, view: View, feed: FeedKind, now: Date): DashboardSnapshot {
   const perms = PERMS[view.role];
-  const name = viewerName(view, S.agents);
-  const headcount = new Map<string, number>();
-  for (const a of scopeAgents(S, view)) headcount.set(a.team, (headcount.get(a.team) ?? 0) + 1);
+  const name = viewerName(view, S);
+  const lineOf = (uid: string) => { const l = leadersOf(S.people, uid); return leadNames(l.tl ? { tl: l.tl.name, mgr: l.mgr?.name ?? null } : undefined); };
+  const tlOf = (uid: string | null) => (uid ? lineOf(uid).tl : "");
+  const agents = scopeAgents(S, view);
+  const queuesOf = agentQueues(agents, S.members);
+  const queues = [...new Set([...queuesOf.values()].flat())].sort((a, b) => a.localeCompare(b));
+  const queueAt = new Map(queues.map((q, i) => [q, i]));
+  const agentAt = new Map(agents.map((a, i) => [a.uid, i]));
+  const at = (uid: string | null) => (uid ? agentAt.get(uid) ?? -1 : -1);
+  const leads = new Map<string, SnapshotLead>();
+  for (const a of agents) {
+    const { tl, mgr } = lineOf(a.uid);
+    const row = leads.get(tl) ?? { tl, mgr, agents: 0, queues: {} };
+    row.agents++;
+    for (const q of queuesOf.get(a.uid)!) row.queues[q] = (row.queues[q] ?? 0) + 1;
+    leads.set(tl, row);
+  }
   return {
     takenAt: now.toISOString(), shiftT: S.t,
     viewer: name ?? UNNAMED[view.role] ?? "", role: ROLE_LABEL[view.role], span: perms.desc(name),
     source: SOURCE[feed].label, notice: SOURCE[feed].notice, canExport: perms.export,
-    teams: scopeTeams(S, view).map(t => ({ team: t.team, tl: t.tl, mgr: t.mgr, agents: headcount.get(t.team) ?? 0 })),
-    ledger: scopeLedger(S, view, S.ledger).map(r => ({ t: r.t, agent: r.agent, team: r.team, rule: r.rule, stage: r.stage, ackT: r.ackT, floor: r.isFloor })),
+    leads: [...leads.values()].sort(byLead),
+    queues, agentQueues: agents.map(a => queuesOf.get(a.uid)!.map(q => queueAt.get(q)!)),
+    ledger: scopeLedger(S, view, S.ledger).map(r => ({ t: r.t, agent: r.agent, team: r.team, rule: r.rule, stage: r.stage, ackT: r.ackT, floor: r.isFloor, tl: r.isFloor ? "" : tlOf(r.agentId), a: r.isFloor ? -1 : at(r.agentId) })),
     incidents: scopeIncidents(S, view, S.incidents).map(i => ({
-      inc: i.inc, t: i.t, agent: i.agent, team: i.team, rule: i.rule, instances: i.instances, status: i.status, disposition: i.disposition, closedT: i.closedT,
+      inc: i.inc, t: i.t, agent: i.agent, team: i.team, rule: i.rule, instances: i.instances, status: i.status, disposition: i.disposition, closedT: i.closedT, tl: tlOf(i.agentId), a: at(i.agentId),
     })),
   };
 }
@@ -197,7 +222,8 @@ const BODY = String.raw`<header class="top">
   <div class="notice" id="notice" hidden></div>
   <section class="panel slicers" aria-label="Filters">
     <label class="slicer" id="mgr-slicer">Manager<select class="field" id="f-mgr"></select></label>
-    <label class="slicer" id="team-slicer">Team<select class="field" id="f-team"></select></label>
+    <label class="slicer" id="tl-slicer">Team Lead<select class="field" id="f-tl"></select></label>
+    <label class="slicer" id="queue-slicer">Queue<select class="field" id="f-queue"></select></label>
     <label class="slicer">Rule<select class="field" id="f-rule"></select></label>
     <label class="slicer">Agent<input class="field" id="f-agent" type="search" placeholder="Search by name" autocomplete="off"></label>
     <div class="slicer">Stage<div class="chips" id="f-stages"></div></div>
@@ -223,10 +249,10 @@ const BODY = String.raw`<header class="top">
   </div>
   <div class="panel">
     <div class="panel-head">
-      <h2 class="panel-title">Breakdown by team</h2>
-      <span class="panel-sub">Instances by stage, incidents and top cause. Select a row to filter by that team.</span>
+      <h2 class="panel-title">Breakdown by Team Lead</h2>
+      <span class="panel-sub">Instances by stage, incidents and top cause. Select a row to filter by that Team Lead.</span>
     </div>
-    <div class="scroll" id="teams"></div>
+    <div class="scroll" id="leads"></div>
   </div>
 </main>
 <footer>A frozen copy of the Dashboards screen. Filters and sorting only change what this file shows; nothing here is sent back to the RTM Console.</footer>`;
@@ -241,10 +267,10 @@ const SCRIPT = String.raw`
   var INC_TONE = { Open: ["#FBE3E8", "#B00830"], Investigating: ["#FDF3D7", "#7A5300"], Closed: ["#E5F2E3", "#2F6E29"] };
   var LEVEL = { ok: ["#231E33", "#449E3C"], warn: ["#7A5300", "#F2BC35"], crit: ["#B00830", "#D20A36"], esc: ["#5009B5", "#5009B5"] };
   var F = fresh();
-  var sorts = { incidents: { key: "", dir: 1 }, teams: { key: "", dir: 1 } };
+  var sorts = { incidents: { key: "", dir: 1 }, leads: { key: "", dir: 1 } };
   var shownIncidents = [];
 
-  function fresh() { return { mgr: "", team: "", rule: "", agent: "", status: "", stages: { nudge: true, lead: true, ops: true } }; }
+  function fresh() { return { mgr: "", tl: "", queue: "", rule: "", agent: "", status: "", stages: { nudge: true, lead: true, ops: true } }; }
   function $(id) { return document.getElementById(id); }
   function esc(v) { return String(v).replace(/[&<>"']/g, function (c) { return "&#" + c.charCodeAt(0) + ";"; }); }
   function pad(n) { return (n < 10 ? "0" : "") + n; }
@@ -253,20 +279,28 @@ const SCRIPT = String.raw`
   function options(all, values, current) {
     return '<option value="">' + esc(all) + "</option>" + values.map(function (v) { return '<option value="' + esc(v) + '"' + (v === current ? " selected" : "") + ">" + esc(v) + "</option>"; }).join("");
   }
-  function isFiltered() { return !!(F.mgr || F.team || F.rule || F.agent || F.status || !(F.stages.nudge && F.stages.lead && F.stages.ops)); }
+  function isFiltered() { return !!(F.mgr || F.tl || F.queue || F.rule || F.agent || F.status || !(F.stages.nudge && F.stages.lead && F.stages.ops)); }
 
   // ---------- filtering ----------
-  function teamsInView() { return D.teams.filter(function (t) { return (!F.mgr || t.mgr === F.mgr) && (!F.team || t.team === F.team); }); }
+  function leadsInView() { return D.leads.filter(function (t) { return (!F.mgr || t.mgr === F.mgr) && (!F.tl || t.tl === F.tl) && (!F.queue || t.queues[F.queue] > 0); }); }
+  /** Whether a row's agent sits in the picked queue; a floor call-out, whether it is about that queue. */
+  function inQueue(r, floor) {
+    if (!F.queue) return true;
+    if (floor) return r.team === F.queue;
+    var qs = D.agentQueues[r.a] || [], at = D.queues.indexOf(F.queue);
+    return qs.indexOf(at) >= 0;
+  }
   function scope() {
-    var teams = teamsInView(), names = {}, byTeam = !!(F.mgr || F.team), q = F.agent.trim().toLowerCase();
-    teams.forEach(function (t) { names["$" + t.team] = 1; });
+    var leads = leadsInView(), names = {}, byLead = !!(F.mgr || F.tl), q = F.agent.trim().toLowerCase();
+    leads.forEach(function (t) { names["$" + t.tl] = 1; });
     function who(r, floor) {
-      if (byTeam && (floor || !names["$" + r.team])) return false;
+      if (byLead && (floor || !names["$" + r.tl])) return false;
+      if (!inQueue(r, floor)) return false;
       if (F.rule && r.rule !== F.rule) return false;
       return !q || (!floor && r.agent.toLowerCase().indexOf(q) >= 0);
     }
     return {
-      teams: teams,
+      leads: leads,
       ledger: D.ledger.filter(function (r) { return F.stages[r.stage] && who(r, r.floor); }),
       incidents: D.incidents.filter(function (i) { return who(i, false); })
     };
@@ -327,6 +361,11 @@ const SCRIPT = String.raw`
     return rows;
   }
   function text(get) { return function (r) { return esc(get(r)); }; }
+  /** The first two queues and a count of the rest; the full list on hover. */
+  function queueList(t) {
+    if (!t.queues.length) return "—";
+    return '<span title="' + esc(t.queues.join("\n")) + '">' + esc(t.queues.slice(0, 2).join(", ")) + (t.queues.length > 2 ? ' <b>+' + (t.queues.length - 2) + "</b>" : "") + "</span>";
+  }
   /** "Last, First - AH12345" as the name with the domain ID under it. The last " - " separates them: a surname can hold one too. */
   function person(n) {
     var c = n.lastIndexOf(" - ");
@@ -364,33 +403,34 @@ const SCRIPT = String.raw`
       ["closedT", "Closed", function (i) { return i.closedT === null ? -1 : i.closedT; }, function (i) { return i.closedT === null ? "—" : clock(i.closedT); }, "num m"]
     ], register, S.incidents.length ? "No incidents have this status." : "No agents meet the investigation threshold (3 instances of the same rule in one shift) under these filters.");
 
-    table("teams", [
-      ["team", "Team", function (t) { return t.team; }, text(function (t) { return t.team; }), "b"],
-      ["tl", "Team Lead", function (t) { return t.tl; }, text(function (t) { return t.tl; })],
+    table("leads", [
+      ["tl", "Team Lead", function (t) { return t.tl; }, text(function (t) { return t.tl; }), "b"],
       ["mgr", "Manager", function (t) { return t.mgr; }, text(function (t) { return t.mgr; }), "m"],
       ["agents", "Agents", function (t) { return t.agents; }, function (t) { return t.agents; }, "r num"],
+      ["queues", "Queues", function (t) { return t.queues.join(", "); }, queueList, "m nw"],
       ["n", "Nudges", function (t) { return t.n; }, count(function (t) { return t.n; }), "r num b", "t-nudge"],
       ["l", "Leader", function (t) { return t.l; }, count(function (t) { return t.l; }), "r num b", "t-lead"],
       ["o", "Ops", function (t) { return t.o; }, count(function (t) { return t.o; }), "r num b", "t-ops"],
       ["ir", "Open IR", function (t) { return t.ir; }, count(function (t) { return t.ir; }, "t-ir"), "r num b", "t-ir"],
       ["top", "Top cause", function (t) { return t.top; }, text(function (t) { return t.top; })]
-    ], S.teams.map(function (t) {
-      var rows = people.filter(function (r) { return r.team === t.team; }), top = tally(rows, function (r) { return r.rule; }, 1)[0];
+    ], S.leads.map(function (t) {
+      var rows = people.filter(function (r) { return r.tl === t.tl; }), top = tally(rows, function (r) { return r.rule; }, 1)[0];
       var n = function (stage) { return rows.filter(function (r) { return r.stage === stage; }).length; };
       return {
-        team: t.team, tl: t.tl, mgr: t.mgr, agents: t.agents, n: n("nudge"), l: n("lead"), o: n("ops"),
-        ir: S.incidents.filter(function (i) { return i.team === t.team && i.status !== "Closed"; }).length, top: top ? top.label + " ×" + top.total : "—"
+        tl: t.tl, mgr: t.mgr, agents: F.queue ? t.queues[F.queue] || 0 : t.agents, queues: Object.keys(t.queues).sort(function (a, b) { return a.localeCompare(b); }), n: n("nudge"), l: n("lead"), o: n("ops"),
+        ir: S.incidents.filter(function (i) { return i.tl === t.tl && i.status !== "Closed"; }).length, top: top ? top.label + " ×" + top.total : "—"
       };
-    }), "No teams match these filters.", { act: "team", value: function (t) { return t.team; }, on: function (t) { return F.team === t.team; } });
+    }), "No Team Leads match these filters.", { act: "tl", value: function (t) { return t.tl; }, on: function (t) { return F.tl === t.tl; } });
 
     sync(L.length);
   }
 
   /** Bring the filter controls in line with F (they are also changed by picking bars and rows). */
   function sync(shown) {
-    var managed = F.mgr ? D.teams.filter(function (t) { return t.mgr === F.mgr; }) : D.teams;
+    var managed = F.mgr ? D.leads.filter(function (t) { return t.mgr === F.mgr; }) : D.leads;
     $("f-mgr").value = F.mgr;
-    $("f-team").innerHTML = options("All teams", uniq(managed.map(function (t) { return t.team; })), F.team);
+    $("f-tl").innerHTML = options("All Team Leads", uniq(managed.map(function (t) { return t.tl; })), F.tl);
+    $("f-queue").value = F.queue;
     $("f-rule").value = F.rule;
     if ($("f-agent").value !== F.agent) $("f-agent").value = F.agent;
     $("f-stages").innerHTML = STAGES.map(function (s) { return '<button type="button" class="chip" data-act="stage" data-value="' + s[0] + '" aria-pressed="' + F.stages[s[0]] + '"><i style="background:' + s[2] + '"></i>' + s[1] + "</button>"; }).join("");
@@ -422,7 +462,7 @@ const SCRIPT = String.raw`
     else if (a === "status") F.status = v;
     else if (a === "rule") F.rule = F.rule === v ? "" : v;
     else if (a === "agent") F.agent = F.agent === v ? "" : v;
-    else if (a === "team") F.team = F.team === v ? "" : v;
+    else if (a === "tl") F.tl = F.tl === v ? "" : v;
     else if (a === "sort") { var s = sorts[el.getAttribute("data-table")]; s.dir = s.key === v ? -s.dir : 1; s.key = v; }
     render();
     // The control that was used has just been redrawn: put keyboard focus back on it.
@@ -436,14 +476,17 @@ const SCRIPT = String.raw`
   $("source").lastChild.textContent = D.source;
   if (D.notice) { $("notice").textContent = D.notice; $("notice").hidden = false; }
   if (D.canExport) $("export").hidden = false;
-  var mgrs = uniq(D.teams.map(function (t) { return t.mgr; }));
+  var mgrs = uniq(D.leads.map(function (t) { return t.mgr; }));
   $("f-mgr").innerHTML = options("All managers", mgrs, "");
   $("f-rule").innerHTML = options("All rules", uniq(D.ledger.map(function (r) { return r.rule; }).concat(D.incidents.map(function (i) { return i.rule; }))), "");
   if (mgrs.length < 2) $("mgr-slicer").hidden = true;
-  if (D.teams.length < 2) $("team-slicer").hidden = true;
+  if (D.leads.length < 2) $("tl-slicer").hidden = true;
+  $("f-queue").innerHTML = options("All queues", D.queues, "");
+  if (D.queues.length < 2) $("queue-slicer").hidden = true;
 
-  $("f-mgr").addEventListener("change", function (e) { F.mgr = e.target.value; F.team = ""; render(); });
-  $("f-team").addEventListener("change", function (e) { F.team = e.target.value; render(); });
+  $("f-mgr").addEventListener("change", function (e) { F.mgr = e.target.value; F.tl = ""; render(); });
+  $("f-tl").addEventListener("change", function (e) { F.tl = e.target.value; render(); });
+  $("f-queue").addEventListener("change", function (e) { F.queue = e.target.value; render(); });
   $("f-rule").addEventListener("change", function (e) { F.rule = e.target.value; render(); });
   $("f-agent").addEventListener("input", function (e) { F.agent = e.target.value; render(); });
   document.addEventListener("click", function (e) { var el = e.target.closest("[data-act]"); if (el) act(el); });

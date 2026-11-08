@@ -1,6 +1,7 @@
 import type { AgentState, Queue, ReplayMeta, RosterAgent, Team } from "@/lib/types";
 import { type ReplayEvent, csvUid } from "@/lib/csv/parse";
 import type { FeedHandlers, FeedSource } from "./FeedSource";
+import { teamLines } from "./teamLines";
 
 /** Speed of a historical replay: engine seconds per wall-clock second. */
 export const REPLAY_SPEED = 60;
@@ -48,7 +49,7 @@ export class CsvReplayFeed implements FeedSource {
     const agents: RosterAgent[] = this.extras.roster ?? [...new Set(ev.map(e => e.agent))].map(n => ({
       uid: csvUid(n), name: n, team: ev.find(e => e.agent === n && e.team)?.team || org[0].team, state: "off" as const, stTime: 0, aht: 420, calls: 0, adh: 96,
     }));
-    handlers.onRoster({ org, agents });
+    handlers.onRoster({ org, agents, people: teamLines(org, agents, "csv:") });
     return () => { this.h = null; };
   }
 

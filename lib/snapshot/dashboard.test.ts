@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { RosterAgent, Team } from "@/lib/types";
+import { teamLines } from "@/lib/feed/teamLines";
 import { createEngine } from "@/lib/engine/engine";
 import { dashboardHtml, snapshotData, snapshotFileName } from "./dashboard";
 
@@ -18,7 +19,7 @@ const NOW = new Date("2026-10-07T18:05:00Z"); // 14:05 in New York, the floor's 
 function floor() {
   const e = createEngine({ toast: () => {}, nudge: () => {} });
   e.reset({ t: 8 * 3600 });
-  e.ingest.onRoster({ org: ORG, agents: ROSTER });
+  e.ingest.onRoster({ org: ORG, agents: ROSTER, people: teamLines(ORG, ROSTER, "") });
   const run = (seconds: number) => { for (let i = 0; i < seconds; i++) { e.ingest.onHeartbeat(); e.tick(); } };
   const overAcw = (uid: string) => { e.ingest.onAgentState({ uid, state: "acw" }); run(121); e.ingest.onAgentState({ uid, state: "avail" }); run(1); };
   for (let i = 0; i < 3; i++) overAcw("u-amara");
@@ -30,18 +31,24 @@ describe("dashboard snapshot", () => {
   it("holds everything an admin's dashboard shows", () => {
     const d = snapshotData(floor(), { role: "admin", who: null }, "gencloud", NOW);
     expect(d).toMatchObject({ viewer: "WFM Admin", role: "Admin (WFM)", source: "Live Genesys", notice: "", canExport: true, takenAt: NOW.toISOString() });
-    expect(d.teams).toEqual([
-      { team: "Team Alpha", tl: "Rina Velasco", mgr: "Ava Santiago", agents: 2 },
-      { team: "Team Delta", tl: "Jon Rivera", mgr: "Leo Fernandez", agents: 1 },
+    expect(d.leads).toEqual([
+      { tl: "Jon Rivera", mgr: "Leo Fernandez", agents: 1, queues: { "Team Delta": 1 } },
+      { tl: "Rina Velasco", mgr: "Ava Santiago", agents: 2, queues: { "Team Alpha": 2 } },
     ]);
+    expect(d.queues).toEqual(["Team Alpha", "Team Delta"]);
+    const amara = d.ledger.find(r => r.agent === "Amara Reyes")!;
+    expect(amara.a).toBeGreaterThanOrEqual(0);
+    expect(d.agentQueues[amara.a].map(i => d.queues[i])).toEqual(["Team Alpha"]);
+    expect(d.ledger.find(r => r.agent === "Amara Reyes")?.tl).toBe("Rina Velasco");
+    expect(d.incidents[0].tl).toBe("Rina Velasco");
     expect(d.ledger.filter(r => r.agent === "Amara Reyes")).toHaveLength(3);
     expect(d.ledger.filter(r => r.agent === "Miguel Cruz")).toHaveLength(1);
     expect(d.incidents.map(i => [i.agent, i.rule, i.instances, i.status])).toEqual([["Amara Reyes", "Extended ACW", 3, "Open"]]);
   });
 
   it("is cut to the viewer's span and follows their export permission", () => {
-    const d = snapshotData(floor(), { role: "tl", who: "Jon Rivera" }, "gencloud", NOW);
-    expect(d.teams.map(t => t.team)).toEqual(["Team Delta"]);
+    const d = snapshotData(floor(), { role: "tl", who: "lead:Jon Rivera" }, "gencloud", NOW);
+    expect(d.leads.map(t => t.tl)).toEqual(["Jon Rivera"]);
     expect(d.ledger.map(r => r.agent)).toEqual(["Miguel Cruz"]);
     expect(d.incidents).toEqual([]);
     expect(d.canExport).toBe(false);

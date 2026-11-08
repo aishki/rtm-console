@@ -1,9 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { clock, fmt, splitAgent } from "@/lib/engine/format";
+import { NO_LEADER, clock, fmt, splitAgent } from "@/lib/engine/format";
 import { STATES, type Target, myTargets } from "@/lib/engine/rules";
-import { teamOf } from "@/lib/engine/scope";
 import { api, attempt } from "@/lib/client/api";
 import { useConsole } from "@/lib/client/store";
 import { STAGE, TGT } from "@/lib/ui/palette";
@@ -60,25 +59,24 @@ export default function MyViewPage() {
   const me = useConsole(s => s.agents.find(a => a.uid === who));
   const { who: myName, id: myId } = splitAgent(me?.name ?? "");
   const rules = useConsole(s => s.rules);
-  const org = useConsole(s => s.org);
+  const leads = useConsole(s => (who ? s.leads[who] : undefined));
   const ledger = useConsole(s => s.ledger);
   const targets = useMemo(() => (me ? myTargets(me, rules) : []), [me, rules]);
   const log = useMemo(() => ledger.slice(0, LOG_SIZE), [ledger]);
 
   const state = me ? STATES[me.state] ?? STATES.avail : null;
-  const team = me ? teamOf(org, me.team) : null;
   const metric = (label: string, value: string | number) => <span>{label} <b className="font-bold text-ink">{value}</b></span>;
 
   return (
     <section className="flex flex-wrap items-start gap-6">
       <div className="flex max-w-[400px] flex-[1_1_320px] flex-col gap-6">
         <div className="panel flex flex-col items-center gap-1.5 px-6 py-7 text-center">
-          {me && state && team ? (
+          {me && state ? (
             <>
               <span className="text-balance text-[28px] font-medium leading-tight tracking-[-0.02em] text-purple">{myName}</span>
               {myId && <span className="num text-sm font-medium text-muted">{myId}</span>}
               {/* Team on its own line: a long team name used to push "TL" away from the name it belongs to. */}
-              <span className="flex flex-col text-[13px] text-muted"><span className="[overflow-wrap:anywhere]">{me.team}</span><span>TL {team.tl} · Mgr {team.mgr}</span></span>
+              <span className="flex flex-col text-[13px] text-muted"><span className="[overflow-wrap:anywhere]">{me.team}</span><span>TL {leads?.tl ?? NO_LEADER} · Mgr {leads?.mgr ?? NO_LEADER}</span></span>
               <div className="mt-[18px] inline-flex items-center gap-2 text-base font-medium">
                 <span className="h-3 w-3 rounded-full" style={{ background: state.color }} />{state.label}
                 {me.onHold && <span className="rounded-pill bg-warning-tint px-2 py-px font-ui text-xs font-semibold text-warning-text">Hold</span>}

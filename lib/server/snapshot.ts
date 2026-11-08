@@ -1,5 +1,5 @@
 import type { InitMsg, TickMsg, View } from "@/lib/types";
-import { PERMS, inScope, peopleDirectory, scopeAgents, scopeIncidents, scopeLedger, scopeTeams } from "@/lib/engine/scope";
+import { PERMS, inScope, leadersOf, peopleDirectory, scopeAgents, scopeIncidents, scopeLedger, scopeTeams, unsupervised, viewerName } from "@/lib/engine/scope";
 import { queueMapRev, loadQueueMap } from "./queueMapStore";
 import { SimFeed } from "@/lib/feed/SimFeed";
 import type { Batch, Runtime } from "./runtime";
@@ -23,15 +23,19 @@ export function tickMsg(rt: Runtime, view: View, since: Since | null, batch: Bat
   const ledger = scopeLedger(S, view, S.ledger);
   const agents = scopeAgents(S, view);
   let members: Record<string, number[]> | undefined;
+  let leads: TickMsg["leads"];
+  let noSupervisor: number | undefined;
   if (!since || since.rosterRev !== S.rosterRev) {
     const mine = new Set(agents.map(a => a.id));
     members = Object.fromEntries(Object.entries(S.members ?? {}).map(([q, ids]) => [q, ids.filter(id => mine.has(id))]));
+    if (PERMS[view.role].mapping) noSupervisor = unsupervised(S).length;
+    leads = Object.fromEntries(agents.map(a => { const l = leadersOf(S.people, a.uid); return [a.uid, { tl: l.tl?.name ?? null, mgr: l.mgr?.name ?? null }]; }));
   }
   return {
     type: "tick", t: S.t, mode: S.mode, staleFor: S.staleFor, agentsLoading: S.agentsLoading, replay: S.replay, queue: S.queue, rules: S.rules,
     org: scopeTeams(S, view), agents, incidents: scopeIncidents(S, view, S.incidents),
     ledger: since === null ? ledger : ledger.filter(r => r.rev > since.rev),
-    queues: S.queues ?? {}, members,
+    queues: S.queues ?? {}, members, leads, unsupervised: noSupervisor, viewerName: viewerName(view, S),
     queueMap: !since || since.mapRev !== queueMapRev() ? loadQueueMap() : undefined,
     // Call-out toasts go to the leaders whose span they are in; feed notices go to everyone.
     // A replay only announces its own progress.

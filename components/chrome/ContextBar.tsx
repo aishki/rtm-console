@@ -6,7 +6,6 @@ import { enableAlerts, useAlertState } from "@/lib/client/alerts";
 import { api, attempt } from "@/lib/client/api";
 import { usePerms } from "@/lib/client/hooks";
 import { useConsole } from "@/lib/client/store";
-import { viewerName } from "@/lib/engine/scope";
 import { orgOf } from "@/lib/orgs";
 import { PurpleButton } from "@/components/ui/buttons";
 
@@ -45,7 +44,7 @@ function useFeedPill() {
  */
 export function ContextBar() {
   const view = useConsole(s => s.view);
-  const who = useConsole(s => (s.view ? viewerName(s.view, s.agents) : null));
+  const who = useConsole(s => s.viewerName);
   const ready = useConsole(s => s.status === "ready");
   const t = useConsole(s => s.t);
   const isReplay = useConsole(s => s.mode === "replay");

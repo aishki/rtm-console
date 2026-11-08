@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { STATES, STATE_IDS, isBreach, strikesOf, thrOf } from "@/lib/engine/rules";
-import { teamOf } from "@/lib/engine/scope";
 import { api, attempt } from "@/lib/client/api";
 import { usePerms } from "@/lib/client/hooks";
 import { useConsole } from "@/lib/client/store";
@@ -62,6 +61,7 @@ function queueOptions(tree: TreeNode[]) {
 
 function AgentGrid() {
   const org = useConsole(s => s.org);
+  const leads = useConsole(s => s.leads);
   const agents = useConsole(s => s.agents);
   const rules = useConsole(s => s.rules);
   const loading = useConsole(s => s.agentsLoading);
@@ -108,8 +108,8 @@ function AgentGrid() {
     if (quick.hold && !a.onHold) return false;
     return true;
   };
-  // A person matches on their name or team lead; queue membership stands in for their home team.
-  const hits = (a: Agent) => a.name.toLowerCase().includes(qn) || teamOf(org, a.team).tl.toLowerCase().includes(qn);
+  // A person matches on their name or their Team Lead's; queue membership stands in for their home team.
+  const hits = (a: Agent) => a.name.toLowerCase().includes(qn) || (leads[a.uid]?.tl ?? "").toLowerCase().includes(qn);
   const view = filtering
     ? filterTree(tree, {
       query: qn, queue: queueFilter,
@@ -219,13 +219,13 @@ export default function ConsolePage() {
   const perms = usePerms();
   const incidents = useConsole(s => s.incidents);
   const agents = useConsole(s => s.agents);
-  const org = useConsole(s => s.org);
+  const leads = useConsole(s => s.leads);
   return (
     <section className="flex flex-col gap-6">
       <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-4">
         {kpis.map(k => <KpiTile key={k.label} kpi={k} />)}
       </div>
-      {perms?.ir && incidents.length > 0 && <IncidentTiles incidents={incidents} agents={agents} org={org} />}
+      {perms?.ir && incidents.length > 0 && <IncidentTiles incidents={incidents} agents={agents} leads={leads} />}
       <div className="flex flex-wrap items-start gap-6">
         <AgentGrid />
         <TriggerFeed />

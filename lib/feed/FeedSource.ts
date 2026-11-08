@@ -1,4 +1,4 @@
-import type { AgentStateEvent, AgentStats, Queue, QueueCounts, Roster } from "@/lib/types";
+import type { AgentStateEvent, AgentStats, OrgPerson, Queue, QueueCounts, Roster } from "@/lib/types";
 
 export interface FeedHandlers {
   /** Org model and the agents on shift. Replaces the engine's floor. */
@@ -8,6 +8,8 @@ export interface FeedHandlers {
   onQueue(queue: Queue, byQueue?: Record<string, QueueCounts>): void;
   /** Agents' figures for the day, when the feed reports them (Gencloud); they replace the engine's estimates. */
   onAgentStats?(stats: AgentStats[]): void;
+  /** Reporting lines found after the roster (Genesys supervisors, then the CGS directory). They add to or replace what the engine has. */
+  onPeople?(people: OrgPerson[]): void;
   /** True while the roster and everyone's first state are on their way (Gencloud, after connecting); false once they are in. */
   onAgentsLoading?(loading: boolean): void;
   /** Proof of life. The engine treats a second without any feed activity as stale. */

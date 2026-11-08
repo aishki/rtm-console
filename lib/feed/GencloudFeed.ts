@@ -5,6 +5,8 @@ import { consoleState, elapsedAtConnect, stateSince } from "./gencloud/state";
 import { CallTracker } from "./gencloud/conversations";
 import { WsManager } from "./gencloud/ws";
 import { buildRoster, aggregateQueue, toCounts, activeMembers, recentMembers, unknownStateIds } from "./gencloud/mappers";
+import { resolveLines } from "./gencloud/lines";
+import type { ManagerLookup } from "@/lib/directory/cgsManagers";
 import { floorMidnight } from "@/lib/floorTime";
 import { queueKey } from "@/lib/queueStats";
 
@@ -22,6 +24,8 @@ export interface GencloudConfig {
   getQueueNames?: () => string[];
   clientId?: string;
   clientSecret?: string;
+  /** The CGS directory, which fills in supervisors Genesys does not have. `done` runs when a pass over the floor ends. */
+  directory?: { managerOf: ManagerLookup; done?: () => void };
 }
 
 const DEFAULT_API_BASE = "https://api.mypurecloud.com";
@@ -180,6 +184,30 @@ export class GencloudFeed implements FeedSource {
       return membersByQueue;
     };
 
+    /**
+     * Everyone's supervisor, in the background: from Genesys, then the CGS directory for the gaps
+     * (about one agent a second). A failure leaves the lines the engine already has.
+     */
+    const loadLines = async (agents: { uid: string; name: string }[]): Promise<void> => {
+      if (!agents.length) return;
+      const dir = this.config.directory;
+      try {
+        const counts = await resolveLines(agents, {
+          users: (ids) => client.getUserLines(ids),
+          byDomainId: (id) => client.findUserByDomainId(id),
+          managerOf: dir?.managerOf,
+        }, (people) => { if (!stopped) handlers.onPeople?.(people); }, () => stopped);
+        if (counts) {
+          console.info(`GencloudFeed: supervisors for ${counts.agents} agents: ${counts.genesys} from Genesys, ${counts.directory} from the CGS directory, ${counts.none} with none${dir ? "" : " (CGS directory not set up)"}`);
+        }
+      } catch (e) {
+        if (isAuthError(e)) console.warn("GencloudFeed: supervisor lookup failed with 401 (check GENESYS_TOKEN)");
+        else console.warn("GencloudFeed: supervisor lookup failed:", errMsg(e));
+      } finally {
+        dir?.done?.();
+      }
+    };
+
     /** Load the roster and open the presence/routing WebSocket. Runs in the background; a
      *  failure here is logged and never stops the queue poll. */
     const loadRosterAndSubscribe = async (queues: { id: string; name: string }[]): Promise<void> => {
@@ -214,6 +242,7 @@ export class GencloudFeed implements FeedSource {
         if (stale > 0) console.info(`GencloudFeed: left ${stale} accounts with no login in ${LAST_LOGIN_DAYS} days out of the roster`);
         const { org, agents, idToName, members } = buildRoster(queues, membersByQueue);
         handlers.onRoster({ org, agents, members });
+        void loadLines(agents);
         if (Object.keys(idToName).length === 0) {
           console.warn("GencloudFeed: roster is empty (no queue members loaded)");
           handlers.onAgentsLoading?.(false);

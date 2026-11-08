@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent } from "react";
-import { teamOf } from "@/lib/engine/scope";
-import type { Agent, Incident, Team } from "@/lib/types";
+import { NO_LEADER, causeSummary } from "@/lib/engine/format";
+import type { Agent, AgentLeads, Incident } from "@/lib/types";
 
 /** Collapsed, the tiles show this many rows; the part-row peeking out at the bottom says there is more to scroll. */
 const ROWS = 3.25;
@@ -25,7 +25,7 @@ function measureCap(grid: HTMLElement): number | null {
 }
 
 /** Agents with incident reports: one tile per agent, with why each incident was opened. */
-export function IncidentTiles({ incidents, agents, org }: { incidents: Incident[]; agents: Agent[]; org: Team[] }) {
+export function IncidentTiles({ incidents, agents, leads }: { incidents: Incident[]; agents: Agent[]; leads: Record<string, AgentLeads> }) {
   const byAgent = new Map<string, Incident[]>();
   // By uid: two agents with the same name keep separate tiles.
   for (const i of incidents) byAgent.set(i.agentId, [...(byAgent.get(i.agentId) ?? []), i]);
@@ -90,7 +90,7 @@ export function IncidentTiles({ incidents, agents, org }: { incidents: Incident[
         <div ref={grid} className="relative grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-3 px-5 pb-5 pt-4">
           {[...byAgent].map(([uid, list]) => {
             const name = list[0].agent;
-            const t = teamOf(org, agents.find(a => a.uid === uid)?.team ?? list[0].team);
+            const team = agents.find(a => a.uid === uid)?.team ?? list[0].team;
             const open = list.some(i => i.status !== "Closed");
             return (
               <div
@@ -104,10 +104,10 @@ export function IncidentTiles({ incidents, agents, org }: { incidents: Incident[
                 </div>
                 {/* A long team name is cut with an ellipsis (full name on hover); the Team Lead always stays in view. */}
                 <span className="flex min-w-0 text-xs text-muted">
-                  <span className="truncate" title={t.team}>{t.team}</span>
-                  <span className="shrink-0 whitespace-pre"> · TL {t.tl}</span>
+                  <span className="truncate" title={team}>{team}</span>
+                  <span className="shrink-0 whitespace-pre"> · TL {leads[uid]?.tl ?? NO_LEADER}</span>
                 </span>
-                <span className="text-pretty text-[13px] leading-normal">Cause: {list.map(i => `${i.rule} ×${i.instances}${i.status === "Closed" ? " (closed)" : ""}`).join(" · ")}</span>
+                <span className="text-pretty text-[13px] leading-normal">Cause: {causeSummary(list)}</span>
               </div>
             );
           })}
