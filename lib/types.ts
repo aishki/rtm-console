@@ -74,14 +74,24 @@ export interface Instance {
 }
 
 /** What a leader can do to an investigation: start it, send it back to Open, record a disposition, close it. */
-export type InvAction = "start" | "reopen" | "record" | "close";
+/** "note" saves the investigation's notes; "close" may carry the closing note. */
+export type InvAction = "start" | "reopen" | "record" | "note" | "close";
 
 export interface Incident {
   inc: string; t: number;
   /** The agent's name for display; `agentId` says whose it is. */
   agent: string; agentId: string; team: string; rule: string; ruleId: RuleId;
   instances: number; status: "Open" | "Investigating" | "Closed"; disposition: string; closedT: number | null;
+  /** Who started the investigation: it is theirs. Cleared when it goes back to Open. */
+  owner?: IncidentOwner;
+  /** Notes kept during the investigation. */
+  comments?: string;
+  /** The closing note. */
+  resolution?: string;
 }
+
+/** An investigation's owner: the person (null for an Admin, who has no person), their role, and their name when known. */
+export interface IncidentOwner { who: string | null; role: Role; name: string | null }
 
 /** Who the console is viewed as. `who` is the person's uid (agent, Team Lead or Manager); null for Admin and Senior Leader. */
 export interface View { role: Role; who: string | null }

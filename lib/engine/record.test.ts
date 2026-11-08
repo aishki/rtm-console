@@ -90,6 +90,24 @@ describe("what the engine tells its recorder", () => {
     ]);
   });
 
+  it("makes whoever starts an investigation its owner, and keeps its notes and closing note", () => {
+    const { e, log, episode } = setup();
+    for (let i = 0; i < 3; i++) episode("u-amara", "acw", 120);
+    const inc = "INC-2026-0001";
+    const mgr: View = { role: "mgr", who: "lead:Ava Santiago" }, admin: View = { role: "admin", who: null };
+    e.invAction(inc, "note", "Too early", mgr); // not started yet: refused
+    expect(e.invAction(inc, "start", undefined, mgr)).toMatchObject({ owner: { who: mgr.who, role: "mgr", name: "Ava Santiago" } });
+    e.invAction(inc, "note", "  Spoke to the agent; system was slow.  ", mgr);
+    e.invAction(inc, "note", "Spoke to the agent; system was slow.", mgr); // the same: nothing new
+    // Back to Open drops the owner; the next to start owns it. Notes stay.
+    expect(e.invAction(inc, "reopen", undefined, mgr)!.owner).toBeUndefined();
+    expect(e.invAction(inc, "start", undefined, admin)!.owner).toEqual({ who: null, role: "admin", name: null });
+    e.invAction(inc, "record", "Coached", admin);
+    expect(e.invAction(inc, "close", " Coached on ACW. ", admin)).toMatchObject({ status: "Closed", comments: "Spoke to the agent; system was slow.", resolution: "Coached on ACW." });
+    expect(e.invAction(inc, "note", "Too late", admin)!.comments).toBe("Spoke to the agent; system was slow.");
+    expect(log.moved.map(m => m.action)).toEqual(["start", "note", "reopen", "start", "record", "close"]);
+  });
+
   it("tells when the queue rules in breach change, and only then", () => {
     const { e, log, run } = setup();
     e.ingest.onQueue(QUEUE_BUSY);

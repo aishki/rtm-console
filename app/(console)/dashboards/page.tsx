@@ -4,13 +4,14 @@ import { useRouter } from "next/navigation";
 import { useMemo, useRef, useState } from "react";
 import { clock, splitAgent } from "@/lib/engine/format";
 import { type LeadRow, agentQueues, leadRows } from "@/lib/engine/leadRows";
-import { DISPOSITIONS, PENDING_DISPOSITION, canClose } from "@/lib/engine/rules";
+import { DISPOSITIONS, PENDING_DISPOSITION, canClose, ownerLabel } from "@/lib/engine/rules";
 import { api, attempt, download } from "@/lib/client/api";
 import { avgResponse, useMorph, usePerms } from "@/lib/client/hooks";
 import { useConsole } from "@/lib/client/store";
 import { INC, STAGE } from "@/lib/ui/palette";
 import type { Incident, Instance, Stage } from "@/lib/types";
 import { CsvImportDialog } from "@/components/chrome/CsvImportDialog";
+import { IncidentNotesDialog, type NotesMode } from "@/components/chrome/IncidentNotesDialog";
 import { PurpleButton } from "@/components/ui/buttons";
 import { type Column, DataTable } from "@/components/ui/DataTable";
 import { MorphText } from "@/components/ui/MorphText";
@@ -80,13 +81,15 @@ function BarChart({ title, sub, bars, note, people }: { title: string; sub: stri
 }
 
 /**
- * Start / disposition + close / closed note, for roles with investigation actions. Picking a disposition records it
+ * Start / disposition + notes + close / closed note, for roles with investigation actions. Picking a disposition records it
  * straight away and folds the list into an "Update disposition" button, which opens the list again to change it.
- * "Close incident" unlocks once a final one is recorded (not "Pending Investigation"), and "None" sends the incident back to Open.
+ * "Close incident" unlocks once a final one is recorded (not "Pending Investigation") and asks for the closing note;
+ * "None" sends the incident back to Open. Notes are kept while it is investigated; anyone who sees the incident can read them.
  */
 function IncidentAction({ incident: i, canAct }: { incident: Incident; canAct: boolean }) {
   const toast = useConsole(s => s.toast);
   const [editing, setEditing] = useState(false);
+  const [dialog, setDialog] = useState<NotesMode | null>(null);
   // Starting, recording, closing and reopening swap these controls: fade them in and out and slide between sizes.
   const box = useRef<HTMLDivElement>(null);
   useMorph(box);
@@ -94,17 +97,21 @@ function IncidentAction({ incident: i, canAct }: { incident: Incident; canAct: b
   const pick = (v: string) => { setEditing(false); void attempt(v === REOPEN ? api.incident(i.inc, "reopen") : api.incident(i.inc, "record", v)); };
   const closable = canClose(i.disposition);
   const closeHint = closable ? undefined : i.disposition === PENDING_DISPOSITION ? "Change the disposition from Pending Investigation first" : "Record a disposition first";
-  const close = async () => {
-    const res = await attempt(api.incident(i.inc, "close"));
+  const save = async (text: string) => {
+    if (dialog === "notes") return !!(await attempt(api.incident(i.inc, "note", text)));
+    const res = await attempt(api.incident(i.inc, "close", text));
     if (res) toast("info", `${res.incident.inc} closed`, `${res.incident.agent} · ${res.incident.rule} · ${res.incident.disposition}`);
+    return !!res;
   };
+  const hasNotes = !!(i.comments || i.resolution);
+  const investigating = canAct && i.status === "Investigating";
   // The disposition slot has one fixed width (the longest option) for both the button and the list, so the row never
-  // shifts between them. Side by side on wide screens; below 1360px "Close incident" wraps under it instead of
+  // shifts between them. Side by side on wide screens; below 1360px the other buttons wrap under it instead of
   // widening the table (the Team column would otherwise take the room and squeeze this cell).
   return (
     <div ref={box} className="flex flex-wrap items-center gap-2 min-[1360px]:w-max min-[1360px]:flex-nowrap">
       {canAct && i.status === "Open" && <PurpleButton compact onClick={() => void attempt(api.incident(i.inc, "start"))}>Start investigation</PurpleButton>}
-      {canAct && i.status === "Investigating" && (
+      {investigating && (
         <>
           <div className="w-[212px] shrink-0">
             {i.disposition && !editing ? (
@@ -117,10 +124,15 @@ function IncidentAction({ incident: i, canAct }: { incident: Incident; canAct: b
               />
             )}
           </div>
-          <PurpleButton compact disabled={!closable} title={closeHint} onClick={close}>Close incident</PurpleButton>
+          <PurpleButton compact variant="outline" title={i.comments ? "Read or change the investigation notes" : "Keep notes on the investigation"} onClick={() => setDialog("notes")}>
+            {i.comments ? "Edit notes" : "Add notes"}
+          </PurpleButton>
+          <PurpleButton compact disabled={!closable} title={closeHint} onClick={() => setDialog("close")}>Close incident</PurpleButton>
         </>
       )}
       {note && <span data-morph className="text-[13px] text-muted">{note}</span>}
+      {!investigating && hasNotes && <PurpleButton compact variant="outline" onClick={() => setDialog("view")}>View notes</PurpleButton>}
+      {dialog && <IncidentNotesDialog incident={i} mode={dialog} onClose={() => setDialog(null)} onSave={save} />}
     </div>
   );
 }
@@ -204,7 +216,15 @@ export default function DashboardsPage() {
       cell: i => <>{i.rule}<span className="font-ui font-semibold xl:hidden"> ×{i.instances}</span></>,
     },
     { key: "instances", header: "Instances", thClass: "max-xl:hidden", tdClass: "font-ui font-semibold max-xl:hidden", cell: i => `×${i.instances}` },
-    { key: "status", header: "Status", cell: i => <StatusPill tone={INC[i.status]}>{i.status}</StatusPill> },
+    // The owner (whoever started the investigation) sits under the status, so the table needs no extra column.
+    {
+      key: "status", header: "Status", cell: i => (
+        <span className="flex flex-col items-start gap-1">
+          <StatusPill tone={INC[i.status]}>{i.status}</StatusPill>
+          {i.owner && <span className="whitespace-nowrap text-[11px] text-muted" title="Started the investigation">Owner · {splitAgent(ownerLabel(i.owner)).who}</span>}
+        </span>
+      ),
+    },
     { key: "disp", header: "Disposition", thClass: "min-w-[120px]", tdClass: "text-muted", cell: i => <MorphText>{i.disposition || "—"}</MorphText> },
     { key: "action", header: "Action", cell: i => <IncidentAction incident={i} canAct={canAct} /> },
   ];

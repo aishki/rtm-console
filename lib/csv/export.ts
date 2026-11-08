@@ -1,5 +1,6 @@
 import type { Incident, Instance, SeveralLobs, Unsupervised } from "@/lib/types";
 import { clock, splitAgent } from "@/lib/engine/format";
+import { ownerLabel } from "@/lib/engine/rules";
 
 const q = (s: unknown) => `"${String(s).replace(/"/g, '""')}"`;
 
@@ -11,8 +12,11 @@ export function ledgerCsv(rows: Instance[]): string {
 
 /** Investigation register as CSV, oldest first. Pass incidents already scoped to the viewer. */
 export function incidentsCsv(rows: Incident[]): string {
-  const h = "incident,opened,agent,team,rule,instances,status,disposition,closed\n";
-  return h + [...rows].reverse().map(i => [i.inc, clock(i.t), q(i.agent), q(i.team), q(i.rule), i.instances, i.status, q(i.disposition || ""), i.closedT !== null ? clock(i.closedT) : ""].join(",")).join("\n");
+  const h = "incident,opened,agent,team,rule,instances,status,owner,disposition,closed,comments,resolution\n";
+  return h + [...rows].reverse().map(i => [
+    i.inc, clock(i.t), q(i.agent), q(i.team), q(i.rule), i.instances, i.status, q(i.owner ? ownerLabel(i.owner) : ""), q(i.disposition || ""),
+    i.closedT !== null ? clock(i.closedT) : "", q(i.comments || ""), q(i.resolution || ""),
+  ].join(",")).join("\n");
 }
 
 /** Agents with no supervisor, by name, for an admin to have their supervisor set in Genesys. */

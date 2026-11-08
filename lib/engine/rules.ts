@@ -1,4 +1,4 @@
-import type { Agent, AgentState, Role, Route, Rule, RuleId } from "@/lib/types";
+import type { Agent, AgentState, IncidentOwner, Role, Route, Rule, RuleId } from "@/lib/types";
 import { fmt } from "./format";
 import { ruleFor } from "./overrides";
 
@@ -38,6 +38,10 @@ export const ROLES: [Role, string][] = [
   ["admin", "Admin (WFM)"], ["senior", "Senior Leader"], ["mgr", "Manager"], ["tl", "Team Lead / AM"], ["agent", "Agent"],
 ];
 export const ROLE_LABEL = Object.fromEntries(ROLES) as Record<Role, string>;
+/** The longest investigation note or closing note kept. */
+export const NOTE_MAX = 2000;
+/** An investigation owner as shown: their name, else their role ("Admin"). */
+export const ownerLabel = (o: IncidentOwner): string => o.name ?? ROLE_LABEL[o.role];
 
 export function defaultRules(): Rule[] {
   return [

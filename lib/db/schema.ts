@@ -81,6 +81,7 @@ export interface IncidentLog {
   modified_at: Generated<Timestamp>;
   opened_at: Generated<Timestamp>;
   owner_id: string | null;
+  owner_role: string | null;
   person_id: string;
   priority: string | null;
   resolution: string | null;
