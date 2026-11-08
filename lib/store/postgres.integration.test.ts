@@ -6,9 +6,12 @@ import { type Kysely, sql } from "kysely";
 import { type Migration, type MigrationProvider, Migrator, NO_MIGRATIONS } from "kysely/migration";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createDb } from "@/lib/db/client";
+import { ensureNotificationPartitions } from "@/lib/db/partitions";
 import type { DB } from "@/lib/db/schema";
 import { databaseUrl, isTestDatabase, testDatabaseUrl } from "@/lib/db/url";
 import { defaultRules } from "@/lib/engine/rules";
+import { floorDate } from "@/lib/floorTime";
+import type { Incident, Instance } from "@/lib/types";
 import type { QueueMapRow } from "@/lib/import/queueMap";
 import { postgresStore } from "./postgres";
 import type { RosterNames } from "./store";
@@ -47,7 +50,7 @@ describe.skipIf(!url)("PostgreSQL: migrations and the store", () => {
   it("migrates an empty database, and a second run does nothing", async () => {
     const first = await migrator().migrateToLatest();
     expect(first.error).toBeUndefined();
-    expect(first.results?.map(r => r.status)).toEqual(["Success", "Success", "Success", "Success"]);
+    expect(first.results?.map(r => r.status)).toEqual(["Success", "Success", "Success", "Success", "Success"]);
     const second = await migrator().migrateToLatest();
     expect(second.error).toBeUndefined();
     expect(second.results).toEqual([]);
@@ -247,6 +250,113 @@ describe.skipIf(!url)("PostgreSQL: migrations and the store", () => {
     const t = await db.selectFrom("tower").select("tower_id").limit(1).executeTakeFirstOrThrow();
     const l = await db.selectFrom("lob").select("lob_id").limit(1).executeTakeFirstOrThrow();
     await expect(db.insertInto("rule_override").values({ ...rule, tower_id: t.tower_id, lob_id: l.lob_id }).execute()).rejects.toThrow(/rule_override_one_place/);
+  });
+
+  describe("a Genesys floor's records", () => {
+    const today = floorDate(new Date());
+    const LOCAL = { tower: "Provider", subTower: "Claims", lob: "Local" };
+    const callout = (n: number, strikes: number, over: Partial<Instance> = {}): Instance => ({
+      n, t: 0, agent: "Floor Agent", agentId: "u-floor-agent", isFloor: false, team: "Team Alpha", place: LOCAL, rule: "Extended ACW", ruleId: "acw",
+      val: "2:01", stage: strikes >= 3 ? "ops" : strikes === 2 ? "lead" : "nudge", sev: strikes >= 3 ? "esc" : "warn", status: "open", ackT: null,
+      strikes, inc: "", cmt: null, cond: "State ACW longer than 120s", rev: 0, ...over,
+    });
+    const incident: Incident = { inc: "INC-2026-0042", t: 0, agent: "Floor Agent", agentId: "u-floor-agent", team: "Team Alpha", rule: "Extended ACW", ruleId: "acw", instances: 3, status: "Open", disposition: "", closedT: null };
+    const at = new Date();
+
+    it("keeps call-outs with their strikes and incidents, and brings them back after a restart", async () => {
+      const store = postgresStore(db, { importDir: null });
+      store.shiftStarted("commercial", today);
+      store.instanceFired("commercial", "2026-01-05", callout(101, 1), { thr: 120, overrideAt: null, incident: null, at }); // an earlier day, still open
+      store.instanceFired("commercial", "2026-01-05", callout(102, 2), { thr: 120, overrideAt: null, incident: null, at }); // an earlier day, acknowledged below
+      store.instanceFired("commercial", today, callout(201, 1), { thr: 120, overrideAt: null, incident: null, at });
+      store.instanceFired("commercial", today, callout(202, 2), { thr: 120, overrideAt: { tower: "Provider", subTower: "", lob: "" }, incident: null, at });
+      store.instanceFired("commercial", today, callout(203, 3, { inc: incident.inc }), { thr: 120, overrideAt: null, incident, at });
+      const floor = callout(204, 0, { agent: "Queue", agentId: null, isFloor: true, team: "Floor", place: undefined, rule: "Calls in queue", ruleId: "cq", stage: "lead", sev: "warn", val: "9 calls waiting" });
+      store.instanceFired("commercial", today, floor, { thr: 4, overrideAt: null, incident: null, at });
+      store.instancesAcked([102], null, "console", at);
+      store.instanceCommented(201, "System was slow", at);
+      store.instancesAcked([201], "u-floor-agent", "console", at);
+      store.instancesAcked([202, 204], "lead:someone-without-a-row", "ack_all", at);
+      store.incidentMoved({ ...incident, status: "Investigating" }, "start", null, at);
+      store.floorFiredChanged("commercial", today, ["cq"]);
+      await store.flush();
+
+      const shift = await db.selectFrom("shift").select(["shift_id", "status", "floor_fired"]).where("org_id", "=", "commercial").where("status", "=", "active").execute();
+      expect(shift).toEqual([expect.objectContaining({ status: "active", floor_fired: ["cq"] })]);
+      const rows = await db.selectFrom("monitoring_instance").select(["instance_id", "status", "ack_via", "acknowledged_by", "agent_comment", "rule_override_id", "occurrence_count"]).orderBy("instance_id").execute();
+      expect(rows.map(r => [r.instance_id, r.status, r.ack_via, r.acknowledged_by])).toEqual([
+        ["101", "open", null, null], ["102", "acked", "console", null], ["201", "acked", "console", "u-floor-agent"],
+        ["202", "acked", "ack_all", null], ["203", "open", null, null], ["204", "acked", "ack_all", null],
+      ]);
+      // The Tower-wide override kept from the earlier test applied to 202.
+      expect(rows.find(r => r.instance_id === "202")!.rule_override_id).not.toBeNull();
+      expect(rows.find(r => r.instance_id === "201")!.agent_comment).toBe("System was slow");
+      expect(await db.selectFrom("incident_log").select(["incident_number", "instance_id", "strike", "status"]).execute())
+        .toEqual([{ incident_number: "INC-2026-0042", instance_id: "203", strike: 3, status: "Investigating" }]);
+      expect(await db.selectFrom("incident_counter").selectAll().execute()).toEqual([{ year: 2026, last_value: 42 }]);
+      const audit = await db.selectFrom("audit_event").select(["action", "target_id"]).where("target_type", "in", ["monitoring_instance", "incident_log"]).orderBy("audit_id").execute();
+      expect(audit).toEqual([{ action: "monitoring_instance.ack_all", target_id: null }, { action: "incident.start", target_id: "INC-2026-0042" }]);
+
+      const boot = await postgresStore(db, { importDir: null }).loadBoot();
+      expect(boot.lastInstance).toBe(204);
+      expect(boot.incidentSeq).toEqual({ year: 2026, n: 42 });
+      const saved = boot.floors.commercial!;
+      // Today's call-outs and the earlier day's open one, newest first.
+      expect(saved.ledger.map(r => r.n)).toEqual([204, 203, 202, 201, 101]);
+      expect(saved.ledger.find(r => r.n === 203)).toMatchObject({ inc: "INC-2026-0042", strikes: 3, stage: "ops", sev: "esc", agent: "Floor Agent", place: LOCAL });
+      expect(saved.ledger.find(r => r.n === 204)).toMatchObject({ isFloor: true, agent: "Queue", agentId: null, strikes: 0, team: "Floor" });
+      expect(saved.ledger.find(r => r.n === 201)).toMatchObject({ status: "acked", cmt: "System was slow" });
+      expect(saved.incidents).toEqual([expect.objectContaining({ inc: "INC-2026-0042", status: "Investigating", instances: 3, agentId: "u-floor-agent" })]);
+      expect(saved.strikes).toEqual({ "u-floor-agent": { acw: 3 } });
+      expect(saved.floorFired).toEqual(["cq"]);
+      expect(boot.floors.gbd).toBeUndefined();
+    });
+
+    it("keeps one active shift per org: a new day closes the one before", async () => {
+      const store = postgresStore(db, { importDir: null });
+      store.shiftStarted("gbd", "2026-03-07");
+      store.shiftStarted("gbd", "2026-03-08"); // the day daylight saving starts: 23 hours
+      store.shiftStarted("gbd", "2026-03-06"); // a late write for an earlier day: kept, closed
+      await store.flush();
+      const shifts = await db.selectFrom("shift").select(["shift_date", "status", sql<string>`extract(epoch FROM ends_at - starts_at) / 3600`.as("hours")]).where("org_id", "=", "gbd").orderBy("shift_date").execute();
+      expect(shifts.map(s => [s.status, Number(s.hours)])).toEqual([["closed", 24], ["closed", 24], ["active", 23]]);
+    });
+
+    it("logs desktop alerts, leaving out a call-out, person or browser it has no row for", async () => {
+      const store = postgresStore(db, { importDir: null });
+      store.notificationSent({ n: 203, who: "u-floor-agent", role: "agent", level: "ops", endpoint: "https://fcm.googleapis.com/x", status: "sent", at });
+      store.notificationSent({ n: 999, who: "nobody", role: "tl", level: "lead", endpoint: "https://fcm.googleapis.com/y", status: "gone", at });
+      await store.flush();
+      const rows = await db.selectFrom("notification_log").select(["instance_id", "recipient_id", "endpoint_hash", "delivery_status", "notification_level"]).orderBy("notification_log_id").execute();
+      expect(rows).toEqual([
+        { instance_id: "203", recipient_id: "u-floor-agent", endpoint_hash: null, delivery_status: "sent", notification_level: "ops" },
+        { instance_id: null, recipient_id: null, endpoint_hash: null, delivery_status: "gone", notification_level: "lead" },
+      ]);
+      // This month has its own partition, not the default one.
+      const where = await sql<{ part: string }>`SELECT tableoid::regclass::text AS part FROM notification_log LIMIT 1`.execute(db);
+      expect(where.rows[0].part).toMatch(/^notification_log_\d{4}_\d{2}$/);
+    });
+
+    it("adds the alert-log partitions still missing, moving rows out of the default one", async () => {
+      // A month the migration made no partition for: its row lands in the default partition.
+      const far = new Date(Date.UTC(2031, 4, 15, 12));
+      await db.insertInto("notification_log").values({ notification_ts: far, recipient_role: "tl", channel: "push", notification_level: "lead", delivery_status: "sent" }).execute();
+      const partOf = async () => (await sql<{ part: string }>`SELECT tableoid::regclass::text AS part FROM notification_log WHERE notification_ts = ${far}`.execute(db)).rows.map(r => r.part);
+      expect(await partOf()).toEqual(["notification_log_default"]);
+
+      expect(await ensureNotificationPartitions(db, far, 1)).toEqual(["notification_log_2031_05", "notification_log_2031_06"]);
+      expect(await partOf()).toEqual(["notification_log_2031_05"]);
+      // A second run, and the months the migration already made, add nothing.
+      expect(await ensureNotificationPartitions(db, far, 1)).toEqual([]);
+      expect(await ensureNotificationPartitions(db)).toEqual([]);
+    });
+
+    it("refuses a strike on a floor call-out, and a closed incident without a final disposition", async () => {
+      const shift = await db.selectFrom("shift").select("shift_id").limit(1).executeTakeFirstOrThrow();
+      const base = { shift_id: shift.shift_id, rule_id: "cq", rule_version: 1, metric_value: "9", threshold_value: 4, condition_text: "x", severity: "warn", notification_level: "lead" };
+      await expect(db.insertInto("monitoring_instance").values({ ...base, instance_id: 900, occurrence_count: 1 }).execute()).rejects.toThrow(/monitoring_instance_strike/);
+      await expect(db.updateTable("incident_log").set({ status: "Closed", closed_at: new Date(), disposition: "Pending Investigation" }).execute()).rejects.toThrow(/incident_log_closed/);
+    });
   });
 
   it("refuses a rule version that breaks a check, and leaves the rule as it was", async () => {

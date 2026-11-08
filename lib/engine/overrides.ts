@@ -37,6 +37,14 @@ export function ruleFor(r: Rule, place: Place | null | undefined): Rule {
   return out;
 }
 
+/** The place of the most specific override that reaches `place`, or null when the rule's defaults apply there. */
+export function overrideAt(r: Rule, place: Place | null | undefined): Place | null {
+  if (!place || !r.overrides?.length) return null;
+  let best: RuleOverride | null = null;
+  for (const o of r.overrides) if (covers(o, place) && (!best || DEPTH[levelOf(o)] > DEPTH[levelOf(best)])) best = o;
+  return best && { tower: best.tower, subTower: best.subTower, lob: best.lob };
+}
+
 /** Every rule as it applies at `place`. */
 export const rulesAt = (rules: Rule[], place: Place | null | undefined): Rule[] => (place ? rules.map(r => ruleFor(r, place)) : rules);
 

@@ -6,6 +6,7 @@ import { inScope } from "@/lib/engine/scope";
 import { env } from "@/lib/env";
 import type { Batch } from "./runtime";
 import { bootSubscriptions, store } from "./store";
+import type { NotificationSent } from "@/lib/store/store";
 
 // Web Push: delivers nudges and escalations as system notifications, including to people
 // whose browser is minimized or closed. Each browser registers a subscription for the
@@ -64,15 +65,21 @@ function delivered(endpoint: string): void {
   store().subscriptionDelivered(endpoint);
 }
 
-function send(sub: PushSubscription, note: AlertNote): void {
-  webpush.sendNotification(sub, JSON.stringify(note), { TTL: TTL_SECONDS, urgency: "high" }).then(() => delivered(sub.endpoint)).catch((e: { statusCode?: number }) => {
+/** Send one alert. With `log`, the outcome is kept in notification_log: who it went to, and whether the push service took it. */
+function send(sub: PushSubscription, note: AlertNote, log?: { view: View; level: NotificationSent["level"] }): void {
+  const logged = (status: NotificationSent["status"]) => {
+    if (log) store().notificationSent({ n: note.n, who: log.view.who, role: log.view.role, level: log.level, endpoint: sub.endpoint, status, at: new Date() });
+  };
+  webpush.sendNotification(sub, JSON.stringify(note), { TTL: TTL_SECONDS, urgency: "high" }).then(() => { delivered(sub.endpoint); logged("sent"); }).catch((e: { statusCode?: number }) => {
     // The browser unsubscribed or the subscription expired.
-    if (e.statusCode === 404 || e.statusCode === 410) removeSubscription(sub.endpoint);
+    const gone = e.statusCode === 404 || e.statusCode === 410;
+    logged(gone ? "gone" : "failed");
+    if (gone) removeSubscription(sub.endpoint);
   });
 }
 
-/** Push what the live floor just raised to every subscriber it is in scope for. */
-export function pushBatch(S: EngineState, batch: Batch): void {
+/** Push what the live floor just raised to every subscriber it is in scope for. `log`: keep each delivery (a Genesys floor). */
+export function pushBatch(S: EngineState, batch: Batch, log = false): void {
   if (!pushKey || !subs().size || (!batch.nudges.length && !batch.toasts.length)) return;
   for (const { sub, view } of subs().values()) {
     const notes = alertsFor(
@@ -81,6 +88,6 @@ export function pushBatch(S: EngineState, batch: Batch): void {
       view.role === "agent" ? batch.nudges.filter(n => n.agentId === view.who) : [],
       batch.toasts.flatMap(e => (e.instance && inScope(S, view, e.instance) ? [{ title: e.title, body: e.body, n: e.instance.n, team: e.instance.isFloor ? undefined : e.instance.team }] : [])),
     );
-    for (const note of notes) send(sub, note);
+    for (const note of notes) send(sub, note, log ? { view, level: note.nudge ? "nudge" : S.ledger.find(r => r.n === note.n)?.stage ?? "info" } : undefined);
   }
 }

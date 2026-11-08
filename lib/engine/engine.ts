@@ -5,7 +5,8 @@ import type { FeedHandlers } from "@/lib/feed/FeedSource";
 import { DISPOSITIONS, ONCE_PER_SHIFT, canClose, ROUTE_IDS, defaultRules, evaluateAgents, ruleApplies, ruleOf, thrOf } from "./rules";
 import { type EngineHooks, type EngineState, type IncidentCounter, fire as fireRule, incidentCounter } from "./escalation";
 import { scopeLedger } from "./scope";
-import { type OverridePatch, patchOverride, placeAgents, placeKey, queueKeysUnder, ruleFor } from "./overrides";
+import { type OverridePatch, overrideAt, patchOverride, placeAgents, placeKey, queueKeysUnder, ruleFor } from "./overrides";
+import { type AckVia, type Recorder, type SavedFloor, firedKeys, readFiredKeys } from "./record";
 
 export interface EngineOptions {
   /** Share a rule set between engines (live and replay read the same configuration). */
@@ -18,6 +19,13 @@ export interface EngineOptions {
   year?: () => number;
   /** The WFM queue-to-LOB mapping for this floor, and its revision: it places agents and queues for rule overrides. */
   mapping?: () => { rev: number; rows: QueueMapRow[] };
+  /** Told of every call-out, acknowledgement, reason and incident move, to keep them. Without it nothing is kept. */
+  record?: Recorder;
+  /**
+   * Call-out numbers shared with other engines (the Genesys orgs' floors): the last one handed out.
+   * They are the saved call-outs' IDs, so they never repeat. Without it the engine numbers its own from 1.
+   */
+  ids?: { n: number };
 }
 
 type QueueRuleId = "cq" | "sl" | "aband";
@@ -59,11 +67,21 @@ export function createEngine(hooks: EngineHooks = {}, opts: EngineOptions = {}) 
   let pendingQueues: Record<string, QueueCounts> | null = null;
   let pendingStats: AgentStats[] = [];
   let counter = opts.incidents ?? incidentCounter(undefined, opts.year);
+  /** Today's strikes from before a restart, by uid, for agents the roster has not brought back yet. */
+  let carried: SavedFloor["strikes"] = {};
+  /** The rules in breach as last told to the recorder. */
+  let firedSaid = "";
 
   const thr = (id: RuleId) => thrOf(S.rules, id);
   const rule = (id: RuleId) => ruleOf(S.rules, id);
   const toast: NonNullable<EngineHooks["toast"]> = e => { if (!S.quiet) hooks.toast?.(e); };
-  const fire = (r: Rule, a: Agent | null, detail?: string, group?: Place) => fireRule(S, { toast, nudge: hooks.nudge }, counter, r, a, detail, group);
+  const fire = (r: Rule, a: Agent | null, detail?: string, group?: Place) => {
+    if (opts.ids) S.seq = opts.ids.n;
+    const rec = fireRule(S, { toast, nudge: hooks.nudge }, counter, r, a, detail, group);
+    if (opts.ids) opts.ids.n = S.seq;
+    opts.record?.fired(rec, { thr: r.thr, overrideAt: overrideAt(rule(r.id), rec.place), incident: rec.inc ? S.incidents.find(i => i.inc === rec.inc) ?? null : null });
+    return rec;
+  };
 
   /** Place each agent in a LOB when the roster or the mapping changed. */
   function syncPlaces() {
@@ -87,7 +105,7 @@ export function createEngine(hooks: EngineHooks = {}, opts: EngineOptions = {}) 
         return {
           id: i, uid: a.uid, name: a.name, team: a.team, state: a.state, stTime: a.stTime ?? 0, onHold: false, holdTime: 0,
           aht: p?.aht ?? a.aht ?? 420, calls: p?.calls ?? a.calls ?? 0, shortCalls: p?.shortCalls ?? 0, transfers: p?.transfers ?? 0,
-          adh: p?.adh ?? a.adh ?? 96, ahtFromFeed: p?.ahtFromFeed, strikes: { ...p?.strikes }, fired: { ...p?.fired },
+          adh: p?.adh ?? a.adh ?? 96, ahtFromFeed: p?.ahtFromFeed, strikes: { ...(p?.strikes ?? carried[a.uid]) }, fired: { ...p?.fired },
           ...(p?.place && { place: p.place }),
         };
       });
@@ -200,6 +218,10 @@ export function createEngine(hooks: EngineHooks = {}, opts: EngineOptions = {}) 
     groupRules();
     // A replay has no live heartbeat to watch.
     if (S.mode !== "replay") floorRule("gnr", S.staleFor >= thr("gnr"), `feed stale ${S.staleFor}s, states may be outdated`);
+    if (opts.record) {
+      const keys = firedKeys(S.floorFired, S.groupFired);
+      if (keys.join(",") !== firedSaid) { firedSaid = keys.join(","); opts.record.floorFired(keys); }
+    }
   }
 
   /** Advance the shift clock by one second. */
@@ -244,6 +266,24 @@ export function createEngine(hooks: EngineHooks = {}, opts: EngineOptions = {}) 
       S.rev++;
       pending = []; pendingQueue = null; pendingQueues = null; pendingStats = []; beat = false;
       if (!opts.incidents) counter = incidentCounter(undefined, opts.year);
+      carried = {}; firedSaid = "";
+    },
+    /**
+     * Carry on from a floor's saved records after a restart, right after reset(): its call-outs and
+     * incidents, and, when they are for `today`, the strikes and the rules in breach, so neither
+     * starts again at zero nor raises a call-out twice. Agents get their strikes as the roster brings them.
+     */
+    restore(saved: SavedFloor, today: string) {
+      S.ledger = saved.ledger.map(r => ({ ...r, rev: ++S.rev }));
+      S.incidents = saved.incidents.map(i => ({ ...i }));
+      S.seq = Math.max(S.seq, ...S.ledger.map(r => r.n));
+      if (saved.date !== today) return;
+      carried = saved.strikes;
+      for (const a of S.agents) if (carried[a.uid]) a.strikes = { ...carried[a.uid] };
+      const { floor, groups } = readFiredKeys(saved.floorFired);
+      for (const id of floor) S.floorFired[id] = true;
+      for (const g of groups) S.groupFired[`${g.id}|${placeKey(g.place)}`] = true;
+      firedSaid = firedKeys(S.floorFired, S.groupFired).join(",");
     },
     /**
      * Midnight on the floor's clock: a new day. Strikes and the day's counters start again at zero
@@ -252,6 +292,7 @@ export function createEngine(hooks: EngineHooks = {}, opts: EngineOptions = {}) 
      */
     newDay(t: number) {
       S.t = t;
+      carried = {};
       for (const a of S.agents) {
         a.strikes = {}; a.calls = 0; a.shortCalls = 0; a.transfers = 0; a.fired = {};
         for (const r of S.rules) if (ruleApplies(r, a)) a.fired[r.id] = true;
@@ -265,38 +306,43 @@ export function createEngine(hooks: EngineHooks = {}, opts: EngineOptions = {}) 
         for (const r of S.rules) if (ruleApplies(r, a)) a.fired[r.id] = true;
       }
     },
-    ack(n: number): Instance | null {
+    /** Acknowledge one call-out. `by` is who did it (a uid; null for a view with no person). */
+    ack(n: number, by: string | null = null, via: AckVia = "console"): Instance | null {
       const r = find(n);
       if (!r) return null;
-      if (r.status === "open") markAck(r);
+      if (r.status === "open") { markAck(r); opts.record?.acked([r], by, via); }
       return r;
     },
     /** Acknowledge every open instance in the viewer's span. Returns the count. */
     ackAll(v: View): number {
-      let k = 0;
-      for (const r of scopeLedger(S, v, S.ledger)) if (r.status === "open") { markAck(r); k++; }
-      return k;
+      const done: Instance[] = [];
+      for (const r of scopeLedger(S, v, S.ledger)) if (r.status === "open") { markAck(r); done.push(r); }
+      if (done.length) opts.record?.acked(done, v.who, "ack_all");
+      return done.length;
     },
     /** Attach the agent's reason. `ack` also acknowledges (the nudge's Send reason). */
     comment(n: number, text: string, ack: boolean): Instance | null {
       const r = find(n);
       if (!r) return null;
       r.cmt = text; r.rev = ++S.rev;
-      if (ack && r.status === "open") markAck(r);
+      opts.record?.commented(r);
+      if (ack && r.status === "open") { markAck(r); opts.record?.acked([r], r.agentId, "console"); }
       return r;
     },
     /**
      * Open -> Investigating -> Closed. An investigation can go back to Open, which drops its disposition,
      * and closes only once a disposition is recorded. A step that does not fit the status changes nothing.
      */
-    invAction(inc: string, action: InvAction, disposition?: string): Incident | null {
+    invAction(inc: string, action: InvAction, disposition?: string, by: string | null = null): Incident | null {
       const i = S.incidents.find(x => x.inc === inc);
       if (!i) return null;
+      const was = `${i.status}|${i.disposition}`;
       if (i.status === "Open") { if (action === "start") i.status = "Investigating"; }
       else if (i.status !== "Investigating") return i;
       else if (action === "reopen") { i.status = "Open"; i.disposition = ""; }
       else if (action === "record") { if (disposition && DISPOSITIONS.includes(disposition)) i.disposition = disposition; }
       else if (action === "close" && canClose(i.disposition)) { i.status = "Closed"; i.closedT = S.t; }
+      if (`${i.status}|${i.disposition}` !== was) opts.record?.incidentMoved(i, action, by);
       return i;
     },
     setThr(id: RuleId, v: unknown) { const r = rule(id); r.thr = Math.max(1, parseInt(String(v), 10) || r.thr); },

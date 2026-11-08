@@ -6,6 +6,8 @@ import { memoryStore } from "@/lib/store/memory";
 import { postgresStore } from "@/lib/store/postgres";
 import type { BootData, RosterNames, SavedSubscription, Store } from "@/lib/store/store";
 import type { Rule } from "@/lib/types";
+import type { IncidentSeq } from "@/lib/engine/escalation";
+import type { SavedFloor } from "@/lib/engine/record";
 
 // The process's store, opened once at start-up (instrumentation.ts), before any request.
 // Kept on globalThis so route handlers and the runtime share it, as they share the registry.
@@ -41,3 +43,13 @@ export const bootQueueMap = (): QueueMapRow[] | undefined => g.__rtmBoot?.queueM
 export const bootRoster = (org: OrgId): RosterNames | null | undefined => g.__rtmBoot?.rosters[org];
 export const bootSubscriptions = (): SavedSubscription[] => g.__rtmBoot?.subscriptions ?? [];
 export const bootActiveOrg = (): OrgId | undefined => g.__rtmBoot?.activeOrg;
+/** The highest call-out number saved; 0 without a database. */
+export const bootLastInstance = (): number => g.__rtmBoot?.lastInstance ?? 0;
+export const bootIncidentSeq = (): IncidentSeq | null => g.__rtmBoot?.incidentSeq ?? null;
+/** An org's saved floor, handed over once: the floor that starts from it then keeps its own. */
+export function takeBootFloor(org: OrgId): SavedFloor | undefined {
+  const floors = g.__rtmBoot?.floors;
+  const f = floors?.[org];
+  if (floors) delete floors[org];
+  return f;
+}
