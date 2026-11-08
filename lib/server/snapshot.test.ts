@@ -7,6 +7,7 @@ import { createEngine } from "@/lib/engine/engine";
 import type { Team, View } from "@/lib/types";
 import type { Runtime } from "./runtime";
 import { queueMapRev, saveQueueMap } from "./queueMapStore";
+import { memoryStore } from "@/lib/store/memory";
 import { type Since, tickMsg } from "./snapshot";
 
 const ORG: Team[] = [
@@ -56,11 +57,11 @@ describe("tickMsg queue data", () => {
     expect(m.queueMap).toBeUndefined();
   });
 
-  it("resends the mapping after an upload", () => {
+  it("resends the mapping after an upload", async () => {
     const { rt, now } = setup();
     const since = now();
     // Saving to a scratch dir keeps the real mapping untouched; the rev still moves, which is what the stream watches.
-    saveQueueMap([{ tower: "Voice", subTower: "Billing", lob: "Cards", queue: "Team Alpha" }], mkdtempSync(path.join(tmpdir(), "snap-")));
+    await saveQueueMap([{ tower: "Voice", subTower: "Billing", lob: "Cards", queue: "Team Alpha" }], null, memoryStore({ dir: mkdtempSync(path.join(tmpdir(), "snap-")) }));
     expect(tickMsg(rt, ADMIN, since, BATCH).queueMap).toBeDefined();
   });
 

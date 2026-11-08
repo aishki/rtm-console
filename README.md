@@ -92,7 +92,7 @@ An Admin sees a **Data** switch in the dev bar: **Live Genesys** or **Simulation
 
 - The switch is for everyone: there is one floor, and every open console follows it without reloading. The feed pill says which one is on screen.
 - **The simulation uses real names.** Its floor keeps the simulator's shape (ten teams of 15 to 25 agents) but takes the ten largest teams of the Gencloud roster and the first agents of each. Team leads, managers and LOBs are not in the Gencloud roster, so the sample ones stay. Everything that happens on that floor (states, call-outs, incidents) is invented.
-- The names come from the running Gencloud floor. Each roster Gencloud delivers is also saved to `.rtm/roster.json`, so the simulation can still use real names when the token has expired. Without either, the sample teams and names are used and the pill reads "Simulation · sample floor". `.rtm/` is gitignored: it holds real people's names.
+- The names come from the running Gencloud floor. Each roster Gencloud delivers is also saved (in the database, or `.rtm/roster.json` without one), so the simulation can still use real names when the token has expired. Without either, the sample teams and names are used and the pill reads "Simulation · sample floor". `.rtm/` is gitignored: it holds real people's names.
 - Gencloud keeps running behind a simulation, so its ledger and strikes are there on the way back. A simulation starts fresh every time it is switched on.
 - Desktop alerts follow the floor on screen, so a simulation does raise them. In a production build that means real people can get desktop alerts for invented call-outs while a simulation is on.
 
@@ -112,7 +112,7 @@ The console watches one Genesys organization at a time, listed in `lib/orgs.ts`:
 - An Admin switches the floor between the orgs, and to the simulator, from **Data** in the dev bar. It applies to everyone, and open consoles follow; no restart and no env change.
 - An org's floor keeps running after the switch away, on its own token, so its ledger, strikes and roster are there on the way back. Only the org on screen sends desktop alerts.
 - An org watches the queue map's rows whose Org column names it (ignoring case and punctuation); a row with no Org counts for every org. Commercial falls back to the saved view (`RTM_VIEW_CONFIG_ID`) while it has no rows; the other orgs watch nothing until they do.
-- The org on screen is saved to `.rtm/genesys-org` and comes back after a restart. Each org's roster is saved separately (`.rtm/roster.json` for Commercial, `.rtm/roster.<org>.json` for the others), so a switch starts from that org's last roster.
+- The org on screen is saved (in `genesys_org`, or `.rtm/genesys-org` without a database) and comes back after a restart. Each org's roster is saved separately (in `person`, `queue` and `queue_member`, or `.rtm/roster.json` for Commercial and `.rtm/roster.<org>.json` for the others), so a switch starts from that org's last roster.
 - Switching to an org for the first time starts its feed: queue numbers within seconds, agent states after a few minutes (see the loading indicator).
 
 ### Refreshing the Genesys token
@@ -165,7 +165,7 @@ The mapping is also **the list of queues the live feed watches**. Each mapped qu
 - The file is the `.xlsx` WFM sends. It needs a sheet named "Queue-to-LOB mapping" with the columns Tower, Sub-tower, LOB and Queue (Region and Org are read when present). Queue names match Genesys ignoring case and surrounding spaces.
 - An upload **replaces only the towers in the file** and keeps every other tower, so each tower's owner can send their own sheet.
 - The dialog reports the queues stored, the towers replaced, watched queues that are still unmapped, skipped rows and duplicate queues (the first row wins).
-- The mapping is stored in `.rtm/queue-map.json` (gitignored) and reaches every open console without a reload. The workbooks hold staff names: never commit them.
+- The mapping is stored in `queue_lob_map` with PostgreSQL, or in `.rtm/queue-map.json` (gitignored) without; the first start with a database copies an existing file in. It reaches every open console without a reload. The workbooks hold staff names: never commit them.
 
 ## Architecture
 

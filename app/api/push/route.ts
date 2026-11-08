@@ -17,7 +17,7 @@ export async function POST(req: Request) {
   if (!pushKey) return deny(503, "Desktop alerts are not configured on this server.");
   const sub = parseSubscription((await readJson(req)).subscription);
   if (!sub) return deny(400, "Not a push subscription.");
-  saveSubscription(resolveView(liveRuntime().engine.S, session.view), sub);
+  saveSubscription(resolveView(liveRuntime().engine.S, session.view), sub, req.headers.get("user-agent") ?? undefined);
   return Response.json({ ok: true });
 }
 

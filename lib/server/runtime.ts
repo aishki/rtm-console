@@ -12,11 +12,11 @@ import { loadRoster, savePeople, saveRoster } from "./rosterCache";
 import { fileManagerCache } from "./cgsManagerCache";
 import { cgsManagerLookup } from "@/lib/directory/cgsManagers";
 import { loadQueueMap } from "./queueMapStore";
-import { genesysToken, loadActiveOrg, saveActiveOrg } from "./tokenStore";
-import { type OrgId, orgOf, queueNamesFor } from "@/lib/orgs";
+import { genesysToken } from "./tokenStore";
+import { DEFAULT_ORG, type OrgId, orgOf, queueNamesFor } from "@/lib/orgs";
 import { floorDate, floorSeconds } from "@/lib/floorTime";
 import { env } from "@/lib/env";
-import { bootRules } from "./store";
+import { bootActiveOrg, bootRules, store } from "./store";
 
 // Server-side home of the rules engine. One live runtime serves the whole floor; a CSV
 // replay gets its own runtime per session so reviewing history never disturbs the live feed.
@@ -191,11 +191,11 @@ interface Registry {
 const g = globalThis as typeof globalThis & { __rtmRegistry?: Registry };
 const registry: Registry = (g.__rtmRegistry ??= {
   // The rules the store loaded at start-up; the defaults outside a server (unit tests).
-  rules: bootRules() ?? defaultRules(), source: env().NEXT_PUBLIC_FEED === "sim" ? "sim" : "gencloud", org: loadActiveOrg(),
+  rules: bootRules() ?? defaultRules(), source: env().NEXT_PUBLIC_FEED === "sim" ? "sim" : "gencloud", org: bootActiveOrg() ?? DEFAULT_ORG,
   floors: {}, orgs: {}, replays: new Map(), watchers: new Set(), incidentSeq: { year: 0, n: 0 },
 });
 // A registry from before there were several orgs (a dev reload) gets the new fields.
-registry.org ??= loadActiveOrg();
+registry.org ??= bootActiveOrg() ?? DEFAULT_ORG;
 registry.orgs ??= {};
 // A registry from before numbers carried their year (a dev reload) held a plain count.
 if (typeof registry.incidentSeq !== "object" || registry.incidentSeq === null) registry.incidentSeq = { year: 0, n: 0 };
@@ -238,7 +238,7 @@ export function setFloorSource(source: FloorSource, org: OrgId = registry.org): 
   if (source === registry.source && org === registry.org) return liveRuntime();
   if (registry.source === "sim" && source !== "sim") { registry.floors.sim?.stop(); delete registry.floors.sim; }
   registry.source = source;
-  if (org !== registry.org) { registry.org = org; saveActiveOrg(org); }
+  if (org !== registry.org) { registry.org = org; store().activeOrgChanged(org); }
   const rt = liveRuntime();
   for (const fn of [...registry.watchers]) fn();
   return rt;
