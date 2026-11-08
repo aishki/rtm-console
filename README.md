@@ -63,6 +63,7 @@ npm run dev        # http://localhost:3000
 | `RTM_VIEW_CONFIG_ID` | Saved "CSBDProviderData" view ID (default: `9c9f8fd2-acab-4282-9442-ddba152f9c18`, the 90-queue voice-floor view). Only used while no queue map is uploaded: the live feed watches the queue map's queues (see "Queue mapping"). A saved view belongs to the Genesys user who saved it, so other users' tokens get a 404 for it. |
 | `RTM_TIME_ZONE` | The floor's time zone, an IANA name (default: `America/New_York`). Sets the shift clock, the start of "today" for the queue numbers, and snapshot file names, whatever the server's own zone. |
 | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | Desktop alerts over Web Push: the key pair (`npx web-push generate-vapid-keys`) and a `mailto:` or `https:` contact. All three or none. Without them, alerts only show while a console tab is open. |
+| `CGS_AUTH_API_KEY`, `CGS_AUTH_BASE_URL` | Optional. The CGS associate directory's key and address (default `https://teamcgs.io`). With a key, agents and Team Leads who have no supervisor in Genesys get the directory's manager instead, looked up by Domain ID about once a second after the roster loads. Answers are kept for 7 days in `.rtm/cgs-managers.json`. RTM keeps only the manager's Domain ID from each record. |
 
 `.env*` files are gitignored except `.env.example`.
 
@@ -308,7 +309,7 @@ Identity today is two cookies set by the dev "View as" selector: `rtm_sid` (rand
 To wire SSO, replace the body of `readSession()` in `lib/server/session.ts` so it returns `{ sid, view: { role, who } }` for the signed-in user, or `null` when nobody is signed in. Everything downstream (`authorize()`, scoping, the stream) already depends only on that return value.
 
 - `role` is one of `admin | senior | mgr | tl | agent`.
-- `who` must equal the person's name **as it appears in the roster**: the TL name on `Team.tl`, the manager name on `Team.mgr`, or the agent name. `resolveView()` snaps an unknown name onto the first person for that role, which is right for the dev selector and wrong for production: make it reject instead once SSO is in.
+- `who` is the person's uid: their Genesys user ID on the live feed, or a made-up `sim:lead:<name>` / `csv:lead:<name>` for the simulator's and replay's leaders. A Team Lead sees their direct reports and a Manager everyone below them in the Genesys reporting lines. `resolveView()` snaps an unknown name onto the first person for that role, which is right for the dev selector and wrong for production: make it reject instead once SSO is in.
 - Then turn off `NEXT_PUBLIC_VIEW_AS`. `POST /api/session` already refuses when it is off, and the selector disappears because the stream stops sending the people directory.
 - There is no CSRF protection beyond SameSite=Lax and no rate limiting. Add both with real auth.
 
