@@ -3,7 +3,8 @@
 import type { CsvCols, MappedState } from "@/lib/csv/parse";
 import type { ImportSummary } from "@/lib/import/floor";
 import type { OrgId } from "@/lib/orgs";
-import type { AgentState, FeedKind, FloorSource, Incident, Instance, InvAction, QueueMapResult, ReplayMeta, Role, Rule, View } from "@/lib/types";
+import type { AgentState, FeedKind, FloorSource, Incident, Instance, InvAction, Place, QueueMapResult, ReplayMeta, Role, Rule, RuleOverride, View } from "@/lib/types";
+import type { OverridePatch } from "@/lib/engine/overrides";
 import { connect, useConsole } from "./store";
 
 /** A refusal from the API. `details` lists every problem when the server found several. */
@@ -53,6 +54,9 @@ export const api = {
   incident: (inc: string, action: InvAction, disposition?: string) => post<{ incident: Incident }>(`/api/incidents/${encodeURIComponent(inc)}`, { action, disposition }),
   patchRule: (id: Rule["id"], patch: Partial<Pick<Rule, "thr" | "sev" | "route" | "on">>) =>
     call<{ rule: Rule }>("/api/rules", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, ...patch }) }),
+  /** Change a rule's override for a Tower, Sub-Tower or LOB; null takes a setting back to the level above. */
+  patchOverride: (id: Rule["id"], scope: Place, patch: OverridePatch) =>
+    call<{ rule: Rule; override: RuleOverride | null }>("/api/rules", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, scope, ...patch }) }),
   /** Check a filled-in Excel template without starting a replay. */
   validateImport(file: File) {
     const form = new FormData();

@@ -5,8 +5,8 @@ import { RTM_DIR, readQueueMapFile, writeQueueMapFile, writeRosterFile } from ".
 import type { Store } from "./store";
 
 /**
- * Keeps nothing in a database: development without one, unit tests and CSV replays. Rules reset on
- * a restart; the queue map, each org's last roster and the org on screen are kept in `dir`
+ * Keeps nothing in a database: development without one, unit tests and CSV replays. Rules and their
+ * overrides reset on a restart; the queue map, each org's last roster and the org on screen are kept in `dir`
  * (.rtm/ by default); desktop-alert subscriptions stay in memory.
  * `dir: null` keeps nothing at all (unit tests).
  */
@@ -16,6 +16,7 @@ export function memoryStore(opts: { dir?: string | null } = {}): Store {
     kind: "memory",
     loadRules: async () => defaultRules(),
     ruleChanged() {},
+    overrideChanged() {},
     async loadBoot() {
       if (dir === null) return { queueMap: [], rosters: {}, subscriptions: [] };
       // Rosters are read when an org first needs one.

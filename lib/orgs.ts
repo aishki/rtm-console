@@ -26,8 +26,11 @@ export const orgOf = (id: OrgId): GenesysOrg => ORGS.find(o => o.id === id)!;
 
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
 
-/** The queue map's queues for an org, by its Org column. A row with no Org applies to every org. */
-export function queueNamesFor(rows: QueueMapRow[], org: OrgId): string[] {
+/** The queue map's rows for an org, by its Org column. A row with no Org applies to every org. */
+export function queueMapFor(rows: QueueMapRow[], org: OrgId): QueueMapRow[] {
   const name = norm(orgOf(org).name);
-  return rows.filter(r => !r.org || norm(r.org) === name).map(r => r.queue);
+  return rows.filter(r => !r.org || norm(r.org) === name);
 }
+
+/** The queue map's queues for an org. */
+export const queueNamesFor = (rows: QueueMapRow[], org: OrgId): string[] => queueMapFor(rows, org).map(r => r.queue);

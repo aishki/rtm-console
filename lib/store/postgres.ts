@@ -2,11 +2,12 @@ import { createHash } from "node:crypto";
 import { type Kysely, type Transaction, sql } from "kysely";
 import type { DB } from "@/lib/db/schema";
 import { defaultRules } from "@/lib/engine/rules";
+import { placeKey } from "@/lib/engine/overrides";
 import { domainIdOf } from "@/lib/engine/format";
 import type { QueueMapRow } from "@/lib/import/queueMap";
 import { ORGS, type OrgId, isOrgId } from "@/lib/orgs";
 import { queueKey } from "@/lib/queueStats";
-import type { Role, Rule, RuleId } from "@/lib/types";
+import type { Place, Role, Rule, RuleId, RuleOverride } from "@/lib/types";
 import { loadActiveOrg } from "@/lib/server/tokenStore";
 import { readQueueMapFile } from "./files";
 import type { RosterNames, SavedSubscription, Store } from "./store";
@@ -23,6 +24,7 @@ type Settings = Pick<Rule, "thr" | "unit" | "sev" | "route" | "on">;
 /** A write waiting in the queue. Each is written in its own transaction, in the order they happened. */
 type Pending =
   | { kind: "rule"; ruleId: RuleId; by: string | null; settings: Settings }
+  | { kind: "override"; ruleId: RuleId; by: string | null; override: RuleOverride }
   | { kind: "roster"; org: OrgId; roster: RosterNames }
   | { kind: "sub"; s: SavedSubscription }
   | { kind: "unsub"; endpoint: string }
@@ -48,6 +50,65 @@ async function writeRule(tx: Transaction<DB>, e: Extract<Pending, { kind: "rule"
   const version = current.current_version + 1;
   await tx.insertInto("rule_version").values({ rule_id: e.ruleId, version, threshold: s.thr, unit: s.unit, severity: s.sev, route_id: s.route, enabled: s.on, changed_by: e.by }).execute();
   await tx.updateTable("rules_master").set({ current_version: version }).where("rule_id", "=", e.ruleId).execute();
+}
+
+type PlaceColumn = "tower_id" | "sub_tower_id" | "lob_id";
+
+/** The tower, sub_tower or lob row a place names, made where missing (an override can name a place before an upload keeps it). */
+async function placeRow(tx: Transaction<DB>, p: Place): Promise<{ col: PlaceColumn; id: number }> {
+  await tx.insertInto("tower").values({ name: p.tower }).onConflict(oc => oc.column("name").doNothing()).execute();
+  const t = await tx.selectFrom("tower").select("tower_id").where("name", "=", p.tower).executeTakeFirstOrThrow();
+  if (!p.subTower) return { col: "tower_id", id: t.tower_id };
+  await tx.insertInto("sub_tower").values({ tower_id: t.tower_id, name: p.subTower }).onConflict(oc => oc.columns(["tower_id", "name"]).doNothing()).execute();
+  const s = await tx.selectFrom("sub_tower").select("sub_tower_id").where("tower_id", "=", t.tower_id).where("name", "=", p.subTower).executeTakeFirstOrThrow();
+  if (!p.lob) return { col: "sub_tower_id", id: s.sub_tower_id };
+  await tx.insertInto("lob").values({ sub_tower_id: s.sub_tower_id, name: p.lob }).onConflict(oc => oc.columns(["sub_tower_id", "name"]).doNothing()).execute();
+  const l = await tx.selectFrom("lob").select("lob_id").where("sub_tower_id", "=", s.sub_tower_id).where("name", "=", p.lob).executeTakeFirstOrThrow();
+  return { col: "lob_id", id: l.lob_id };
+}
+
+const placeOf = (o: Place): Place => ({ tower: o.tower, subTower: o.subTower, lob: o.lob });
+
+/** A new version of one rule's override at one place, with an audit_event. Nothing when it did not change. */
+async function writeOverride(tx: Transaction<DB>, e: Extract<Pending, { kind: "override" }>): Promise<void> {
+  const o = e.override;
+  const { col, id } = await placeRow(tx, o);
+  const current = await tx.selectFrom("rule_override").select(["version", "threshold", "severity", "route_id", "enabled"])
+    .where("rule_id", "=", e.ruleId).where(col, "=", id).orderBy("version", "desc").limit(1).forUpdate().executeTakeFirst();
+  const next = { threshold: o.thr ?? null, severity: o.sev ?? null, route_id: o.route ?? null, enabled: o.on ?? null };
+  const was = current && { threshold: current.threshold === null ? null : Number(current.threshold), severity: current.severity, route_id: current.route_id, enabled: current.enabled };
+  const empty = (v: typeof next) => Object.values(v).every(x => x === null);
+  // Unchanged, or removing one that was never kept: nothing new to keep.
+  if (was ? JSON.stringify(was) === JSON.stringify(next) : empty(next)) return;
+  const version = (current?.version ?? 0) + 1;
+  await tx.insertInto("rule_override").values({ rule_id: e.ruleId, [col]: id, version, ...next, changed_by: e.by }).execute();
+  await tx.insertInto("audit_event").values({
+    actor_id: e.by, action: empty(next) ? "rule_override.remove" : "rule_override.change", target_type: "rule_override", target_id: e.ruleId,
+    before: JSON.stringify({ place: placeOf(o), ...(was ?? {}) }), after: JSON.stringify({ place: placeOf(o), version, ...next }),
+  }).execute();
+}
+
+/** Every rule's current overrides: the latest version per rule and place, leaving out removed ones. */
+async function readOverrides(db: Kysely<DB>): Promise<Map<RuleId, RuleOverride[]>> {
+  const rows = await db.selectFrom(eb => eb.selectFrom("rule_override as o")
+    .leftJoin("lob as l", "l.lob_id", "o.lob_id")
+    .leftJoin("sub_tower as s", j => j.on(eb2 => eb2("s.sub_tower_id", "=", eb2.fn.coalesce("o.sub_tower_id", "l.sub_tower_id"))))
+    .leftJoin("tower as t", j => j.on(eb2 => eb2("t.tower_id", "=", eb2.fn.coalesce("o.tower_id", "s.tower_id"))))
+    .select(["o.override_id", "o.rule_id", "o.threshold", "o.severity", "o.route_id", "o.enabled", "o.scope_level", "t.name as tower", "s.name as sub_tower", "l.name as lob",
+      sql<number>`row_number() OVER (PARTITION BY o.rule_id, o.tower_id, o.sub_tower_id, o.lob_id ORDER BY o.version DESC)`.as("rank")])
+    .as("v")).selectAll().where("rank", "=", 1).orderBy("override_id").execute();
+  const out = new Map<RuleId, RuleOverride[]>();
+  for (const r of rows) {
+    if (r.threshold === null && r.severity === null && r.route_id === null && r.enabled === null) continue;
+    const o: RuleOverride = {
+      tower: r.tower ?? "", subTower: r.scope_level === "tower" ? "" : r.sub_tower ?? "", lob: r.scope_level === "lob" ? r.lob ?? "" : "",
+      ...(r.threshold !== null && { thr: Number(r.threshold) }), ...(r.severity !== null && { sev: r.severity as Rule["sev"] }),
+      ...(r.route_id !== null && { route: r.route_id as Rule["route"] }), ...(r.enabled !== null && { on: r.enabled }),
+    };
+    const id = r.rule_id as RuleId;
+    out.set(id, [...(out.get(id) ?? []), o]);
+  }
+  return out;
 }
 
 /**
@@ -229,6 +290,7 @@ export function postgresStore(db: Kysely<DB>, opts: { foldMs?: number; log?: (ms
   const writeOne = (e: Pending) => db.transaction().execute(async tx => {
     switch (e.kind) {
       case "rule": return writeRule(tx, e);
+      case "override": return writeOverride(tx, e);
       case "roster": return writeRoster(tx, e.org, e.roster);
       case "sub": {
         const { sub, view, userAgent } = e.s;
@@ -251,7 +313,7 @@ export function postgresStore(db: Kysely<DB>, opts: { foldMs?: number; log?: (ms
     }
   });
 
-  const describe = (e: Pending) => (e.kind === "rule" ? "rule changes" : e.kind === "roster" ? `the ${e.org} roster` : e.kind === "org" ? "the org on screen" : "desktop alert subscriptions");
+  const describe = (e: Pending) => (e.kind === "rule" ? "rule changes" : e.kind === "override" ? "rule overrides" : e.kind === "roster" ? `the ${e.org} roster` : e.kind === "org" ? "the org on screen" : "desktop alert subscriptions");
 
   function flush(): Promise<void> {
     clearTimeout(timer);
@@ -299,10 +361,12 @@ export function postgresStore(db: Kysely<DB>, opts: { foldMs?: number; log?: (ms
       const byId = new Map(rows.map(r => [r.rule_id, r]));
       const missing = defaultRules().filter(d => !byId.has(d.id)).map(d => d.id);
       if (missing.length) throw new Error(`Rules missing from the database (${missing.join(", ")}): run npm run db:migrate.`);
+      const overrides = await readOverrides(db);
       // Names and conditions come from the code; the editable settings from the database.
       return defaultRules().map(d => {
         const r = byId.get(d.id)!;
-        return { ...d, thr: Number(r.threshold), unit: r.unit, sev: r.severity as Rule["sev"], route: r.route_id as Rule["route"], on: r.enabled };
+        const o = d.type === "system" ? undefined : overrides.get(d.id);
+        return { ...d, thr: Number(r.threshold), unit: r.unit, sev: r.severity as Rule["sev"], route: r.route_id as Rule["route"], on: r.enabled, ...(o && { overrides: o }) };
       });
     },
 
@@ -311,6 +375,15 @@ export function postgresStore(db: Kysely<DB>, opts: { foldMs?: number; log?: (ms
       // Folded into the last edit while it is still waiting, if it was the same rule by the same person.
       if (last?.kind === "rule" && last !== inFlight && last.ruleId === rule.id && last.by === by) last.settings = settingsOf(rule);
       else queue.push({ kind: "rule", ruleId: rule.id, by, settings: settingsOf(rule) });
+      schedule(foldMs);
+    },
+
+    overrideChanged(ruleId, override, by = null) {
+      const last = queue.at(-1);
+      const o = { ...override };
+      // Folded into the last edit while it is still waiting, if it was the same override by the same person.
+      if (last?.kind === "override" && last !== inFlight && last.ruleId === ruleId && last.by === by && placeKey(last.override) === placeKey(o)) last.override = o;
+      else queue.push({ kind: "override", ruleId, by, override: o });
       schedule(foldMs);
     },
 

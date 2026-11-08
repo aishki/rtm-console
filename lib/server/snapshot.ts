@@ -24,18 +24,18 @@ export function tickMsg(rt: Runtime, view: View, since: Since | null, batch: Bat
   const agents = scopeAgents(S, view);
   let members: Record<string, number[]> | undefined;
   let leads: TickMsg["leads"];
-  let noSupervisor: number | undefined;
+  let noSupervisor: number | undefined, manyLobs: number | undefined;
   if (!since || since.rosterRev !== S.rosterRev) {
     const mine = new Set(agents.map(a => a.id));
     members = Object.fromEntries(Object.entries(S.members ?? {}).map(([q, ids]) => [q, ids.filter(id => mine.has(id))]));
-    if (PERMS[view.role].mapping) noSupervisor = unsupervised(S).length;
+    if (PERMS[view.role].mapping) { noSupervisor = unsupervised(S).length; manyLobs = S.severalLobs.length; }
     leads = Object.fromEntries(agents.map(a => { const l = leadersOf(S.people, a.uid); return [a.uid, { tl: l.tl?.name ?? null, mgr: l.mgr?.name ?? null }]; }));
   }
   return {
     type: "tick", t: S.t, mode: S.mode, staleFor: S.staleFor, agentsLoading: S.agentsLoading, replay: S.replay, queue: S.queue, rules: S.rules,
     org: scopeTeams(S, view), agents, incidents: scopeIncidents(S, view, S.incidents),
     ledger: since === null ? ledger : ledger.filter(r => r.rev > since.rev),
-    queues: S.queues ?? {}, members, leads, unsupervised: noSupervisor, viewerName: viewerName(view, S),
+    queues: S.queues ?? {}, members, leads, unsupervised: noSupervisor, severalLobs: manyLobs, viewerName: viewerName(view, S),
     queueMap: !since || since.mapRev !== queueMapRev() ? loadQueueMap() : undefined,
     // Call-out toasts go to the leaders whose span they are in; feed notices go to everyone.
     // A replay only announces its own progress.

@@ -1,5 +1,6 @@
 import type { Agent, AgentState, Role, Route, Rule, RuleId } from "@/lib/types";
 import { fmt } from "./format";
+import { ruleFor } from "./overrides";
 
 export const STATES: Record<AgentState, { label: string; color: string }> = {
   oncall: { label: "On Call", color: "#00BBBA" },
@@ -87,7 +88,7 @@ const NUDGE_COPY: Partial<Record<RuleId, (a: Agent, rules: Rule[]) => string>> =
   acw: a => `You've been in after-call work for ${fmt(a.stTime)}. If the case is closed, set yourself back to Available.`,
   auxp: a => `You've been in Aux Personal for ${fmt(a.stTime)}. Your team needs you on the queue, so head back when you can.`,
   ovbrk: a => `Your break has run ${fmt(a.stTime)}, past the scheduled window. Please head back to Available.`,
-  short: (_a, rules) => `That last call released in under ${thrOf(rules, "short")}s. If it dropped, log it; if the member hung up, no action needed. This is tracked for patterns.`,
+  short: (a, rules) => `That last call released in under ${ruleFor(ruleOf(rules, "short"), a.place).thr}s. If it dropped, log it; if the member hung up, no action needed. This is tracked for patterns.`,
   adh: a => `Your adherence has dipped to ${a.adh.toFixed(0)}%. Sticking close to your schedule for the rest of the shift will bring it back.`,
   hold: a => `The member has been on hold for ${fmt(a.holdTime)}. Check back in, or take them off hold if you're ready.`,
   outb: a => `This outbound call has been running ${fmt(a.stTime)}. If the callback is complete, wrap up and return to the queue.`,
@@ -95,8 +96,9 @@ const NUDGE_COPY: Partial<Record<RuleId, (a: Agent, rules: Rule[]) => string>> =
 };
 export const nudgeCopy = (r: Rule, a: Agent, rules: Rule[]): string => (NUDGE_COPY[r.id] ?? (() => r.name))(a, rules);
 
-/** True when an enabled rule's test passes for the agent. Offline agents only count for Prolonged offline. */
-export function ruleApplies(r: Rule, a: Agent): boolean {
+/** True when an enabled rule's test passes for the agent, as the rule applies at their LOB. Offline agents only count for Prolonged offline. */
+export function ruleApplies(rule: Rule, a: Agent): boolean {
+  const r = ruleFor(rule, a.place);
   const test = AGENT_TESTS[r.id];
   if (!r.on || !test) return false;
   if (r.id !== "offl" && a.state === "off") return false;
@@ -104,17 +106,19 @@ export function ruleApplies(r: Rule, a: Agent): boolean {
 }
 export const isBreach = (a: Agent, rules: Rule[]): boolean => rules.some(r => ruleApplies(r, a));
 export const isCrit = (a: Agent, rules: Rule[]): boolean =>
-  (a.state === "oncall" && a.stTime >= thrOf(rules, "long")) || (a.state === "off" && a.stTime >= thrOf(rules, "offl"));
+  (a.state === "oncall" && a.stTime >= ruleFor(ruleOf(rules, "long"), a.place).thr) || (a.state === "off" && a.stTime >= ruleFor(ruleOf(rules, "offl"), a.place).thr);
 
 export const strikesOf = (a: Agent): number => Object.values(a.strikes).reduce((x, y) => x + (y ?? 0), 0);
 
 /**
- * One pass of the agent-level rules. A rule fires once per state episode: `fired` is set on
- * the first passing test and cleared when the test stops passing (or the state changes,
- * which resets `fired` altogether), except for the once-per-shift rules.
+ * One pass of the agent-level rules, each as it applies at the agent's LOB. A rule fires once per
+ * state episode: `fired` is set on the first passing test and cleared when the test stops passing
+ * (or the state changes, which resets `fired` altogether), except for the once-per-shift rules.
+ * `fire` gets the rule with the agent's settings.
  */
 export function evaluateAgents(agents: Agent[], rules: Rule[], fire: (r: Rule, a: Agent) => void): void {
-  for (const a of agents) for (const r of rules) {
+  for (const a of agents) for (const rule of rules) {
+    const r = ruleFor(rule, a.place);
     const test = AGENT_TESTS[r.id];
     if (!r.on || !test) continue;
     if (r.id !== "offl" && a.state === "off") continue;
@@ -129,7 +133,7 @@ export interface Target { id: RuleId; name: string; cond: string; now: string; l
 /** The agent's own view of every agent-level rule (My targets & timers). */
 export function myTargets(a: Agent, rules: Rule[]): Target[] {
   const MAP: Partial<Record<RuleId, AgentState>> = { acw: "acw", auxp: "auxp", ovbrk: "auxb", offl: "off", long: "oncall", outb: "outb" };
-  return rules.filter(r => r.type !== "queue" && r.type !== "system").map(r => {
+  return rules.filter(r => r.type !== "queue" && r.type !== "system").map(rule => ruleFor(rule, a.place)).map(r => {
     let now = "—", lvl: TargetLevel = "ok", stat = "OK";
     const timer = (v: number) => {
       now = fmt(v);

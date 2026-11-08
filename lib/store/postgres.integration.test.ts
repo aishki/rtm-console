@@ -47,7 +47,7 @@ describe.skipIf(!url)("PostgreSQL: migrations and the store", () => {
   it("migrates an empty database, and a second run does nothing", async () => {
     const first = await migrator().migrateToLatest();
     expect(first.error).toBeUndefined();
-    expect(first.results?.map(r => r.status)).toEqual(["Success", "Success", "Success"]);
+    expect(first.results?.map(r => r.status)).toEqual(["Success", "Success", "Success", "Success"]);
     const second = await migrator().migrateToLatest();
     expect(second.error).toBeUndefined();
     expect(second.results).toEqual([]);
@@ -212,6 +212,41 @@ describe.skipIf(!url)("PostgreSQL: migrations and the store", () => {
     const row = await db.selectFrom("push_subscription").select("last_success_at").executeTakeFirstOrThrow();
     expect(row.last_success_at).toBeInstanceOf(Date);
     expect(boot.activeOrg).toBe("commercial");
+  });
+
+  it("keeps rule overrides by Tower, Sub-Tower and LOB as versions, and loads the current ones", async () => {
+    const store = postgresStore(db, { foldMs: 20, importDir: null });
+    const LOCAL = { tower: "Provider", subTower: "Claims", lob: "Local" };
+    const TOWER = { tower: "Provider", subTower: "", lob: "" };
+    store.overrideChanged("acw", { ...LOCAL, thr: 200 });
+    store.overrideChanged("acw", { ...LOCAL, thr: 240, sev: "crit" }); // folds into the one before
+    store.overrideChanged("acw", { ...TOWER, on: false });
+    // A place the mapping does not have yet is made, so the override has a row to point at.
+    store.overrideChanged("cq", { tower: "Specialty", subTower: "Dental", lob: "", thr: 4 });
+    await store.flush();
+    const rules = await postgresStore(db).loadRules();
+    expect(rules.find(r => r.id === "acw")!.overrides).toEqual([{ ...LOCAL, thr: 240, sev: "crit" }, { ...TOWER, on: false }]);
+    expect(rules.find(r => r.id === "cq")!.overrides).toEqual([{ tower: "Specialty", subTower: "Dental", lob: "", thr: 4 }]);
+    const lob = await db.selectFrom("rule_override").select(["scope_level", "version", "threshold"]).where("rule_id", "=", "acw").where("lob_id", "is not", null).execute();
+    expect(lob).toEqual([{ scope_level: "lob", version: 1, threshold: "240" }]);
+
+    // Removing one keeps its history as a version with nothing set.
+    store.overrideChanged("acw", { ...LOCAL });
+    store.overrideChanged("acw", { ...TOWER, on: false }); // unchanged: no new version
+    await store.flush();
+    expect((await postgresStore(db).loadRules()).find(r => r.id === "acw")!.overrides).toEqual([{ ...TOWER, on: false }]);
+    const versions = await db.selectFrom("rule_override").select(["version", "threshold"]).where("rule_id", "=", "acw").where("lob_id", "is not", null).orderBy("version").execute();
+    expect(versions).toEqual([{ version: 1, threshold: "240" }, { version: 2, threshold: null }]);
+    const audit = await db.selectFrom("audit_event").select("action").where("target_type", "=", "rule_override").orderBy("audit_id").execute();
+    expect(audit.map(a => a.action)).toEqual(["rule_override.change", "rule_override.change", "rule_override.change", "rule_override.remove"]);
+  });
+
+  it("refuses an override that names no place, or more than one", async () => {
+    const rule = { rule_id: "acw", version: 1, threshold: 10 };
+    await expect(db.insertInto("rule_override").values(rule).execute()).rejects.toThrow(/rule_override_one_place/);
+    const t = await db.selectFrom("tower").select("tower_id").limit(1).executeTakeFirstOrThrow();
+    const l = await db.selectFrom("lob").select("lob_id").limit(1).executeTakeFirstOrThrow();
+    await expect(db.insertInto("rule_override").values({ ...rule, tower_id: t.tower_id, lob_id: l.lob_id }).execute()).rejects.toThrow(/rule_override_one_place/);
   });
 
   it("refuses a rule version that breaks a check, and leaves the rule as it was", async () => {

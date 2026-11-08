@@ -1,6 +1,7 @@
-import type { Agent, Incident, Instance, NudgeEvent, Queue, QueueCounts, ReplayMeta, Route, Rule, RuleId, Stage, Team, ToastEvent } from "@/lib/types";
+import type { Agent, Incident, Instance, NudgeEvent, Place, Queue, QueueCounts, ReplayMeta, Route, Rule, RuleId, Stage, Team, ToastEvent } from "@/lib/types";
 import { nudgeCopy, valueOf } from "./rules";
 import { leadersOf } from "./scope";
+import { placeLabel } from "./overrides";
 import { NO_LEADER } from "./format";
 import { wallClock } from "@/lib/floorTime";
 
@@ -59,6 +60,10 @@ export interface EngineState {
   rosterRev: number;
   /** Floor-level rules currently in breach; they re-arm on recovery. */
   floorFired: Partial<Record<RuleId, boolean>>;
+  /** Queue rules in breach for a Tower, Sub-Tower or LOB with an override, by rule and place. */
+  groupFired: Record<string, boolean>;
+  /** Agents whose queues are in more than one LOB, with those LOBs (most queues first, the one they got first): admins get them to check the mapping. */
+  severalLobs: { uid: string; lobs: Place[] }[];
   /** Bumped on every ledger change. */
   rev: number;
 }
@@ -89,15 +94,21 @@ export function openIncident(S: EngineState, counter: IncidentCounter, agent: Ag
   return inc;
 }
 
-/** Log a call-out, count the strike, climb the ladder and notify. `agent` is null for queue and system rules. */
-export function fire(S: EngineState, hooks: EngineHooks, counter: IncidentCounter, r: Rule, agent: Agent | null, detail?: string): Instance {
+/**
+ * Log a call-out, count the strike, climb the ladder and notify. `agent` is null for queue and system
+ * rules; `group` is the Tower, Sub-Tower or LOB a queue rule was checked for. `r` carries the settings
+ * that applied there.
+ */
+export function fire(S: EngineState, hooks: EngineHooks, counter: IncidentCounter, r: Rule, agent: Agent | null, detail?: string, group?: Place): Instance {
   let strikes = 0, inc = "";
   if (agent) { agent.strikes[r.id] = (agent.strikes[r.id] ?? 0) + 1; strikes = agent.strikes[r.id]!; }
   const stage = stageFor(r.route, strikes);
   if (agent && stage === "ops") inc = openIncident(S, counter, agent, r, strikes);
   const val = detail ?? (agent ? valueOf(r.id, agent) : "");
+  const place = group ?? agent?.place;
   const rec: Instance = {
-    n: ++S.seq, t: S.t, agent: agent ? agent.name : "Queue", agentId: agent ? agent.uid : null, isFloor: !agent, team: agent ? agent.team : "Floor",
+    n: ++S.seq, t: S.t, agent: agent ? agent.name : "Queue", agentId: agent ? agent.uid : null, isFloor: !agent, team: agent ? agent.team : group ? placeLabel(group) : "Floor",
+    ...(place && { place }),
     rule: r.name, ruleId: r.id, val, stage, sev: stage === "ops" ? "esc" : r.sev, status: "open", ackT: null,
     strikes, inc, cmt: null, cond: `${r.cond} ${r.thr}${r.unit}`, rev: ++S.rev,
   };

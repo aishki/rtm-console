@@ -140,6 +140,23 @@ export interface QueueMember {
   queue_id: string;
 }
 
+export interface RuleOverride {
+  change_reason: string | null;
+  changed_at: Generated<Timestamp>;
+  changed_by: string | null;
+  enabled: boolean | null;
+  lob_id: number | null;
+  override_id: Generated<Int8>;
+  route_id: string | null;
+  rule_id: string;
+  scope_level: Generated<string>;
+  severity: string | null;
+  sub_tower_id: number | null;
+  threshold: Numeric | null;
+  tower_id: number | null;
+  version: number;
+}
+
 export interface RulesMaster {
   created_at: Generated<Timestamp>;
   current_version: number;
@@ -200,6 +217,7 @@ export interface DB {
   queue: Queue;
   queue_lob_map: QueueLobMap;
   queue_member: QueueMember;
+  rule_override: RuleOverride;
   rule_version: RuleVersion;
   rules_master: RulesMaster;
   status_mapping: StatusMapping;

@@ -11,9 +11,10 @@ import { pushBatch } from "./push";
 import { loadRoster, savePeople, saveRoster } from "./rosterCache";
 import { fileManagerCache } from "./cgsManagerCache";
 import { cgsManagerLookup } from "@/lib/directory/cgsManagers";
-import { loadQueueMap } from "./queueMapStore";
+import { loadQueueMap, queueMapRev } from "./queueMapStore";
+import type { QueueMapRow } from "@/lib/import/queueMap";
 import { genesysToken } from "./tokenStore";
-import { DEFAULT_ORG, type OrgId, orgOf, queueNamesFor } from "@/lib/orgs";
+import { DEFAULT_ORG, type OrgId, orgOf, queueMapFor, queueNamesFor } from "@/lib/orgs";
 import { floorDate, floorSeconds } from "@/lib/floorTime";
 import { env } from "@/lib/env";
 import { bootActiveOrg, bootRules, store } from "./store";
@@ -45,6 +46,16 @@ export interface Runtime {
 }
 
 const WARM_SECONDS = 900;
+
+/** The queue map a floor places agents and queues by: an org's rows, or every row for the simulator and replays. */
+function mappingFor(org?: OrgId): NonNullable<EngineOptions["mapping"]> {
+  let memo: { rev: number; rows: QueueMapRow[] } = { rev: -1, rows: [] };
+  return () => {
+    const rev = queueMapRev();
+    if (rev !== memo.rev) memo = { rev, rows: org ? queueMapFor(loadQueueMap(), org) : loadQueueMap() };
+    return memo;
+  };
+}
 const MAX_REPLAYS = 8;
 
 function createRuntime(kind: Runtime["kind"], rules: Rule[], speed: number, engineOpts: Omit<EngineOptions, "rules">, makeFeed: (engine: Engine) => FeedSource, prepare: (engine: Engine, feed: FeedSource) => void, afterTick?: (engine: Engine) => void): Runtime {
@@ -130,7 +141,7 @@ function createGencloud(rules: Rule[], org: OrgId, incidents: IncidentCounter): 
     const today = floorDate(now);
     if (today !== day) { day = today; engine.newDay(floorSeconds(now)); }
   };
-  const rt = createRuntime("live", rules, 1, { incidents }, () => remembering(new GencloudFeed(gencloudConfig(org)), org), engine => {
+  const rt = createRuntime("live", rules, 1, { incidents, mapping: mappingFor(org) }, () => remembering(new GencloudFeed(gencloudConfig(org)), org), engine => {
     engine.reset({ t });
     // Loading the roster takes minutes for hundreds of queues: start from the one saved last
     // time, everyone Offline until their state arrives. The feed marks the floor as loading.
@@ -144,7 +155,7 @@ function createGencloud(rules: Rule[], org: OrgId, incidents: IncidentCounter): 
 }
 
 function createSim(rules: Rule[], seed: SimSeed | undefined): Runtime {
-  const rt = createRuntime("live", rules, 1, { deriveAdh: true },
+  const rt = createRuntime("live", rules, 1, { deriveAdh: true, mapping: mappingFor() },
     engine => new SimFeed({ thr: engine.thr, strikes: (uid, id) => engine.S.agents.find(a => a.uid === uid)?.strikes[id] ?? 0 }, Math.random, seed),
     engine => engine.reset({ t: 8 * 3600 }), // 08:00 shift start
     engine => simulateReplies(engine.S, engine.comment),
@@ -267,7 +278,7 @@ export function runtimeFor(sid: string): Runtime {
 export function startReplay(sid: string, events: ReplayEvent[], extras: ReplayExtras = {}): Runtime {
   exitReplay(sid);
   if (registry.replays.size >= MAX_REPLAYS) exitReplay(registry.replays.keys().next().value!);
-  const rt = createRuntime("replay", registry.rules, REPLAY_SPEED, { deriveAdh: true }, () => new CsvReplayFeed(events, extras), (engine, feed) => {
+  const rt = createRuntime("replay", registry.rules, REPLAY_SPEED, { deriveAdh: true, mapping: mappingFor() }, () => new CsvReplayFeed(events, extras), (engine, feed) => {
     const csv = feed as CsvReplayFeed;
     engine.reset({ t: csv.startT, mode: "replay", replay: csv.meta });
   });

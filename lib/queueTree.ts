@@ -1,5 +1,6 @@
 import type { QueueMapRow } from "./import/queueMap";
 import { queueKey } from "./queueStats";
+import type { Place } from "./types";
 
 export type TreeLevel = "tower" | "subTower" | "lob" | "queue";
 
@@ -12,6 +13,8 @@ export interface TreeNode {
   /** The distinct agent ids under the node, in first-seen order. */
   agentIds: number[];
   children: TreeNode[];
+  /** Where a mapped node sits: its rule overrides apply to its numbers. A queue has its LOB's. */
+  place?: Place;
 }
 
 export const UNMAPPED = "Unmapped";
@@ -37,6 +40,7 @@ function place(roots: TreeNode[], path: string[], levels: TreeLevel[], queueName
     let node = siblings.find(n => n.label === label);
     if (!node) {
       node = newNode(parentKey, levels[depth], label);
+      if (levels === MAPPED) node.place = { tower: path[0], subTower: depth >= 1 ? path[1] : "", lob: depth >= 2 ? path[2] : "" };
       siblings.push(node);
       ids.set(node, new Set());
     }
