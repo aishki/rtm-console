@@ -47,8 +47,8 @@ export async function PATCH(req: Request) {
     if (typeof body.on !== "boolean") return deny(400, "Enabled must be true or false.");
     e.setOn(rule.id, body.on);
   }
-  // A new rule version, saved shortly after (quick edits become one). Who changed it is recorded once sign-in exists.
-  store().ruleChanged(rule);
+  // A new rule version and an audit entry, saved shortly after (quick edits become one).
+  store().ruleChanged(rule, ctx.view);
   publishAll();
   return Response.json({ rule });
 }
@@ -87,7 +87,7 @@ function patchOverride(ctx: Ctx, rule: Rule, body: Record<string, unknown>): Res
 
   const override = ctx.rt.engine.setOverride(rule.id, place, patch);
   // A new override version, saved shortly after (quick edits become one). No settings left removes it.
-  store().overrideChanged(rule.id, override ?? place);
+  store().overrideChanged(rule.id, override ?? place, ctx.view);
   publishAll();
   return Response.json({ rule, override });
 }

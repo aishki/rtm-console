@@ -1,4 +1,4 @@
-import type { Incident, Instance, InvAction, Place, RuleId } from "@/lib/types";
+import type { Incident, Instance, InvAction, Place, RuleId, View } from "@/lib/types";
 
 // What the engine tells whoever keeps its records (the store, for a Genesys floor). The engine
 // calls these as things happen and never waits on them; a floor without a recorder keeps nothing.
@@ -12,14 +12,24 @@ export interface Recorder {
    * specific override that applied, null for the rule's defaults; `incident` the one it opened.
    */
   fired(rec: Instance, x: { thr: number; overrideAt: Place | null; incident: Incident | null }): void;
-  /** Call-outs were acknowledged by `by` (a uid; null for a view with no person). */
-  acked(recs: Instance[], by: string | null, via: AckVia): void;
+  /** Call-outs were acknowledged by `by`: who and as what role (null when nobody is known). */
+  acked(recs: Instance[], by: View | null, via: AckVia): void;
   /** The agent attached a reason. */
   commented(rec: Instance): void;
   /** An investigation moved: started, sent back to Open, a disposition recorded, or closed. */
-  incidentMoved(i: Incident, action: InvAction, by: string | null): void;
+  incidentMoved(i: Incident, action: InvAction, by: View | null): void;
   /** The queue and system rules in breach changed (see firedKeys). */
   floorFired(keys: string[]): void;
+}
+
+/** An agent's calls today, rebuilt from the day's raw events after a restart. */
+export interface DayCalls {
+  calls: number;
+  transfers: number;
+  /** Short calls: today's short-call call-outs. */
+  shortCalls: number;
+  /** Average length of today's calls in seconds, to start AHT from until Genesys's own figure arrives; null without lengths. */
+  aht: number | null;
 }
 
 /** A floor's records as they were saved, to carry on from after a restart. */
@@ -34,6 +44,8 @@ export interface SavedFloor {
   strikes: Record<string, Partial<Record<RuleId, number>>>;
   /** The queue and system rules in breach (see firedKeys). */
   floorFired: string[];
+  /** Today's calls, by agent uid (from source_event_stream). */
+  calls?: Record<string, DayCalls>;
 }
 
 /**

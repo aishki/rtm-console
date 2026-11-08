@@ -1,6 +1,6 @@
 import type { QueueMapRow } from "@/lib/import/queueMap";
 import type { OrgId } from "@/lib/orgs";
-import type { Incident, Instance, InvAction, OrgPerson, Place, Role, Rule, RuleId, RuleOverride, Team } from "@/lib/types";
+import type { FloorSource, Incident, Instance, InvAction, OrgPerson, Place, Role, Rule, RuleId, RuleOverride, Team, View } from "@/lib/types";
 import type { IncidentSeq } from "@/lib/engine/escalation";
 import type { AckVia, SavedFloor } from "@/lib/engine/record";
 
@@ -70,22 +70,42 @@ export interface NotificationSent {
   at: Date;
 }
 
+/** One update a Genesys floor's feed delivered, for source_event_stream. */
+export interface SourceEvent {
+  org: OrgId;
+  at: Date;
+  entityType: "agent" | "queue" | "system";
+  /** The agent's uid, the queue's name, or "floor". */
+  entityId: string;
+  /** "state", "call.end", "aht", "counts" (one queue) or "queue" (the floor's numbers). */
+  metric: string;
+  value: string | null;
+  /** The update as the feed delivered it. */
+  payload?: unknown;
+}
+
+/** What the floor shows: a Genesys org's feed, or the simulator. */
+export interface FloorChoice { source: FloorSource; org: OrgId }
+
+// Every audited change takes `by`: who made it (a uid; null for an Admin or Senior Leader, who
+// have no person) and as what role. It becomes audit_event.actor_id and actor_role.
+
 export interface Store {
   readonly kind: "memory" | "postgres";
   /** The rules at their current versions, in the console's order, each with its current overrides. */
   loadRules(): Promise<Rule[]>;
   /** A rule's settings changed. Saved shortly after, as a new version; edits in quick succession become one. */
-  ruleChanged(rule: Rule, by?: string | null): void;
+  ruleChanged(rule: Rule, by?: View | null): void;
   /**
    * A rule's override for one Tower, Sub-Tower or LOB changed. Saved shortly after, as a new version;
    * edits in quick succession become one. An override with no settings left removes it.
    */
-  overrideChanged(ruleId: RuleId, override: RuleOverride, by?: string | null): void;
+  overrideChanged(ruleId: RuleId, override: RuleOverride, by?: View | null): void;
 
   /** Everything else the app needs at start-up. */
   loadBoot(): Promise<Omit<BootData, "rules">>;
   /** Replace the whole queue map. Resolves once it is kept, so the upload can say so. */
-  saveQueueMap(rows: QueueMapRow[], by: string | null): Promise<void>;
+  saveQueueMap(rows: QueueMapRow[], by: View | null): Promise<void>;
   /** An org's roster or reporting lines changed. Saved shortly after; only the latest per org is written. */
   rosterChanged(org: OrgId, roster: RosterNames): void;
   /** A browser registered for desktop alerts, or moved to another person. */
@@ -96,6 +116,8 @@ export interface Store {
   subscriptionRemoved(endpoint: string): void;
   /** The floor now shows this org. */
   activeOrgChanged(org: OrgId): void;
+  /** Someone switched the floor between orgs or to and from the simulator: an audit entry. */
+  feedSwitched(from: FloorChoice, to: FloorChoice, by: View | null, at: Date): void;
 
   // A Genesys org's floor. `date` is the floor date (Eastern, YYYY-MM-DD) a record belongs to.
   /** The org's floor is on `date`: its shift starts, and the one before ends. */
@@ -103,15 +125,19 @@ export interface Store {
   /** A call-out was raised, with the strike it counted and the incident it opened. */
   instanceFired(org: OrgId, date: string, rec: Instance, x: FiredInfo): void;
   /** Call-outs were acknowledged. Acknowledge all also leaves an audit entry. */
-  instancesAcked(ns: number[], by: string | null, via: AckVia, at: Date): void;
+  instancesAcked(ns: number[], by: View | null, via: AckVia, at: Date): void;
   /** The agent attached a reason to a call-out. */
   instanceCommented(n: number, text: string, at: Date): void;
   /** An investigation moved, with an audit entry. */
-  incidentMoved(i: Incident, action: InvAction, by: string | null, at: Date): void;
+  incidentMoved(i: Incident, action: InvAction, by: View | null, at: Date): void;
   /** The queue and system rules in breach changed (firedKeys() in lib/engine/record.ts). */
   floorFiredChanged(org: OrgId, date: string, keys: string[]): void;
   /** A desktop alert went to a browser. These gather and are written a few at a time. */
   notificationSent(e: NotificationSent): void;
+  /** Updates a Genesys floor's feed delivered. They gather and are written about once a second. */
+  eventsReceived(events: SourceEvent[]): void;
+  /** A new floor day began at `since` (its midnight): the events from before it are emptied, for every org. */
+  eventsCleared(since: Date): void;
 
   /** Write whatever is waiting. */
   flush(): Promise<void>;

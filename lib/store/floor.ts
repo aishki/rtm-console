@@ -6,7 +6,7 @@ import type { AckVia, SavedFloor } from "@/lib/engine/record";
 import { defaultRules } from "@/lib/engine/rules";
 import { FLOOR_TIME_ZONE, floorSeconds } from "@/lib/floorTime";
 import type { OrgId } from "@/lib/orgs";
-import type { Incident, Instance, InvAction, Place, RuleId, Severity, Stage } from "@/lib/types";
+import type { Incident, Instance, InvAction, Place, RuleId, Severity, Stage, View } from "@/lib/types";
 import type { FiredInfo, NotificationSent } from "./store";
 
 // Phase 2: a Genesys floor's shifts, call-outs, incidents, strikes and desktop-alert deliveries,
@@ -42,7 +42,7 @@ async function personFor(tx: Transaction<DB>, org: OrgId, uid: string, name: str
 }
 
 /** `uid` when they have a person row, else null: an admin's view has no person, and the foreign key would refuse it. */
-const personOrNull = (uid: string | null) => (uid ? sql<string | null>`(SELECT person_id FROM person WHERE person_id = ${uid})` : null);
+export const personOrNull = (uid: string | null | undefined) => (uid ? sql<string | null>`(SELECT person_id FROM person WHERE person_id = ${uid})` : null);
 
 /** The current version of the override at `place`, when it still sets something. Nothing is made: the override was saved before it applied. */
 async function overrideId(tx: Transaction<DB>, ruleId: RuleId, p: Place): Promise<string | null> {
@@ -107,13 +107,16 @@ export async function writeFired(tx: Transaction<DB>, org: OrgId, date: string, 
   }
 }
 
-export async function writeAcked(tx: Transaction<DB>, ns: number[], by: string | null, via: AckVia, at: Date): Promise<void> {
+/** audit_event's actor columns for `by`. actor_id has no foreign key, so it keeps a uid that has no person row. */
+export const actor = (by: View | null | undefined) => ({ actor_id: by?.who ?? null, actor_role: by?.role ?? null });
+
+export async function writeAcked(tx: Transaction<DB>, ns: number[], by: View | null, via: AckVia, at: Date): Promise<void> {
   const done = await tx.updateTable("monitoring_instance")
-    .set({ status: "acked", acknowledged_at: at, acknowledged_by: personOrNull(by), ack_via: via, updated_at: sql`now()` })
+    .set({ status: "acked", acknowledged_at: at, acknowledged_by: personOrNull(by?.who), ack_via: via, updated_at: sql`now()` })
     .where("instance_id", "in", ns.map(String)).where("status", "=", "open").returning("instance_id").execute();
   if (via !== "ack_all") return;
   await tx.insertInto("audit_event").values({
-    actor_id: by, action: "monitoring_instance.ack_all", target_type: "monitoring_instance", target_id: null,
+    at, ...actor(by), action: "monitoring_instance.ack_all", target_type: "monitoring_instance", target_id: null,
     before: null, after: JSON.stringify({ count: done.length, instances: done.map(d => Number(d.instance_id)) }),
   }).execute();
 }
@@ -122,13 +125,13 @@ export async function writeComment(tx: Transaction<DB>, n: number, text: string,
   await tx.updateTable("monitoring_instance").set({ agent_comment: text, agent_comment_at: at, updated_at: sql`now()` }).where("instance_id", "=", String(n)).execute();
 }
 
-export async function writeIncidentMove(tx: Transaction<DB>, i: Incident, action: InvAction, by: string | null, at: Date): Promise<void> {
+export async function writeIncidentMove(tx: Transaction<DB>, i: Incident, action: InvAction, by: View | null, at: Date): Promise<void> {
   const was = await tx.selectFrom("incident_log").select(["status", "disposition"]).where("incident_number", "=", i.inc).forUpdate().executeTakeFirst();
   if (!was) return; // opened before the floor was saved
   const next = { status: i.status, disposition: i.disposition || null };
   await tx.updateTable("incident_log").set({ ...next, closed_at: i.status === "Closed" ? at : null, modified_at: at }).where("incident_number", "=", i.inc).execute();
   await tx.insertInto("audit_event").values({
-    actor_id: by, action: `incident.${action}`, target_type: "incident_log", target_id: i.inc,
+    at, ...actor(by), action: `incident.${action}`, target_type: "incident_log", target_id: i.inc,
     before: JSON.stringify(was), after: JSON.stringify(next),
   }).execute();
 }

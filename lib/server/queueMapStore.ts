@@ -1,4 +1,5 @@
 import type { QueueMapRow } from "@/lib/import/queueMap";
+import type { View } from "@/lib/types";
 import { queueKey } from "@/lib/queueStats";
 import { readQueueMapFile } from "@/lib/store/files";
 import type { Store } from "@/lib/store/store";
@@ -24,7 +25,7 @@ export function loadQueueMap(): QueueMapRow[] {
 }
 
 /** Save the whole mapping. Resolves once it is kept; throws, keeping the old mapping, when it could not be. */
-export async function saveQueueMap(rows: QueueMapRow[], by: string | null = null, s: Store = store()): Promise<void> {
+export async function saveQueueMap(rows: QueueMapRow[], by: View | null = null, s: Store = store()): Promise<void> {
   const one = firstPerQueue(rows);
   await s.saveQueueMap(one, by);
   cache.rows = one;

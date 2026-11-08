@@ -38,6 +38,7 @@ export interface AgentRuleState {
 export interface AuditEvent {
   action: string;
   actor_id: string | null;
+  actor_role: string | null;
   after: Json | null;
   at: Generated<Timestamp>;
   audit_id: Generated<Int8>;
@@ -275,6 +276,18 @@ export interface Shift {
   status: Generated<string>;
 }
 
+export interface SourceEventStream {
+  entity_id: string;
+  entity_type: string;
+  event_id: Generated<Int8>;
+  event_payload: Json | null;
+  event_ts: Timestamp;
+  metric_name: string;
+  metric_value: string | null;
+  org_id: string;
+  source_system: Generated<string>;
+}
+
 export interface StatusMapping {
   console_state: string;
   genesys_status: string;
@@ -318,6 +331,7 @@ export interface DB {
   rule_version: RuleVersion;
   rules_master: RulesMaster;
   shift: Shift;
+  source_event_stream: SourceEventStream;
   status_mapping: StatusMapping;
   sub_tower: SubTower;
   tower: Tower;

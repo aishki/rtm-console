@@ -14,6 +14,6 @@ export async function POST(req: Request) {
   const { source, org } = await readJson(req);
   if (source !== "gencloud" && source !== "sim") return deny(400, "Unknown data source.");
   if (org !== undefined && (source !== "gencloud" || !isOrgId(org))) return deny(400, "Unknown org.");
-  const rt = setFloorSource(source, org);
+  const rt = setFloorSource(source, org, ctx.view);
   return Response.json({ feed: rt.feed.kind, genesysOrg: rt.genesysOrg ?? null, realNames: usesRealNames(rt) });
 }
