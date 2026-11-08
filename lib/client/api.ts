@@ -51,7 +51,8 @@ export const api = {
   ack: (n: number) => post<{ instance: Instance }>(`/api/instances/${n}/ack`),
   ackAll: () => post<{ count: number }>("/api/instances/ack-all"),
   comment: (n: number, text: string, ack: boolean) => post<{ instance: Instance }>(`/api/instances/${n}/comment`, { text, ack }),
-  incident: (inc: string, action: InvAction, disposition?: string) => post<{ incident: Incident }>(`/api/incidents/${encodeURIComponent(inc)}`, { action, disposition }),
+  /** `value` is the disposition for "record", the notes for "note" and the closing note for "close". */
+  incident: (inc: string, action: InvAction, value?: string) => post<{ incident: Incident }>(`/api/incidents/${encodeURIComponent(inc)}`, action === "record" ? { action, disposition: value } : { action, text: value }),
   patchRule: (id: Rule["id"], patch: Partial<Pick<Rule, "thr" | "sev" | "route" | "on">>) =>
     call<{ rule: Rule }>("/api/rules", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, ...patch }) }),
   /** Change a rule's override for a Tower, Sub-Tower or LOB; null takes a setting back to the level above. */

@@ -6,7 +6,7 @@ import type { AckVia, SavedFloor } from "@/lib/engine/record";
 import { defaultRules } from "@/lib/engine/rules";
 import { FLOOR_TIME_ZONE, floorSeconds } from "@/lib/floorTime";
 import type { OrgId } from "@/lib/orgs";
-import type { Incident, Instance, InvAction, Place, RuleId, Severity, Stage, View } from "@/lib/types";
+import type { Incident, Instance, InvAction, Place, Role, RuleId, Severity, Stage, View } from "@/lib/types";
 import type { FiredInfo, NotificationSent } from "./store";
 
 // Phase 2: a Genesys floor's shifts, call-outs, incidents, strikes and desktop-alert deliveries,
@@ -126,10 +126,16 @@ export async function writeComment(tx: Transaction<DB>, n: number, text: string,
 }
 
 export async function writeIncidentMove(tx: Transaction<DB>, i: Incident, action: InvAction, by: View | null, at: Date): Promise<void> {
-  const was = await tx.selectFrom("incident_log").select(["status", "disposition"]).where("incident_number", "=", i.inc).forUpdate().executeTakeFirst();
+  const was = await tx.selectFrom("incident_log").select(["status", "disposition", "owner_id", "owner_role", "comments", "resolution"])
+    .where("incident_number", "=", i.inc).forUpdate().executeTakeFirst();
   if (!was) return; // opened before the floor was saved
-  const next = { status: i.status, disposition: i.disposition || null };
-  await tx.updateTable("incident_log").set({ ...next, closed_at: i.status === "Closed" ? at : null, modified_at: at }).where("incident_number", "=", i.inc).execute();
+  const next = {
+    status: i.status, disposition: i.disposition || null, owner_id: i.owner?.who ?? null, owner_role: i.owner?.role ?? null,
+    comments: i.comments || null, resolution: i.resolution || null,
+  };
+  // The audit entry keeps the owner as given; the row names them only when they have a person row.
+  await tx.updateTable("incident_log").set({ ...next, owner_id: personOrNull(next.owner_id), closed_at: i.status === "Closed" ? at : null, modified_at: at })
+    .where("incident_number", "=", i.inc).execute();
   await tx.insertInto("audit_event").values({
     at, ...actor(by), action: `incident.${action}`, target_type: "incident_log", target_id: i.inc,
     before: JSON.stringify(was), after: JSON.stringify(next),
@@ -179,7 +185,9 @@ export async function readFloors(db: Kysely<DB>, today: string): Promise<Partial
     .orderBy("mi.instance_id", "desc").execute();
 
   const incidents = await db.selectFrom("incident_log as il").innerJoin("shift as s", "s.shift_id", "il.shift_id").leftJoin("person as p", "p.person_id", "il.person_id")
-    .select(["s.org_id", "il.incident_number", "il.person_id", "p.name", "il.team", "il.rule_id", "il.strike", "il.status", "il.disposition", "il.opened_at", "il.closed_at"])
+    .leftJoin("person as o", "o.person_id", "il.owner_id")
+    .select(["s.org_id", "il.incident_number", "il.person_id", "p.name", "il.team", "il.rule_id", "il.strike", "il.status", "il.disposition", "il.opened_at", "il.closed_at",
+      "il.owner_id", "il.owner_role", "o.name as owner_name", "il.comments", "il.resolution"])
     .where(eb => eb.or([eb("s.shift_date", "=", day(today)), eb("il.status", "<>", "Closed")]))
     .orderBy("il.incident_id", "desc").execute();
 
@@ -204,6 +212,8 @@ export async function readFloors(db: Kysely<DB>, today: string): Promise<Partial
       inc: i.incident_number, t: floorSeconds(i.opened_at), agent: i.name ?? i.person_id, agentId: i.person_id, team: i.team ?? "",
       rule: ruleName.get(ruleId) ?? ruleId, ruleId, instances: i.strike, status: i.status as Incident["status"],
       disposition: i.disposition ?? "", closedT: i.closed_at ? floorSeconds(i.closed_at) : null,
+      ...(i.owner_role && { owner: { who: i.owner_id, role: i.owner_role as Role, name: i.owner_name } }),
+      ...(i.comments && { comments: i.comments }), ...(i.resolution && { resolution: i.resolution }),
     });
   }
   const orgOfShift = new Map(shifts.map(s => [s.shift_id, s.org_id]));

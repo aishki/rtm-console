@@ -2,7 +2,7 @@ import type { Agent, AgentStateEvent, AgentStats, Incident, Instance, InvAction,
 import type { QueueMapRow } from "@/lib/import/queueMap";
 import { queueKey, rollUp } from "@/lib/queueStats";
 import type { FeedHandlers } from "@/lib/feed/FeedSource";
-import { DISPOSITIONS, ONCE_PER_SHIFT, canClose, ROUTE_IDS, defaultRules, evaluateAgents, ruleApplies, ruleOf, thrOf } from "./rules";
+import { DISPOSITIONS, NOTE_MAX, ONCE_PER_SHIFT, canClose, ROUTE_IDS, defaultRules, evaluateAgents, ruleApplies, ruleOf, thrOf } from "./rules";
 import { type EngineHooks, type EngineState, type IncidentCounter, fire as fireRule, incidentCounter } from "./escalation";
 import { scopeLedger } from "./scope";
 import { type OverridePatch, overrideAt, patchOverride, placeAgents, placeKey, queueKeysUnder, ruleFor } from "./overrides";
@@ -37,6 +37,9 @@ const QUEUE_TESTS: Record<QueueRuleId, (q: Queue, thr: number) => [boolean, stri
   aband: (q, thr) => [q.ab > thr, `abandon at ${q.ab.toFixed(1)}%`],
 };
 const QUEUE_RULES = Object.keys(QUEUE_TESTS) as QueueRuleId[];
+
+/** What an investigation step can change, to tell whether one did. */
+const incidentKey = (i: Incident) => JSON.stringify([i.status, i.disposition, i.owner?.who, i.owner?.role, i.comments ?? "", i.resolution ?? ""]);
 
 /** A new state episode re-arms every rule except the once-per-shift ones. */
 function oncePerShift(fired: Agent["fired"]): Agent["fired"] {
@@ -339,19 +342,28 @@ export function createEngine(hooks: EngineHooks = {}, opts: EngineOptions = {}) 
       return r;
     },
     /**
-     * Open -> Investigating -> Closed. An investigation can go back to Open, which drops its disposition,
-     * and closes only once a disposition is recorded. A step that does not fit the status changes nothing.
+     * Open -> Investigating -> Closed. Starting makes the investigation `by`'s: they own it. An
+     * investigation can go back to Open, which drops its disposition and owner, and closes only once a
+     * disposition is recorded. `value` is the disposition for "record", the notes for "note" and the
+     * closing note for "close". A step that does not fit the status changes nothing.
      */
-    invAction(inc: string, action: InvAction, disposition?: string, by: View | null = null): Incident | null {
+    invAction(inc: string, action: InvAction, value?: string, by: View | null = null): Incident | null {
       const i = S.incidents.find(x => x.inc === inc);
       if (!i) return null;
-      const was = `${i.status}|${i.disposition}`;
-      if (i.status === "Open") { if (action === "start") i.status = "Investigating"; }
+      const text = (value ?? "").trim().slice(0, NOTE_MAX);
+      const was = incidentKey(i);
+      if (i.status === "Open") {
+        if (action === "start") {
+          i.status = "Investigating";
+          if (by) i.owner = { who: by.who, role: by.role, name: by.who ? S.people[by.who]?.name ?? S.agents.find(a => a.uid === by.who)?.name ?? null : null };
+        }
+      }
       else if (i.status !== "Investigating") return i;
-      else if (action === "reopen") { i.status = "Open"; i.disposition = ""; }
-      else if (action === "record") { if (disposition && DISPOSITIONS.includes(disposition)) i.disposition = disposition; }
-      else if (action === "close" && canClose(i.disposition)) { i.status = "Closed"; i.closedT = S.t; }
-      if (`${i.status}|${i.disposition}` !== was) opts.record?.incidentMoved(i, action, by);
+      else if (action === "reopen") { i.status = "Open"; i.disposition = ""; delete i.owner; }
+      else if (action === "record") { if (value && DISPOSITIONS.includes(value)) i.disposition = value; }
+      else if (action === "note") { if (text) i.comments = text; else delete i.comments; }
+      else if (action === "close" && canClose(i.disposition)) { i.status = "Closed"; i.closedT = S.t; if (text) i.resolution = text; }
+      if (incidentKey(i) !== was) opts.record?.incidentMoved(i, action, by);
       return i;
     },
     setThr(id: RuleId, v: unknown) { const r = rule(id); r.thr = Math.max(1, parseInt(String(v), 10) || r.thr); },

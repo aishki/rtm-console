@@ -9,12 +9,20 @@ import { createDb } from "@/lib/db/client";
 import { ensureNotificationPartitions } from "@/lib/db/partitions";
 import type { DB } from "@/lib/db/schema";
 import { databaseUrl, isTestDatabase, testDatabaseUrl } from "@/lib/db/url";
-import { defaultRules } from "@/lib/engine/rules";
+import { ROUTE_IDS, defaultRules } from "@/lib/engine/rules";
+import { consoleState, mapGenesysState } from "@/lib/feed/gencloud/state";
+import { ORGS } from "@/lib/orgs";
 import { floorDate, floorMidnight } from "@/lib/floorTime";
 import type { Incident, Instance } from "@/lib/types";
 import type { QueueMapRow } from "@/lib/import/queueMap";
+import { createEngine } from "@/lib/engine/engine";
+import { incidentCounter, stageFor } from "@/lib/engine/escalation";
+import type { Recorder } from "@/lib/engine/record";
+import type { FeedHandlers } from "@/lib/feed/FeedSource";
+import { recordingEvents } from "@/lib/feed/recordingEvents";
+import type { OrgId } from "@/lib/orgs";
 import { postgresStore } from "./postgres";
-import type { RosterNames, SourceEvent } from "./store";
+import type { RosterNames, SourceEvent, Store } from "./store";
 
 // Migrations and the PostgreSQL store against a real database. Skipped unless a database is
 // configured (TEST_DATABASE_URL, DATABASE_URL or DB_*), and refused unless it is a *_test one,
@@ -50,7 +58,7 @@ describe.skipIf(!url)("PostgreSQL: migrations and the store", () => {
   it("migrates an empty database, and a second run does nothing", async () => {
     const first = await migrator().migrateToLatest();
     expect(first.error).toBeUndefined();
-    expect(first.results?.map(r => r.status)).toEqual(["Success", "Success", "Success", "Success", "Success", "Success"]);
+    expect(first.results?.map(r => r.status)).toEqual(["Success", "Success", "Success", "Success", "Success", "Success", "Success"]);
     const second = await migrator().migrateToLatest();
     expect(second.error).toBeUndefined();
     expect(second.results).toEqual([]);
@@ -65,6 +73,28 @@ describe.skipIf(!url)("PostgreSQL: migrations and the store", () => {
     expect(await count("rules_master")).toBe(14);
     expect(await count("rule_version")).toBe(14);
     expect(await count("status_mapping")).toBe(9);
+  });
+
+  it("holds the same alert ladders, state mapping and regions as the code, which does not read them", async () => {
+    // Each route's rung for strikes 0 (a floor call-out) to 5 is the engine's stage, and only Ops opens an incident.
+    const steps = await db.selectFrom("notification_route_step").select(["route_id", "min_occurrence", "max_occurrence", "stage", "opens_incident"]).execute();
+    for (const route of ROUTE_IDS) {
+      for (let strike = 0; strike <= 5; strike++) {
+        const at = steps.filter(r => r.route_id === route && r.min_occurrence <= strike && (r.max_occurrence === null || r.max_occurrence >= strike));
+        expect(at.map(r => [r.stage, r.opens_incident]), `${route}, strike ${strike}`).toEqual([[stageFor(route, strike), stageFor(route, strike) === "ops"]]);
+      }
+    }
+    // Each Genesys status maps to the console state the feed gives it.
+    const map = await db.selectFrom("status_mapping").select(["signal", "genesys_status", "console_state"]).orderBy("priority").execute();
+    for (const m of map) {
+      const got = m.signal === "presence" ? mapGenesysState(m.genesys_status, undefined)
+        : m.signal === "routing" ? mapGenesysState("Away", m.genesys_status)
+        : consoleState("On Queue", "INTERACTING", { onCall: false, acwSince: 1 });
+      expect(got, `${m.signal} ${m.genesys_status}`).toBe(m.console_state);
+    }
+    // Each org's region is where the feed calls it.
+    const orgs = await db.selectFrom("genesys_org as o").innerJoin("genesys_region as r", "r.region_id", "o.region_id").select(["o.org_id", "r.api_host"]).execute();
+    expect(Object.fromEntries(orgs.map(o => [o.org_id, `https://${o.api_host}`]))).toEqual(Object.fromEntries(ORGS.map(o => [o.id, o.apiBase])));
   });
 
   it("loads the rules as the code's defaults", async () => {
@@ -399,6 +429,124 @@ describe.skipIf(!url)("PostgreSQL: migrations and the store", () => {
       // A second run, and the months the migration already made, add nothing.
       expect(await ensureNotificationPartitions(db, far, 1)).toEqual([]);
       expect(await ensureNotificationPartitions(db)).toEqual([]);
+    });
+
+    it("runs a Genesys floor end to end: each strike and incident lands on the right agent, and carries on after a restart", async () => {
+      const ORG: OrgId = "specialty";
+      const A = "u-e2e-amara", B = "u-e2e-joshua", TL = "u-e2e-lead", MGR = "u-e2e-mgr";
+      const roster: RosterNames = {
+        org: [{ team: "E2E Claims", tl: "", mgr: "", lob: "" }],
+        agents: [{ uid: A, name: "Reyes, Amara - AG1001", team: "E2E Claims" }, { uid: B, name: "Lim, Joshua - AG1002", team: "E2E Claims" }],
+        members: { "E2E Claims": [A, B] },
+        queues: [{ id: "q-e2e-claims", name: "E2E Claims" }],
+        people: [{ uid: A, name: "Reyes, Amara - AG1001", supervisor: TL }, { uid: B, name: "Lim, Joshua - AG1002", supervisor: TL }, { uid: TL, name: "Lead, Team - TL1001", supervisor: MGR }, { uid: MGR, name: "Mgr, Lob - MG1001", supervisor: null }],
+      };
+      // As lib/server/runtime.ts wires a Genesys floor: its recorder, and its feed wrapped to keep the raw events.
+      const recorder = (store: Store): Recorder => ({
+        fired: (rec, x) => store.instanceFired(ORG, today, rec, { ...x, at: new Date() }),
+        acked: (recs, by, via) => store.instancesAcked(recs.map(r => r.n), by, via, new Date()),
+        commented: r => store.instanceCommented(r.n, r.cmt ?? "", new Date()),
+        incidentMoved: (i, action, by) => store.incidentMoved(i, action, by, new Date()),
+        floorFired: keys => store.floorFiredChanged(ORG, today, keys),
+      });
+      const floor = async (store: Store) => {
+        const boot = await store.loadBoot();
+        const ids = { n: boot.lastInstance };
+        const e = createEngine({}, { rules: await store.loadRules(), record: recorder(store), ids, incidents: incidentCounter({ ...(boot.incidentSeq ?? { year: 0, n: 0 }) }) });
+        e.reset({ t: 9 * 3600 });
+        const saved = boot.floors[ORG];
+        if (saved) e.restore(saved, today);
+        store.shiftStarted(ORG, today);
+        let h!: FeedHandlers;
+        recordingEvents({ kind: "gencloud", subscribe: x => { h = x; return () => {}; } }, ORG, rows => store.eventsReceived(rows)).subscribe(e.ingest);
+        h.onRoster({ org: roster.org, agents: roster.agents.map(a => ({ uid: a.uid!, name: a.name, team: a.team, state: "avail" })), members: roster.members, people: roster.people });
+        const run = (sec: number) => { for (let i = 0; i < sec; i++) { h.onHeartbeat(); e.tick(); } };
+        const acw = e.thr("acw");
+        /** A call ends into after-call work that runs past the ACW limit, then the agent is back. */
+        const longAcw = (uid: string) => { h.onAgentState({ uid, state: "acw", callEnded: { transferred: true, durationSec: 300 } }); run(acw + 2); h.onAgentState({ uid, state: "avail" }); run(1); };
+        return { e, h, run, longAcw, boot, ids };
+      };
+      const agent = (e: ReturnType<typeof createEngine>, uid: string) => e.S.agents.find(a => a.uid === uid)!;
+      const tl = { role: "tl" as const, who: TL }, mgr = { role: "mgr" as const, who: MGR }, admin = { role: "admin" as const, who: null };
+
+      // --- The first run of the day ---
+      const store = postgresStore(db, { importDir: null });
+      store.rosterChanged(ORG, roster);
+      await store.flush();
+      const one = await floor(store);
+      const firstN = one.ids.n + 1;
+      one.longAcw(A); one.longAcw(A); one.longAcw(A); // strikes 1, 2 and 3: the third opens an incident
+      one.h.onAgentState({ uid: B, state: "avail", callEnded: { durationSec: Math.max(1, one.e.thr("short") - 5) } }); one.run(1); // B: one short call
+      one.h.onQueue({ cq: 99, sl: 90, asa: 10, ab: 1 }); one.run(2); // the floor: calls waiting
+      const byStrike = (uid: string, s: number) => one.e.S.ledger.find(r => r.agentId === uid && r.strikes === s && r.ruleId === "acw")!;
+      const [s1, s2, s3] = [1, 2, 3].map(s => byStrike(A, s));
+      const inc = one.e.S.incidents[0];
+      expect([s1.stage, s2.stage, s3.stage, s3.inc]).toEqual(["nudge", "lead", "ops", inc.inc]);
+      one.e.ack(s1.n, tl, "push");
+      one.e.comment(s2.n, "System was slow", true);
+      expect(one.e.ackAll(admin)).toBe(3); // strike 3, B's short call, the queue
+      one.e.invAction(inc.inc, "start", undefined, mgr);
+      one.e.invAction(inc.inc, "note", "Spoke to the agent; system was slow.", mgr);
+      one.e.invAction(inc.inc, "record", "Coached", mgr);
+      one.e.invAction(inc.inc, "close", "Coached on ACW.", mgr);
+      await store.flush();
+
+      const shift = await db.selectFrom("shift").select("shift_id").where("org_id", "=", ORG).where("shift_date", "=", sql<Date>`${today}::date`).executeTakeFirstOrThrow();
+      const rows = await db.selectFrom("monitoring_instance").select(["instance_id", "person_id", "rule_id", "occurrence_count", "notification_level", "severity", "status", "ack_via", "acknowledged_by", "agent_comment"])
+        .where("shift_id", "=", shift.shift_id).orderBy("instance_id").execute();
+      // Every call-out names the agent it is about, or no one for the floor's.
+      expect(rows.map(r => [Number(r.instance_id) - firstN, r.person_id, r.rule_id, r.occurrence_count, r.notification_level, r.status, r.ack_via, r.acknowledged_by])).toEqual([
+        [0, A, "acw", 1, "nudge", "acked", "push", TL],
+        [1, A, "acw", 2, "lead", "acked", "console", A],
+        [2, A, "acw", 3, "ops", "acked", "ack_all", null],
+        [3, B, "short", 1, "nudge", "acked", "ack_all", null],
+        [4, null, "cq", 0, "lead", "acked", "ack_all", null],
+      ]);
+      expect(rows[1].agent_comment).toBe("System was slow");
+      expect(rows[2].severity).toBe("esc");
+      expect(await db.selectFrom("agent_rule_state").select(["person_id", "rule_id", "strikes"]).where("shift_id", "=", shift.shift_id).orderBy("person_id").execute())
+        .toEqual([{ person_id: A, rule_id: "acw", strikes: 3 }, { person_id: B, rule_id: "short", strikes: 1 }]);
+      const incRow = await db.selectFrom("incident_log").select(["incident_number", "instance_id", "person_id", "strike", "status", "disposition", "closed_at", "owner_id", "owner_role", "comments", "resolution"]).where("shift_id", "=", shift.shift_id).execute();
+      expect(incRow).toEqual([{
+        incident_number: inc.inc, instance_id: String(s3.n), person_id: A, strike: 3, status: "Closed", disposition: "Coached", closed_at: expect.any(Date),
+        owner_id: MGR, owner_role: "mgr", comments: "Spoke to the agent; system was slow.", resolution: "Coached on ACW.",
+      }]);
+      expect(await db.selectFrom("audit_event").select(["action", "actor_id", "actor_role"]).where("target_id", "=", inc.inc).orderBy("audit_id").execute()).toEqual([
+        { action: "incident.start", actor_id: MGR, actor_role: "mgr" }, { action: "incident.note", actor_id: MGR, actor_role: "mgr" },
+        { action: "incident.record", actor_id: MGR, actor_role: "mgr" }, { action: "incident.close", actor_id: MGR, actor_role: "mgr" },
+      ]);
+      const ends = await db.selectFrom("source_event_stream").select(["entity_id", sql<string>`count(*)`.as("n")]).where("org_id", "=", ORG).where("metric_name", "=", "call.end").groupBy("entity_id").orderBy("entity_id").execute();
+      expect(ends.map(r => [r.entity_id, Number(r.n)])).toEqual([[B, 1], [A, 3]].sort());
+
+      // --- The app restarts mid-day ---
+      const store2 = postgresStore(db, { importDir: null });
+      const two = await floor(store2);
+      expect(two.ids.n).toBe(firstN + 4);
+      expect(two.e.S.ledger.map(r => [r.n - firstN, r.agentId, r.agent])).toEqual([
+        [4, null, "Queue"], [3, B, "Lim, Joshua - AG1002"], [2, A, "Reyes, Amara - AG1001"], [1, A, "Reyes, Amara - AG1001"], [0, A, "Reyes, Amara - AG1001"],
+      ]);
+      expect(two.e.S.incidents).toEqual([expect.objectContaining({
+        inc: inc.inc, agentId: A, status: "Closed", owner: { who: MGR, role: "mgr", name: "Mgr, Lob - MG1001" },
+        comments: "Spoke to the agent; system was slow.", resolution: "Coached on ACW.",
+      })]);
+      expect(agent(two.e, A)).toMatchObject({ strikes: { acw: 3 }, calls: 3, transfers: 3, aht: 300 });
+      expect(agent(two.e, B)).toMatchObject({ strikes: { short: 1 }, calls: 1, shortCalls: 1 });
+      // The queue was still in breach: no second call-out for it.
+      two.h.onQueue({ cq: 99, sl: 90, asa: 10, ab: 1 }); two.run(2);
+      expect(two.e.S.ledger).toHaveLength(5);
+      // A's next long ACW is strike 4, and opens the next incident on the shared counter.
+      two.longAcw(A);
+      const s4 = two.e.S.ledger[0];
+      expect([s4.n, s4.agentId, s4.strikes, s4.stage]).toEqual([firstN + 5, A, 4, "ops"]);
+      const [, year, n] = /^INC-(\d{4})-(\d+)$/.exec(inc.inc)!;
+      expect(s4.inc).toBe(`INC-${year}-${String(Number(n) + 1).padStart(4, "0")}`);
+      expect(agent(two.e, A).calls).toBe(4);
+      await store2.flush();
+      expect(await db.selectFrom("agent_rule_state").select("strikes").where("shift_id", "=", shift.shift_id).where("person_id", "=", A).executeTakeFirstOrThrow()).toEqual({ strikes: 4 });
+      expect(await db.selectFrom("incident_log").select(["incident_number", "instance_id", "strike", "status"]).where("person_id", "=", A).orderBy("incident_id").execute()).toEqual([
+        expect.objectContaining({ incident_number: inc.inc, strike: 3, status: "Closed" }),
+        { incident_number: s4.inc, instance_id: String(s4.n), strike: 4, status: "Open" },
+      ]);
     });
 
     it("refuses a strike on a floor call-out, and a closed incident without a final disposition", async () => {

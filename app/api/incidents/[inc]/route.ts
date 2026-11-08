@@ -1,10 +1,11 @@
 import { authorizeFor, deny, readJson } from "@/lib/server/guard";
-import { DISPOSITIONS, PENDING_DISPOSITION, canClose } from "@/lib/engine/rules";
+import { DISPOSITIONS, NOTE_MAX, PENDING_DISPOSITION, canClose } from "@/lib/engine/rules";
 import { scopeIncidents } from "@/lib/engine/scope";
 
 /**
- * Move an investigation along: { action: "start" }, { action: "reopen" } (back to Open),
- * { action: "record", disposition } or { action: "close" } (needs a final disposition, not "Pending Investigation").
+ * Move an investigation along: { action: "start" } (the caller owns it), { action: "reopen" } (back to Open),
+ * { action: "record", disposition }, { action: "note", text } (the investigation's notes; empty clears them)
+ * or { action: "close", text? } (the closing note; needs a final disposition, not "Pending Investigation").
  */
 export async function POST(req: Request, { params }: { params: Promise<{ inc: string }> }) {
   const ctx = await authorizeFor("invAct");
@@ -21,6 +22,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ inc: st
   } else if (body.action === "record") {
     if (!investigating) return deny(409, "Start the investigation before recording a disposition.");
     if (typeof body.disposition !== "string" || !DISPOSITIONS.includes(body.disposition)) return deny(400, "Pick a disposition.");
+  } else if (body.action === "note") {
+    if (!investigating) return deny(409, "Notes can be kept only while the incident is being investigated.");
+    if (typeof body.text !== "string") return deny(400, "Send the notes as text.");
   } else if (body.action === "close") {
     if (!investigating) return deny(409, "Start the investigation before closing the incident.");
     if (!canClose(incident.disposition)) {
@@ -29,7 +33,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ inc: st
         : "Record a disposition before closing the incident.");
     }
   } else return deny(400, "Unknown action.");
-  ctx.rt.engine.invAction(inc, body.action, typeof body.disposition === "string" ? body.disposition : undefined, ctx.view);
+  if (typeof body.text === "string" && body.text.length > NOTE_MAX) return deny(400, `Keep notes under ${NOTE_MAX} characters.`);
+  const value = body.action === "record" ? body.disposition : body.text;
+  ctx.rt.engine.invAction(inc, body.action, typeof value === "string" ? value : undefined, ctx.view);
   ctx.rt.publish();
   return Response.json({ incident });
 }
