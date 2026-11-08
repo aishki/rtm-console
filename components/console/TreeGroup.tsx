@@ -2,6 +2,7 @@
 
 import { type CSSProperties, useState } from "react";
 import { queueLevels, rollUp } from "@/lib/queueStats";
+import { rulesAt } from "@/lib/engine/overrides";
 import type { TreeNode } from "@/lib/queueTree";
 import type { Agent, AgentState, QueueCounts, Rule } from "@/lib/types";
 import { LVL } from "@/lib/ui/palette";
@@ -88,7 +89,8 @@ export function TreeGroup(props: Props) {
     : `${plural(node.queues.length, "queue")} · ${people} · ${breach} breaching`;
 
   const q = rollUp(node.queues.flatMap(name => queues[name] ?? []));
-  const lv = q && queueLevels(q, rules);
+  // A group's numbers read against its own thresholds, where its Tower, Sub-Tower or LOB has an override.
+  const lv = q && queueLevels(q, rulesAt(rules, node.place));
   const cell = (text: string | null, level?: keyof typeof LVL) => text === null || !level
     ? <span className="num text-right text-sm font-semibold text-muted">—</span>
     : <span className="num text-right text-sm font-semibold" style={{ color: LVL[level].fg }}>{text}</span>;

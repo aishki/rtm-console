@@ -1,11 +1,12 @@
 import type { QueueMapRow } from "@/lib/import/queueMap";
 import type { OrgId } from "@/lib/orgs";
-import type { OrgPerson, Role, Rule, Team } from "@/lib/types";
+import type { OrgPerson, Role, Rule, RuleId, RuleOverride, Team } from "@/lib/types";
 
 // Where the console keeps what must outlive a restart. The engine stays in charge, in memory; it
 // hands each record to the store, which keeps it without making the engine wait.
 // PERSISTENCE_MODE picks the store: postgres, or memory (development and test only).
-// Phase 0 keeps the rules; Phase 1 the queue map, people, queues and desktop-alert subscriptions.
+// Phase 0 keeps the rules; Phase 1 the queue map, people, queues, desktop-alert subscriptions and
+// the rules' overrides by Tower, Sub-Tower and LOB.
 // Later phases add call-outs, incidents and the day's events.
 
 /** An org's last roster. `uid` is missing from files saved before agents were keyed by Genesys ID, and `members` then holds names. */
@@ -38,10 +39,15 @@ export interface BootData {
 
 export interface Store {
   readonly kind: "memory" | "postgres";
-  /** The rules at their current versions, in the console's order. */
+  /** The rules at their current versions, in the console's order, each with its current overrides. */
   loadRules(): Promise<Rule[]>;
   /** A rule's settings changed. Saved shortly after, as a new version; edits in quick succession become one. */
   ruleChanged(rule: Rule, by?: string | null): void;
+  /**
+   * A rule's override for one Tower, Sub-Tower or LOB changed. Saved shortly after, as a new version;
+   * edits in quick succession become one. An override with no settings left removes it.
+   */
+  overrideChanged(ruleId: RuleId, override: RuleOverride, by?: string | null): void;
 
   /** Everything else the app needs at start-up. */
   loadBoot(): Promise<Omit<BootData, "rules">>;

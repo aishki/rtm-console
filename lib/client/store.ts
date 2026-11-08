@@ -43,6 +43,8 @@ interface ConsoleState {
   leads: Record<string, AgentLeads>;
   /** Admin only: agents on the floor with no supervisor. Kept from the last tick that carried it. */
   unsupervised: number;
+  /** Admins: agents whose queues are in more than one LOB. */
+  severalLobs: number;
   /** Who the console is viewed as, by name; null for Admin and Senior Leader. */
   viewerName: string | null;
   incidents: Incident[];
@@ -69,7 +71,7 @@ function whenSeen(fn: () => void): void {
 
 export const useConsole = create<ConsoleState>((set, get) => ({
   status: "connecting", view: null, org: [], people: null, t: 0, mode: "live", feed: "gencloud", realNames: false, genesysOrg: null, canSwitchFeed: false, staleFor: 0, agentsLoading: false, replay: null,
-  queue: null, rules: [], agents: [], queues: {}, members: {}, leads: {}, unsupervised: 0, viewerName: null, queueMap: [], incidents: [], ledger: [], toasts: [], nudge: null,
+  queue: null, rules: [], agents: [], queues: {}, members: {}, leads: {}, unsupervised: 0, severalLobs: 0, viewerName: null, queueMap: [], incidents: [], ledger: [], toasts: [], nudge: null,
   toast(kind, title, body) {
     const id = ++toastSeq;
     set(s => ({ toasts: [...s.toasts, { id, kind, title, body }].slice(-MAX_TOASTS) }));
@@ -99,7 +101,7 @@ function apply(msg: StreamMsg) {
   useConsole.setState(s => ({
     status: "ready", t: msg.t, mode: msg.mode, staleFor: msg.staleFor, agentsLoading: msg.agentsLoading ?? false, replay: msg.replay, queue: msg.queue,
     rules: msg.rules, agents: msg.agents, incidents: msg.incidents, org: msg.org, queues: msg.queues ?? {},
-    members: msg.members ?? (init ? {} : s.members), leads: msg.leads ?? (init ? {} : s.leads), unsupervised: msg.unsupervised ?? (init || msg.leads ? 0 : s.unsupervised), viewerName: msg.viewerName ?? null, queueMap: msg.queueMap ?? (init ? [] : s.queueMap),
+    members: msg.members ?? (init ? {} : s.members), leads: msg.leads ?? (init ? {} : s.leads), unsupervised: msg.unsupervised ?? (init || msg.leads ? 0 : s.unsupervised), severalLobs: msg.severalLobs ?? (init || msg.leads ? 0 : s.severalLobs), viewerName: msg.viewerName ?? null, queueMap: msg.queueMap ?? (init ? [] : s.queueMap),
     ...(init
       ? { view: init.view, people: init.people, feed: init.feed, realNames: init.realNames, genesysOrg: init.genesysOrg ?? null, canSwitchFeed: init.canSwitchFeed, ledger: msg.ledger }
       : { ledger: mergeLedger(s.ledger, msg.ledger) }),

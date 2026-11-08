@@ -1,8 +1,11 @@
-import type { Agent, AgentStateEvent, AgentStats, Incident, Instance, InvAction, Queue, QueueCounts, ReplayMeta, Roster, Route, Rule, RuleId, Severity, View } from "@/lib/types";
+import type { Agent, AgentStateEvent, AgentStats, Incident, Instance, InvAction, Place, Queue, QueueCounts, ReplayMeta, Roster, Route, Rule, RuleId, Severity, View } from "@/lib/types";
+import type { QueueMapRow } from "@/lib/import/queueMap";
+import { queueKey, rollUp } from "@/lib/queueStats";
 import type { FeedHandlers } from "@/lib/feed/FeedSource";
 import { DISPOSITIONS, ONCE_PER_SHIFT, canClose, ROUTE_IDS, defaultRules, evaluateAgents, ruleApplies, ruleOf, thrOf } from "./rules";
 import { type EngineHooks, type EngineState, type IncidentCounter, fire as fireRule, incidentCounter } from "./escalation";
 import { scopeLedger } from "./scope";
+import { type OverridePatch, patchOverride, placeAgents, placeKey, queueKeysUnder, ruleFor } from "./overrides";
 
 export interface EngineOptions {
   /** Share a rule set between engines (live and replay read the same configuration). */
@@ -13,7 +16,19 @@ export interface EngineOptions {
   incidents?: IncidentCounter;
   /** The year an engine's own incident numbers use. The floor's year unless a test fixes it. */
   year?: () => number;
+  /** The WFM queue-to-LOB mapping for this floor, and its revision: it places agents and queues for rule overrides. */
+  mapping?: () => { rev: number; rows: QueueMapRow[] };
 }
+
+type QueueRuleId = "cq" | "sl" | "aband";
+/** Each queue rule's test on a set of numbers: in breach, and what to say. Null when there is nothing to judge. */
+const QUEUE_TESTS: Record<QueueRuleId, (q: Queue, thr: number) => [boolean, string] | null> = {
+  cq: (q, thr) => [q.cq > thr, `${Math.round(q.cq)} calls waiting`],
+  // No service level yet is not a breach.
+  sl: (q, thr) => (q.sl === null ? null : [q.sl < thr, `SL at ${q.sl.toFixed(0)}%`]),
+  aband: (q, thr) => [q.ab > thr, `abandon at ${q.ab.toFixed(1)}%`],
+};
+const QUEUE_RULES = Object.keys(QUEUE_TESTS) as QueueRuleId[];
 
 /** A new state episode re-arms every rule except the once-per-shift ones. */
 function oncePerShift(fired: Agent["fired"]): Agent["fired"] {
@@ -32,8 +47,12 @@ export type Engine = ReturnType<typeof createEngine>;
 export function createEngine(hooks: EngineHooks = {}, opts: EngineOptions = {}) {
   const S: EngineState = {
     t: 0, mode: "live", replay: null, org: [], agents: [], rules: opts.rules ?? defaultRules(),
-    ledger: [], incidents: [], seq: 0, staleFor: 0, agentsLoading: false, quiet: false, queue: null, queues: {}, members: {}, people: {}, rosterRev: 0, floorFired: {}, rev: 0,
+    ledger: [], incidents: [], seq: 0, staleFor: 0, agentsLoading: false, quiet: false, queue: null, queues: {}, members: {}, people: {}, rosterRev: 0, floorFired: {}, groupFired: {}, severalLobs: [], rev: 0,
   };
+  /** The mapping and roster the agents were last placed from, and each override's queues under that mapping. */
+  let placed = { mapRev: -1, rosterRev: -1 };
+  let mapRows: QueueMapRow[] = [];
+  let groupQueues = new Map<string, Set<string>>();
   let beat = false;
   let pending: AgentStateEvent[] = [];
   let pendingQueue: Queue | null = null;
@@ -44,7 +63,19 @@ export function createEngine(hooks: EngineHooks = {}, opts: EngineOptions = {}) 
   const thr = (id: RuleId) => thrOf(S.rules, id);
   const rule = (id: RuleId) => ruleOf(S.rules, id);
   const toast: NonNullable<EngineHooks["toast"]> = e => { if (!S.quiet) hooks.toast?.(e); };
-  const fire = (r: Rule, a: Agent | null, detail?: string) => fireRule(S, { toast, nudge: hooks.nudge }, counter, r, a, detail);
+  const fire = (r: Rule, a: Agent | null, detail?: string, group?: Place) => fireRule(S, { toast, nudge: hooks.nudge }, counter, r, a, detail, group);
+
+  /** Place each agent in a LOB when the roster or the mapping changed. */
+  function syncPlaces() {
+    const m = opts.mapping?.();
+    if (!m || (m.rev === placed.mapRev && S.rosterRev === placed.rosterRev)) return;
+    if (m.rev !== placed.mapRev) { mapRows = m.rows; groupQueues = new Map(); }
+    placed = { mapRev: m.rev, rosterRev: S.rosterRev };
+    const { places, severalLobs } = placeAgents(mapRows, S.members);
+    for (const a of S.agents) { const p = places.get(a.id); if (p) a.place = p; else delete a.place; }
+    const uidOf = new Map(S.agents.map(a => [a.id, a.uid]));
+    S.severalLobs = severalLobs.flatMap(({ id, lobs }) => { const uid = uidOf.get(id); return uid ? [{ uid, lobs }] : []; });
+  }
 
   const ingest: FeedHandlers = {
     /** A roster resent mid-shift (the feed reconnected) keeps each known agent's shift counters and strikes. */
@@ -57,6 +88,7 @@ export function createEngine(hooks: EngineHooks = {}, opts: EngineOptions = {}) 
           id: i, uid: a.uid, name: a.name, team: a.team, state: a.state, stTime: a.stTime ?? 0, onHold: false, holdTime: 0,
           aht: p?.aht ?? a.aht ?? 420, calls: p?.calls ?? a.calls ?? 0, shortCalls: p?.shortCalls ?? 0, transfers: p?.transfers ?? 0,
           adh: p?.adh ?? a.adh ?? 96, ahtFromFeed: p?.ahtFromFeed, strikes: { ...p?.strikes }, fired: { ...p?.fired },
+          ...(p?.place && { place: p.place }),
         };
       });
       const ids = new Map(S.agents.map(a => [a.uid, a.id]));
@@ -88,7 +120,8 @@ export function createEngine(hooks: EngineHooks = {}, opts: EngineOptions = {}) 
       // A replay has no AHT baseline, so the first call seeds it. AHT from the feed is the real figure: keep it.
       if (!a.ahtFromFeed) a.aht = S.mode === "replay" && a.calls === 1 ? dur : Math.round(a.aht * 0.85 + dur * 0.15);
       if (e.callEnded.transferred) a.transfers++;
-      if (rule("short").on && dur < thr("short")) { a.shortCalls++; fire(rule("short"), a, `${dur}s call`); }
+      const short = ruleFor(rule("short"), a.place);
+      if (short.on && dur < short.thr) { a.shortCalls++; fire(short, a, `${dur}s call`); }
     }
     if (e.state !== a.state) {
       if (a.state === "oncall") { a.onHold = false; a.holdTime = 0; }
@@ -129,22 +162,49 @@ export function createEngine(hooks: EngineHooks = {}, opts: EngineOptions = {}) 
     if (!breached) S.floorFired[id] = false;
   }
 
+  /**
+   * Queue rules for each Tower, Sub-Tower and LOB with an override, against that group's numbers
+   * rolled up by calls. Each fires once per breach and re-arms on recovery, like the floor's.
+   */
+  function groupRules() {
+    const names = Object.keys(S.queues);
+    if (!names.length || !mapRows.length) return;
+    for (const id of QUEUE_RULES) {
+      const base = rule(id);
+      for (const o of base.overrides ?? []) {
+        const key = `${id}|${placeKey(o)}`;
+        const r = ruleFor(base, o);
+        if (!r.on) { S.groupFired[key] = false; continue; }
+        let keys = groupQueues.get(placeKey(o));
+        if (!keys) groupQueues.set(placeKey(o), (keys = queueKeysUnder(mapRows, o)));
+        const under = keys;
+        const q = rollUp(names.filter(n => under.has(queueKey(n))).map(n => S.queues[n]));
+        const test = q && QUEUE_TESTS[id](q, r.thr);
+        if (!test) continue;
+        const [breached, detail] = test;
+        if (breached && !S.groupFired[key]) { S.groupFired[key] = true; fire(r, null, detail, { tower: o.tower, subTower: o.subTower, lob: o.lob }); }
+        if (!breached) S.groupFired[key] = false;
+      }
+    }
+  }
+
   function evaluate() {
     evaluateAgents(S.agents, S.rules, (r, a) => { fire(r, a); });
     // Queue rules run whenever there is queue data; a replay only has it if the import supplied it.
+    // The whole floor is checked against each rule's default.
     const q = S.queue;
-    if (q) {
-      floorRule("cq", q.cq > thr("cq"), `${Math.round(q.cq)} calls waiting`);
-      // No service level yet is not a breach.
-      if (q.sl !== null) floorRule("sl", q.sl < thr("sl"), `SL at ${q.sl.toFixed(0)}%`);
-      floorRule("aband", q.ab > thr("aband"), `abandon at ${q.ab.toFixed(1)}%`);
+    if (q) for (const id of QUEUE_RULES) {
+      const test = QUEUE_TESTS[id](q, thr(id));
+      if (test) floorRule(id, ...test);
     }
+    groupRules();
     // A replay has no live heartbeat to watch.
     if (S.mode !== "replay") floorRule("gnr", S.staleFor >= thr("gnr"), `feed stale ${S.staleFor}s, states may be outdated`);
   }
 
   /** Advance the shift clock by one second. */
   function tick() {
+    syncPlaces();
     if (S.mode === "replay") {
       const R = S.replay!;
       if (R.done) return;
@@ -179,7 +239,8 @@ export function createEngine(hooks: EngineHooks = {}, opts: EngineOptions = {}) 
     S, ingest, tick, thr,
     /** Clear the shift (ledger, incidents, strikes) and set the clock. Rule configuration is kept. */
     reset(o: { t: number; mode?: "live" | "replay"; replay?: ReplayMeta | null }) {
-      Object.assign(S, { t: o.t, mode: o.mode ?? "live", replay: o.replay ?? null, org: [], agents: [], ledger: [], incidents: [], seq: 0, staleFor: 0, agentsLoading: false, queue: null, queues: {}, members: {}, people: {}, floorFired: {} });
+      Object.assign(S, { t: o.t, mode: o.mode ?? "live", replay: o.replay ?? null, org: [], agents: [], ledger: [], incidents: [], seq: 0, staleFor: 0, agentsLoading: false, queue: null, queues: {}, members: {}, people: {}, floorFired: {}, groupFired: {}, severalLobs: [] });
+      placed = { mapRev: -1, rosterRev: -1 };
       S.rev++;
       pending = []; pendingQueue = null; pendingQueues = null; pendingStats = []; beat = false;
       if (!opts.incidents) counter = incidentCounter(undefined, opts.year);
@@ -242,5 +303,19 @@ export function createEngine(hooks: EngineHooks = {}, opts: EngineOptions = {}) 
     setSev(id: RuleId, v: Severity) { rule(id).sev = v === "crit" ? "crit" : "warn"; },
     setRoute(id: RuleId, v: Route) { if (ROUTE_IDS.includes(v)) rule(id).route = v; },
     setOn(id: RuleId, on: boolean) { rule(id).on = on; },
+    /**
+     * Change a rule's override for a Tower, Sub-Tower or LOB; null in a setting takes it back to the
+     * level above. Returns the override, or null once it sets nothing. System rules take none.
+     */
+    setOverride(id: RuleId, place: Place, patch: OverridePatch) {
+      const r = rule(id);
+      if (r.type === "system") throw new Error("A system rule has no overrides.");
+      const clean: OverridePatch = {};
+      if (patch.thr !== undefined) clean.thr = patch.thr === null ? null : Math.max(1, Math.round(patch.thr));
+      if (patch.sev !== undefined) clean.sev = patch.sev === null ? null : patch.sev === "crit" ? "crit" : "warn";
+      if (patch.route !== undefined && (patch.route === null || ROUTE_IDS.includes(patch.route))) clean.route = patch.route;
+      if (patch.on !== undefined) clean.on = patch.on;
+      return patchOverride(r, place, clean);
+    },
   };
 }

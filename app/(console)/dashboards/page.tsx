@@ -153,6 +153,7 @@ export default function DashboardsPage() {
   const agents = useConsole(s => s.agents);
   const members = useConsole(s => s.members);
   const unsupervised = useConsole(s => s.unsupervised);
+  const severalLobs = useConsole(s => s.severalLobs);
   const toast = useConsole(s => s.toast);
   // Importing a file starts a replay, which is not offered on the live Genesys feed.
   const canImport = useConsole(s => s.feed !== "gencloud") && !!perms?.replay;
@@ -243,6 +244,11 @@ export default function DashboardsPage() {
           {perms?.mapping && unsupervised > 0 && (
             <PurpleButton variant="outline" title="Agents with no supervisor in Genesys or the CGS directory: their call-outs reach admins only until one is set in Genesys" onClick={() => download("/api/export/no-supervisor")}>
               No supervisor ({unsupervised}) CSV
+            </PurpleButton>
+          )}
+          {perms?.mapping && severalLobs > 0 && (
+            <PurpleButton variant="outline" title="Agents whose queues are in more than one LOB in the queue mapping: their rules follow the LOB with most of their queues" onClick={() => download("/api/export/several-lobs")}>
+              Several LOBs ({severalLobs}) CSV
             </PurpleButton>
           )}
         </div>

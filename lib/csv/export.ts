@@ -1,4 +1,4 @@
-import type { Incident, Instance, Unsupervised } from "@/lib/types";
+import type { Incident, Instance, SeveralLobs, Unsupervised } from "@/lib/types";
 import { clock, splitAgent } from "@/lib/engine/format";
 
 const q = (s: unknown) => `"${String(s).replace(/"/g, '""')}"`;
@@ -19,4 +19,10 @@ export function incidentsCsv(rows: Incident[]): string {
 export function unsupervisedCsv(rows: Unsupervised[]): string {
   const h = "agent,domain_id,queue\n";
   return h + rows.map(a => { const { who, id } = splitAgent(a.name); return [q(who), q(id), q(a.team)].join(","); }).join("\n");
+}
+
+/** Agents whose queues are in more than one LOB, for an admin to check the mapping. `lob` is the one their rules follow. */
+export function severalLobsCsv(rows: SeveralLobs[]): string {
+  const h = "agent,domain_id,queue,lob,other_lobs\n";
+  return h + rows.map(a => { const { who, id } = splitAgent(a.name); return [q(who), q(id), q(a.team), q(a.lobs[0]), q(a.lobs.slice(1).join("; "))].join(","); }).join("\n");
 }

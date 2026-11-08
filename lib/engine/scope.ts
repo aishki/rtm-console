@@ -1,4 +1,5 @@
-import type { Agent, Incident, Instance, PeopleDirectory, Person, Perms, Role, Team, Unsupervised, View } from "@/lib/types";
+import type { Agent, Incident, Instance, PeopleDirectory, Person, Perms, Place, Role, SeveralLobs, Team, Unsupervised, View } from "@/lib/types";
+import { placeLabel } from "./overrides";
 
 export const PERMS: Record<Role, Perms> = {
   admin: { tabs: ["console", "dash", "rules", "ledger"], rulesEdit: true, invAct: true, export: true, ackAll: true, ir: true, replay: true, feed: true, mapping: true, desc: () => "Full access: rules admin, ledger controls, all teams" },
@@ -79,6 +80,14 @@ export function peopleFor(f: Floor, role: Role): Person[] {
 /** Agents on the floor with no supervisor, for admins to have fixed in Genesys. */
 export const unsupervised = (f: Floor): Unsupervised[] =>
   f.agents.filter(a => !f.people[a.uid]?.supervisor).map(a => ({ uid: a.uid, name: a.name, team: a.team })).sort((a, b) => a.name.localeCompare(b.name));
+/** Agents whose queues are in more than one LOB, by name, with the LOB they got first, for admins to check the mapping. */
+export function severalLobs(f: Pick<Floor, "agents"> & { severalLobs: { uid: string; lobs: Place[] }[] }): SeveralLobs[] {
+  const byUid = new Map(f.agents.map(a => [a.uid, a]));
+  return f.severalLobs.flatMap(({ uid, lobs }) => {
+    const a = byUid.get(uid);
+    return a ? [{ uid, name: a.name, team: a.team, lobs: lobs.map(placeLabel) }] : [];
+  }).sort((a, b) => a.name.localeCompare(b.name));
+}
 export function peopleDirectory(f: Floor): PeopleDirectory {
   return {
     tls: peopleFor(f, "tl"), mgrs: peopleFor(f, "mgr"),

@@ -35,11 +35,25 @@ export interface Agent {
   /** AHT is the feed's handle time for the day (talk, hold and ACW), not estimated from calls seen. */
   ahtFromFeed?: boolean;
   strikes: Partial<Record<RuleId, number>>; fired: Partial<Record<RuleId, boolean>>;
+  /** The Tower, Sub-Tower and LOB the agent's queues place them in; missing when none is mapped. */
+  place?: Place;
 }
+
+/** A place in the WFM mapping. A Tower-wide place has an empty subTower and lob; a Sub-Tower-wide one an empty lob. */
+export interface Place { tower: string; subTower: string; lob: string }
+
+/** The settings a rule can change. */
+export type RuleSettings = Pick<Rule, "thr" | "sev" | "route" | "on">;
+
+/** A rule's settings for one Tower, Sub-Tower or LOB. A setting left out takes the value from the level above. */
+export interface RuleOverride extends Place, Partial<RuleSettings> {}
 
 export interface Rule {
   id: RuleId; name: string; type: RuleType; cond: string;
+  /** The rule's default settings, used wherever no override says otherwise. */
   thr: number; unit: string; sev: Severity; route: Route; on: boolean;
+  /** Settings for Towers, Sub-Towers and LOBs. Never on a system rule. */
+  overrides?: RuleOverride[];
 }
 
 export interface Instance {
@@ -49,6 +63,8 @@ export interface Instance {
   /** The agent's uid; null on a floor call-out. */
   agentId: string | null;
   isFloor: boolean; team: string; rule: string; ruleId: RuleId;
+  /** Where the agent was, or the group a queue rule was checked for, when it fired. */
+  place?: Place;
   val: string; stage: Stage; sev: Severity | "esc"; status: "open" | "acked"; ackT: number | null;
   strikes: number; inc: string; cmt: string | null;
   /** Rule condition at fire time, e.g. "State ACW longer than 120s". */
@@ -170,6 +186,8 @@ export interface AgentLeads { tl: string | null; mgr: string | null }
 
 /** An agent on the floor with no supervisor in Genesys or the CGS directory, for admins to have fixed. */
 export interface Unsupervised { uid: string; name: string; team: string }
+/** An agent whose queues are in more than one LOB: `lobs` most queues first, and they get the first. */
+export interface SeveralLobs { uid: string; name: string; team: string; lobs: string[] }
 
 export interface TickMsg {
   type: "tick" | "init";
@@ -191,6 +209,8 @@ export interface TickMsg {
   leads?: Record<string, AgentLeads>;
   /** Admin only: how many agents on the floor have no supervisor. Sent with `members`. */
   unsupervised?: number;
+  /** Admins: how many agents have queues in more than one LOB. */
+  severalLobs?: number;
   /** The name of the person the console is viewed as; null for Admin and Senior Leader, or while it is not known yet. */
   viewerName: string | null;
   /** The uploaded queue-to-LOB mapping. Sent on a snapshot and whenever it changes; otherwise left out. */
