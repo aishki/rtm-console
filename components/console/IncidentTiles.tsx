@@ -3,6 +3,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent } from "react";
 import { NO_LEADER, causeSummary } from "@/lib/engine/format";
 import type { Agent, AgentLeads, Incident } from "@/lib/types";
+import { SearchBox, nameOrIdMatches } from "@/components/ui/SearchBox";
 
 /** Collapsed, the tiles show this many rows; the part-row peeking out at the bottom says there is more to scroll. */
 const ROWS = 3.25;
@@ -29,6 +30,9 @@ export function IncidentTiles({ incidents, agents, leads }: { incidents: Inciden
   const byAgent = new Map<string, Incident[]>();
   // By uid: two agents with the same name keep separate tiles.
   for (const i of incidents) byAgent.set(i.agentId, [...(byAgent.get(i.agentId) ?? []), i]);
+  const [query, setQuery] = useState("");
+  const shown = [...byAgent].filter(([, list]) => nameOrIdMatches(list[0].agent, query));
+  const searching = !!query.trim();
 
   const panel = useRef<HTMLDivElement>(null);
   const grid = useRef<HTMLDivElement>(null);
@@ -76,7 +80,11 @@ export function IncidentTiles({ incidents, agents, leads }: { incidents: Inciden
     <div ref={panel} className="panel">
       <div className="panel-head">
         <h2 className="panel-title">Agents with incident reports</h2>
-        <span className="panel-sub">Your span · why each incident was opened · {byAgent.size} agent{byAgent.size === 1 ? "" : "s"}</span>
+        <span className="panel-sub">
+          Your span · why each incident was opened · {searching ? `${shown.length} of ` : ""}{byAgent.size} agent{byAgent.size === 1 ? "" : "s"}
+        </span>
+        <div className="flex-1" />
+        <SearchBox value={query} onChange={setQuery} aria-label="Search agents with incident reports" placeholder="Search name or ID" className="w-full sm:w-[280px]" height="h-9" />
       </div>
       {/* Collapsed, the list scrolls inside the panel so the agent grid below stays a short scroll away.
           Expanding and collapsing slide the height between the cap and the full list. */}
@@ -88,7 +96,10 @@ export function IncidentTiles({ incidents, agents, leads }: { incidents: Inciden
         title={cap === null ? undefined : expanded ? "Click to collapse" : "Click to show all agents"}
       >
         <div ref={grid} className="relative grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-3 px-5 pb-5 pt-4">
-          {[...byAgent].map(([uid, list]) => {
+          {searching && !shown.length && (
+            <span className="col-span-full py-2 text-sm text-muted">No agents with incident reports match “{query.trim()}”.</span>
+          )}
+          {shown.map(([uid, list]) => {
             const name = list[0].agent;
             const team = agents.find(a => a.uid === uid)?.team ?? list[0].team;
             const open = list.some(i => i.status !== "Closed");
@@ -123,7 +134,7 @@ export function IncidentTiles({ incidents, agents, leads }: { incidents: Inciden
           onClick={toggle}
           className="flex h-9 w-full cursor-pointer items-center justify-center gap-1.5 rounded-b-[20px] border-t border-[var(--border-card)] font-ui text-xs font-semibold text-purple transition-colors duration-200 ease-standard hover:bg-[var(--surface-tint)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-purple"
         >
-          {expanded ? "Collapse" : `Show all ${byAgent.size} agents`} <Chevron up={expanded} />
+          {expanded ? "Collapse" : `Show all ${shown.length} agents`} <Chevron up={expanded} />
         </button>
       )}
     </div>

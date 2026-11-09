@@ -16,6 +16,9 @@ import { PurpleButton } from "@/components/ui/buttons";
 import { type Column, DataTable } from "@/components/ui/DataTable";
 import { MorphText } from "@/components/ui/MorphText";
 import { type Kpi, KpiTile, PageTitle, StatusPill } from "@/components/ui/primitives";
+import { queueFilterOptions } from "@/lib/client/queueOptions";
+import { MultiSelect } from "@/components/ui/MultiSelect";
+import { SearchBox, nameOrIdMatches } from "@/components/ui/SearchBox";
 import { Select } from "@/components/ui/Select";
 
 type Counts = Record<Stage, number> & { total: number };
@@ -174,6 +177,15 @@ export default function DashboardsPage() {
   const canAct = !!perms?.invAct;
 
   const openInv = incidents.filter(i => i.status !== "Closed").length;
+  const [incQuery, setIncQuery] = useState("");
+  const [incQueues, setIncQueues] = useState<string[]>([]);
+  const queueMap = useConsole(s => s.queueMap);
+  const incQueueOptions = useMemo(() => queueFilterOptions(incidents.map(i => i.team), queueMap), [incidents, queueMap]);
+  const shownIncidents = useMemo(
+    () => incidents.filter(i => (!incQueues.length || incQueues.includes(i.team)) && nameOrIdMatches(i.agent, incQuery)),
+    [incidents, incQueues, incQuery],
+  );
+  const incFiltering = !!(incQueues.length || incQuery.trim());
   const kpis = useMemo<Kpi[]>(() => {
     const by = (s: Stage) => ledger.filter(r => r.stage === s).length;
     return [
@@ -255,11 +267,19 @@ export default function DashboardsPage() {
         <BarChart title="Call-out summary by top agents" sub="Instances per agent, this shift" bars={byAgent} people note="Agents at ×3 open an investigation below." />
       </div>
 
-      <div className="panel overflow-hidden">
+      {/* Not overflow-hidden: the queue filter's list has to drop out of the panel when the register is short. */}
+      <div className="panel">
         <div className="flex min-h-[38px] flex-wrap items-center gap-3 border-b border-pale-purple px-5 py-3.5">
           <h2 className="panel-title">Repeat offenders · investigation register</h2>
-          <span className="panel-sub">{openInv} open · {incidents.length - openInv} closed · your span</span>
+          <span className="panel-sub">{openInv} open · {incidents.length - openInv} closed · your span{incFiltering ? ` · ${shownIncidents.length} shown` : ""}</span>
           <div className="flex-1" />
+          {incQueueOptions.length > 1 && (
+            <MultiSelect
+              value={incQueues} onChange={setIncQueues} options={incQueueOptions} anyLabel={`All queues (${incQueueOptions.length})`} countLabel={n => `${n} queues`}
+              aria-label="Filter the investigation register by queue" className="field h-[38px] !max-w-[240px] px-3"
+            />
+          )}
+          <SearchBox value={incQuery} onChange={setIncQuery} aria-label="Search the investigation register by agent" placeholder="Search name or ID" className="w-full sm:w-[260px]" height="h-[38px]" />
           {perms?.export && <PurpleButton variant="outline" onClick={() => download("/api/export/incidents")}>Export incidents CSV</PurpleButton>}
           {perms?.mapping && unsupervised > 0 && (
             <PurpleButton variant="outline" title="Agents with no supervisor in Genesys or the CGS directory: their call-outs reach admins only until one is set in Genesys" onClick={() => download("/api/export/no-supervisor")}>
@@ -272,10 +292,10 @@ export default function DashboardsPage() {
             </PurpleButton>
           )}
         </div>
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto rounded-b-[20px]">
           <DataTable
-            columns={incidentColumns} rows={incidents} rowKey={i => i.inc}
-            empty="No agents currently meet the investigation threshold (3 instances of the same rule in one shift)."
+            columns={incidentColumns} rows={shownIncidents} rowKey={i => i.inc}
+            empty={incFiltering ? "No incidents match the search and queue filter." : "No agents currently meet the investigation threshold (3 instances of the same rule in one shift)."}
           />
         </div>
       </div>

@@ -5,7 +5,7 @@ import { buildTree } from "./queueTree";
 
 const row = (lob: string, queue: string): QueueMapRow => ({ tower: "T", subTower: "S", lob, queue });
 const range = (from: number, n: number) => Array.from({ length: n }, (_, i) => from + i);
-const NONE: GridFilter = { query: "", queue: "", inScope: null, queryHits: new Set() };
+const NONE: GridFilter = { query: "", queues: null, inScope: null, queryHits: new Set() };
 const queuesOf = (nodes: ReturnType<typeof flatten>) => nodes.filter(n => n.level === "queue");
 
 // Two LOBs: CARDS_EN (1, 2), CARDS_ES (2, 3) and LOANS (4).
@@ -53,8 +53,15 @@ describe("filterTree", () => {
 
   it("the queue filter keeps that branch, empty queues included", () => {
     const t = buildTree(["A", "B"], [row("L", "A"), row("L", "B")], {});
-    const v = filterTree(t, { ...NONE, queue: "B" });
+    const v = filterTree(t, { ...NONE, queues: new Set(["B"]) });
     expect(queuesOf(flatten(v.nodes)).map(n => n.label)).toEqual(["B"]);
+  });
+
+  it("several picked queues keep each branch, across LOBs", () => {
+    const t = buildTree(["A", "B", "C"], [row("L1", "A"), row("L1", "B"), row("L2", "C")], {});
+    const v = filterTree(t, { ...NONE, queues: new Set(["A", "C"]) });
+    expect(queuesOf(flatten(v.nodes)).map(n => n.label)).toEqual(["A", "C"]);
+    expect(v.queueCount).toBe(2);
   });
 });
 

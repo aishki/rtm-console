@@ -1,8 +1,12 @@
 "use client";
 
-import { type KeyboardEvent, useEffect, useId, useRef, useState } from "react";
+import { Fragment, type KeyboardEvent, useEffect, useId, useRef, useState } from "react";
 
-export interface MultiOption<T extends string = string> { value: T; label: string; /** Dot shown before the label. */ color?: string }
+export interface MultiOption<T extends string = string> {
+  value: T; label: string;
+  /** Dot shown before the label. */ color?: string;
+  /** Heading the option sits under. Options of one group must be next to each other. */ group?: string;
+}
 
 interface Props<T extends string> {
   /** Checked values. Empty means no filter. */
@@ -38,6 +42,11 @@ export function MultiSelect<T extends string>({ value, onChange, options, anyLab
   const [open, setOpen] = useState(false);
   // Row 0 is the "any" row; option i sits at row i + 1.
   const [active, setActive] = useState(0);
+
+  // Long lists scroll: keep the row the arrow keys reach in view.
+  useEffect(() => {
+    if (open) document.getElementById(`${id}-${active}`)?.scrollIntoView({ block: "nearest" });
+  }, [open, active, id]);
 
   useEffect(() => {
     if (!open) return;
@@ -75,7 +84,7 @@ export function MultiSelect<T extends string>({ value, onChange, options, anyLab
     >
       <Check on={on} />
       {color && <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: color }} />}
-      {label}
+      <span className="truncate" title={label}>{label}</span>
     </div>
   );
 
@@ -101,10 +110,17 @@ export function MultiSelect<T extends string>({ value, onChange, options, anyLab
           id={id} role="listbox" aria-multiselectable="true" aria-label={aria["aria-label"]}
           // Keeps focus on the trigger, which owns the keyboard.
           onMouseDown={e => e.preventDefault()}
-          className="absolute left-0 top-[calc(100%+4px)] z-[110] min-w-full overflow-auto rounded-8 border border-purple bg-white py-1 font-brand text-sm shadow-[0_12px_32px_rgba(35,30,51,0.16)]"
+          className="absolute left-0 top-[calc(100%+4px)] z-[110] max-h-[360px] min-w-full max-w-[min(480px,90vw)] overflow-auto rounded-8 border border-purple bg-white py-1 font-brand text-sm shadow-[0_12px_32px_rgba(35,30,51,0.16)]"
         >
           {row(0, picked.length === 0, anyLabel)}
-          {options.map((o, i) => row(i + 1, value.includes(o.value), o.label, o.color))}
+          {options.map((o, i) => (
+            <Fragment key={o.value}>
+              {o.group && o.group !== options[i - 1]?.group && (
+                <div role="presentation" className="truncate px-3 pb-1 pt-2.5 text-xs font-semibold text-muted" title={o.group}>{o.group}</div>
+              )}
+              {row(i + 1, value.includes(o.value), o.label, o.color)}
+            </Fragment>
+          ))}
         </div>
       )}
     </div>

@@ -12,7 +12,7 @@ import { type TreeNode, buildTree } from "@/lib/queueTree";
 import type { Agent, Instance } from "@/lib/types";
 import { PurpleButton } from "@/components/ui/buttons";
 import { type Kpi, KpiTile } from "@/components/ui/primitives";
-import { AgentGridToolbar, type GridFilters, NO_FILTERS, type QuickKey } from "@/components/console/AgentGridToolbar";
+import { AgentGridToolbar, type GridFilters, type LobGroup, NO_FILTERS, type QuickKey } from "@/components/console/AgentGridToolbar";
 import { IncidentTiles } from "@/components/console/IncidentTiles";
 import { QueueMapDialog } from "@/components/console/QueueMapDialog";
 import { TreeGroup, TreeHeader } from "@/components/console/TreeGroup";
@@ -52,12 +52,12 @@ function useKpis(): Kpi[] {
   }, [queue, rules, agents, replay]);
 }
 
-/** Queue filter options, one group per LOB (the Unmapped tower is one group). */
+/** LOB and queue filter options, one group per LOB (the Unmapped tower is one group). */
 function queueOptions(tree: TreeNode[]) {
-  const groups: { label: string; items: { value: string; label: string }[] }[] = [];
+  const groups: LobGroup[] = [];
   const walk = (n: TreeNode, tower: string) => {
     const qs = n.children.filter(c => c.level === "queue");
-    if (qs.length) groups.push({ label: n.level === "tower" ? n.label : `${tower} · ${n.label}`, items: qs.map(c => ({ value: c.label, label: `${c.label} (${c.agentIds.length})` })) });
+    if (qs.length) groups.push({ key: n.key, label: n.level === "tower" ? n.label : `${tower} · ${n.label}`, items: qs.map(c => ({ value: c.label, label: `${c.label} (${c.agentIds.length})` })) });
     n.children.forEach(c => { if (c.level !== "queue") walk(c, tower); });
   };
   tree.forEach(t => walk(t, t.label));
@@ -102,9 +102,15 @@ function AgentGrid() {
 
   const qn = filters.q.trim().toLowerCase();
   const { quick } = filters;
-  const queueFilter = tree.some(t => t.queues.includes(filters.queue)) ? filters.queue : "";
+  // Picks the tree no longer has (a queue that left the feed, a remapped LOB) are dropped.
+  const lobFilter = filters.lobs.filter(k => queueGroups.some(g => g.key === k));
+  const lobQueues = queueGroups.filter(g => lobFilter.includes(g.key)).flatMap(g => g.items.map(q => q.value));
+  const pickable = new Set(lobFilter.length ? lobQueues : queueGroups.flatMap(g => g.items.map(q => q.value)));
+  const queueFilter = filters.queues.filter(q => pickable.has(q));
+  // Ticked queues win; ticked LOBs alone keep all their queues.
+  const queueSet = queueFilter.length ? new Set(queueFilter) : lobFilter.length ? new Set(lobQueues) : null;
   const scoped = !!(filters.states.length || quick.breach || quick.strikes || quick.hold);
-  const filtering = scoped || !!qn || !!queueFilter;
+  const filtering = scoped || !!qn || !!queueSet;
 
   const inScope = (a: Agent) => {
     if (filters.states.length && !filters.states.includes(a.state)) return false;
@@ -117,7 +123,7 @@ function AgentGrid() {
   const hits = (a: Agent) => a.name.toLowerCase().includes(qn) || (leads[a.uid]?.tl ?? "").toLowerCase().includes(qn);
   const view = filtering
     ? filterTree(tree, {
-      query: qn, queue: queueFilter,
+      query: qn, queues: queueSet,
       inScope: scoped ? new Set(agents.filter(inScope).map(a => a.id)) : null,
       queryHits: new Set(qn ? agents.filter(hits).map(a => a.id) : []),
     })
@@ -166,7 +172,7 @@ function AgentGrid() {
         {perms?.mapping && <PurpleButton variant="outline" compact onClick={() => setMappingOpen(true)}>Queue mapping</PurpleButton>}
       </div>
       <AgentGridToolbar
-        filters={{ ...filters, queue: queueFilter }} onChange={patch => setFilters(f => ({ ...f, ...patch }))} onClear={clear} searchRef={searchRef}
+        filters={{ ...filters, lobs: lobFilter, queues: queueFilter }} onChange={patch => setFilters(f => ({ ...f, ...patch }))} onClear={clear} searchRef={searchRef}
         queueGroups={queueGroups} queueCount={queueCount} quickCounts={quickCounts} filtering={filtering}
         resultText={view ? `${view.agentCount} of ${agents.length} agents · ${plural(view.queueCount, "queue")}` : `${agents.length} agents · ${plural(queueCount, "queue")}`}
         showExpandControls={nodes.length > 1} onExpandAll={expandAll} onCollapseAll={collapseAll}
