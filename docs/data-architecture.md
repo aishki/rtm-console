@@ -322,8 +322,8 @@ The full definitions are in [`lib/types.ts`](../lib/types.ts). This section maps
 | `stTime` | Seconds in the current state | At connect, Genesys's own start time (from Eastern midnight at most, except calls); then the engine timer | ✅ / ⚙️ |
 | `onHold`, `holdTime` | On hold, and for how long | `held` and `startHoldTime` on the queue conversation topic; engine timer | ✅ / ⚙️ |
 | `calls`, `shortCalls`, `transfers` | Today's counters | Counted by the engine from call ends on the queue topic | ⚠️ only since the last restart; start again at zero at midnight Eastern |
-| `aht` | Average handle time, seconds | Genesys `tHandle` per agent since Eastern midnight (talk, hold, ACW); an estimate until the agent's first handled call | ✅ |
-| `adh` | Shift adherence % | NiceIEX | ❓ a default 96% |
+| `aht` | Average handle time, seconds | Genesys `tHandle` per agent since Eastern midnight (talk, hold, ACW); N/A until Genesys sends it; if it never does, set by the first call end the engine sees, then averaged | ✅ |
+| `adh` | Shift adherence % | NiceIEX | ❌ not connected: shows N/A on live, and the Adherence breach rule cannot fire (Backlog item 9) |
 | `strikes` | Strike count per rule | Engine | ⚙️ since the last restart; start again at zero at midnight Eastern |
 
 ### The seven console states
