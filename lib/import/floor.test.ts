@@ -35,7 +35,7 @@ describe("floor data import", () => {
       { team: "Team Alpha", tl: "Rina Velasco", mgr: "Ava Santiago", lob: "PAP Intake" },
       { team: "Team Bravo", tl: "Marco Tan", mgr: "Ava Santiago", lob: "Team Bravo" },
     ]);
-    expect(data.roster.map(a => [a.name, a.team, a.adh])).toEqual([["Amara Reyes", "Team Alpha", 97], ["Joshua Lim", "Team Alpha", 96], ["Katrina Uy", "Team Bravo", 93]]);
+    expect(data.roster.map(a => [a.name, a.team, a.adh])).toEqual([["Amara Reyes", "Team Alpha", 97], ["Joshua Lim", "Team Alpha", undefined], ["Katrina Uy", "Team Bravo", 93]]);
     expect(data.events.map(e => [e.agent.split(" ")[0], e.state, e.t])).toEqual([
       ["Amara", "avail", 28800], ["Joshua", "oncall", 28860], ["Amara", "oncall", 29100], ["Amara", "acw", 29400], ["Joshua", "auxp", 30000],
     ]);

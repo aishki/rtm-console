@@ -47,7 +47,7 @@ export class CsvReplayFeed implements FeedSource {
     const teams = [...new Set(ev.map(e => e.team).filter(Boolean))];
     const org: Team[] = this.extras.org ?? (teams.length ? teams : ["CSV import"]).map(t => ({ team: t, tl: "TL " + t, mgr: "Imported LOB", lob: t }));
     const agents: RosterAgent[] = this.extras.roster ?? [...new Set(ev.map(e => e.agent))].map(n => ({
-      uid: csvUid(n), name: n, team: ev.find(e => e.agent === n && e.team)?.team || org[0].team, state: "off" as const, stTime: 0, aht: 420, calls: 0, adh: 96,
+      uid: csvUid(n), name: n, team: ev.find(e => e.agent === n && e.team)?.team || org[0].team, state: "off" as const, stTime: 0, calls: 0,
     }));
     handlers.onRoster({ org, agents, people: teamLines(org, agents, "csv:") });
     return () => { this.h = null; };

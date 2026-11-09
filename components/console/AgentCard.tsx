@@ -1,6 +1,6 @@
 import { memo } from "react";
 import { useConsole } from "@/lib/client/store";
-import { fmt, splitAgent } from "@/lib/engine/format";
+import { agentMetrics, fmt, splitAgent } from "@/lib/engine/format";
 import { STATES, isBreach, isCrit, strikesOf } from "@/lib/engine/rules";
 import type { Agent, Rule } from "@/lib/types";
 
@@ -21,6 +21,7 @@ export const AgentCard = memo(function AgentCard({ agent: a, rules, query, showM
   const s = unknown ? UNKNOWN : STATES[a.state] ?? STATES.avail;
   const breach = isBreach(a, rules), crit = breach && isCrit(a, rules);
   const strikes = strikesOf(a);
+  const m = agentMetrics(a);
   const { who, id } = splitAgent(a.name);
   const skin = crit ? "bg-error-fill shadow-[inset_0_0_0_2px_var(--error)]" : breach ? "bg-warning-fill shadow-[inset_0_0_0_2px_var(--warning)]" : "bg-white ring-card";
   const metric = (label: string, value: string | number) => <span className="whitespace-nowrap">{label} <b className="text-ink">{value}</b></span>;
@@ -43,8 +44,8 @@ export const AgentCard = memo(function AgentCard({ agent: a, rules, query, showM
       {showMetrics && (
         // Two tidy rows in three columns that line up from card to card: handling on the first row, call quality on the second.
         <div className="num grid grid-cols-[1fr_1fr_52px] gap-x-1.5 gap-y-1 border-t border-row pt-2 text-[11px] text-muted">
-          {metric("AHT", a.aht + "s")}{metric("Calls", a.calls)}{metric("Adh", a.adh.toFixed(0) + "%")}
-          {metric("Short", a.shortCalls)}{metric("Xfr", a.transfers)}
+          {metric("AHT", m.aht)}{metric("Calls", m.calls)}{metric("Adh", m.adh)}
+          {metric("Short", m.short)}{metric("Xfr", m.transfers)}
         </div>
       )}
     </div>

@@ -110,8 +110,8 @@ export function createEngine(hooks: EngineHooks = {}, opts: EngineOptions = {}) 
         const c = carriedCalls[a.uid];
         return {
           id: i, uid: a.uid, name: a.name, team: a.team, state: a.state, stTime: a.stTime ?? 0, onHold: false, holdTime: 0,
-          aht: p?.aht ?? c?.aht ?? a.aht ?? 420, calls: p?.calls ?? c?.calls ?? a.calls ?? 0, shortCalls: p?.shortCalls ?? c?.shortCalls ?? 0, transfers: p?.transfers ?? c?.transfers ?? 0,
-          adh: p?.adh ?? a.adh ?? 96, ahtFromFeed: p?.ahtFromFeed, strikes: { ...(p?.strikes ?? carried[a.uid]) }, fired: { ...p?.fired },
+          aht: p?.aht ?? c?.aht ?? a.aht ?? null, calls: p?.calls ?? c?.calls ?? a.calls ?? 0, shortCalls: p?.shortCalls ?? c?.shortCalls ?? 0, transfers: p?.transfers ?? c?.transfers ?? 0,
+          adh: p?.adh ?? a.adh ?? null, ahtFromFeed: p?.ahtFromFeed, strikes: { ...(p?.strikes ?? carried[a.uid]) }, fired: { ...p?.fired },
           ...(p?.place && { place: p.place }),
         };
       });
@@ -141,8 +141,8 @@ export function createEngine(hooks: EngineHooks = {}, opts: EngineOptions = {}) 
     if (e.callEnded) {
       const dur = e.callEnded.durationSec !== undefined ? Math.round(e.callEnded.durationSec) : a.stTime;
       a.calls++;
-      // A replay has no AHT baseline, so the first call seeds it. AHT from the feed is the real figure: keep it.
-      if (!a.ahtFromFeed) a.aht = S.mode === "replay" && a.calls === 1 ? dur : Math.round(a.aht * 0.85 + dur * 0.15);
+      // With no AHT yet (or a replay's first call) the call seeds it. AHT from the feed is the real figure: keep it.
+      if (!a.ahtFromFeed) a.aht = a.aht === null || (S.mode === "replay" && a.calls === 1) ? dur : Math.round(a.aht * 0.85 + dur * 0.15);
       if (e.callEnded.transferred) a.transfers++;
       const short = ruleFor(rule("short"), a.place);
       if (short.on && dur < short.thr) { a.shortCalls++; fire(short, a, `${dur}s call`); }
@@ -173,7 +173,8 @@ export function createEngine(hooks: EngineHooks = {}, opts: EngineOptions = {}) 
     pendingStats = [];
     if (pendingQueue) { S.queue = pendingQueue; pendingQueue = null; }
     if (pendingQueues) { S.queues = pendingQueues; pendingQueues = null; }
-    if (opts.deriveAdh) for (const a of S.agents) {
+    // Drifts an adherence the feed gave; one that was never given stays N/A.
+    if (opts.deriveAdh) for (const a of S.agents) if (a.adh !== null) {
       a.adh = Math.max(70, Math.min(100, a.adh + (a.state === "auxp" || a.state === "off" ? -0.03 : a.state === "oncall" ? 0.008 : 0)));
     }
   }

@@ -1,3 +1,5 @@
+import type { Agent } from "@/lib/types";
+
 const pad = (n: number) => String(n).padStart(2, "0");
 
 /** Seconds as m:ss. */
@@ -43,4 +45,17 @@ export function causeSummary(list: { rule: string; instances: number; status: st
     const closed = c.open === 0 ? " (closed)" : c.open < c.n ? ` (${c.open.toLocaleString("en-US")} open)` : "";
     return c.n === 1 ? `${rule} ×${c.latest}${closed}` : `${rule}: ${c.n.toLocaleString("en-US")} IRs, latest ×${c.latest}${closed}`;
   }).join(" · ");
+}
+
+/** Shown for a number nothing has supplied yet, so it is never mistaken for a real 0. */
+export const NA = "N/A";
+
+/** An agent's card numbers as text. Offline with no calls today shows N/A throughout: there is nothing to report yet. */
+export function agentMetrics(a: Pick<Agent, "state" | "aht" | "adh" | "calls" | "transfers" | "shortCalls">): { aht: string; adh: string; calls: string; transfers: string; short: string } {
+  if (a.state === "off" && !a.calls && !a.transfers && !a.shortCalls) return { aht: NA, adh: NA, calls: NA, transfers: NA, short: NA };
+  return {
+    aht: a.aht === null ? NA : `${Math.round(a.aht)}s`,
+    adh: a.adh === null ? NA : `${a.adh.toFixed(0)}%`,
+    calls: String(a.calls), transfers: String(a.transfers), short: String(a.shortCalls),
+  };
 }

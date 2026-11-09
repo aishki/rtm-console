@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { NO_LEADER, clock, fmt, splitAgent } from "@/lib/engine/format";
+import { NO_LEADER, agentMetrics, clock, fmt, splitAgent } from "@/lib/engine/format";
 import { STATES, type Target, myTargets } from "@/lib/engine/rules";
 import { api, attempt } from "@/lib/client/api";
 import { useConsole } from "@/lib/client/store";
@@ -83,7 +83,7 @@ export default function MyViewPage() {
               </div>
               <span className="num text-[64px] font-semibold leading-[1.1] tracking-[-0.02em]">{fmt(me.stTime)}</span>
               <div className="num mt-2 flex flex-wrap justify-center gap-4 text-xs text-muted">
-                {metric("AHT", me.aht + "s")}{metric("Calls", me.calls)}{metric("Xfr", me.transfers)}{metric("Short", me.shortCalls)}{metric("Adh", me.adh.toFixed(0) + "%")}
+                {metric("AHT", agentMetrics(me).aht)}{metric("Calls", agentMetrics(me).calls)}{metric("Xfr", agentMetrics(me).transfers)}{metric("Short", agentMetrics(me).short)}{metric("Adh", agentMetrics(me).adh)}
               </div>
             </>
           ) : (

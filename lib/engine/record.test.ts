@@ -153,7 +153,8 @@ describe("carrying on after a restart", () => {
     const calls = { "u-amara": { calls: 14, transfers: 2, shortCalls: 1, aht: 380 }, "u-joshua": { calls: 3, transfers: 0, shortCalls: 0, aht: null } };
     const { e, episode } = setup({ saved: { ...SAVED, calls } });
     expect(e.S.agents.find(a => a.uid === "u-amara")).toMatchObject({ calls: 14, transfers: 2, shortCalls: 1, aht: 380 });
-    expect(e.S.agents.find(a => a.uid === "u-joshua")).toMatchObject({ calls: 3, aht: 420 });
+    // No call durations were saved for Joshua, so his AHT stays N/A (null), not a made-up figure.
+    expect(e.S.agents.find(a => a.uid === "u-joshua")).toMatchObject({ calls: 3, aht: null });
     // The next call counts on from there.
     e.ingest.onAgentState({ uid: "u-amara", state: "avail", callEnded: { durationSec: 300 } });
     episode("u-joshua", "avail", 0);
