@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { STATES, STATE_IDS, isBreach, strikesOf, thrOf } from "@/lib/engine/rules";
+import { NA } from "@/lib/engine/format";
 import { api, attempt } from "@/lib/client/api";
 import { usePerms } from "@/lib/client/hooks";
 import { useConsole } from "@/lib/client/store";
@@ -11,7 +12,7 @@ import { type TreeNode, buildTree } from "@/lib/queueTree";
 import type { Agent, Instance } from "@/lib/types";
 import { PurpleButton } from "@/components/ui/buttons";
 import { type Kpi, KpiTile } from "@/components/ui/primitives";
-import { AgentGridToolbar, type GridFilters, NO_FILTERS, type QuickKey } from "@/components/console/AgentGridToolbar";
+import { AgentGridToolbar, type GridFilters, type LobGroup, NO_FILTERS, type QuickKey } from "@/components/console/AgentGridToolbar";
 import { IncidentTiles } from "@/components/console/IncidentTiles";
 import { QueueMapDialog } from "@/components/console/QueueMapDialog";
 import { TreeGroup, TreeHeader } from "@/components/console/TreeGroup";
@@ -30,8 +31,10 @@ function useKpis(): Kpi[] {
     const thr = (id: Parameters<typeof thrOf>[1]) => thrOf(rules, id);
     const count = (...states: Agent["state"][]) => agents.filter(a => states.includes(a.state)).length;
     const onCall = count("oncall"), avail = count("avail"), aux = count("auxb", "auxp"), off = count("off");
-    const avgAht = agents.length ? Math.round(agents.reduce((s, a) => s + a.aht, 0) / agents.length) : 0;
-    const avgAdh = agents.length ? agents.reduce((s, a) => s + a.adh, 0) / agents.length : 100;
+    // Averages over the agents that have a value; N/A when none has one yet.
+    const ahts = agents.flatMap(a => (a.aht === null ? [] : [a.aht])), adhs = agents.flatMap(a => (a.adh === null ? [] : [a.adh]));
+    const avgAht = ahts.length ? Math.round(ahts.reduce((s, v) => s + v, 0) / ahts.length) : null;
+    const avgAdh = adhs.length ? adhs.reduce((s, v) => s + v, 0) / adhs.length : null;
     const noQueue = (label: string): Kpi => ({ label, value: "—", sub: replay ? "No queue data in this import" : "Waiting for queue data", level: "ok", muted: true });
     const q = queue, lv = q && queueLevels(q, rules);
     return [
@@ -40,19 +43,21 @@ function useKpis(): Kpi[] {
       q && lv ? { label: "Calls in queue", value: Math.round(q.cq), sub: `Alert > ${thr("cq")}`, level: lv.cq } : noQueue("Calls in queue"),
       q && lv ? { label: "ASA", value: Math.round(q.asa) + "s", sub: "Rolling interval", level: lv.asa } : noQueue("ASA"),
       q && lv ? { label: "Abandon", value: q.ab.toFixed(1) + "%", sub: `Alert > ${thr("aband")}%`, level: lv.ab } : noQueue("Abandon"),
-      { label: "Avg AHT", value: avgAht + "s", sub: "Your span", level: avgAht > 560 ? "warn" : "ok" },
-      { label: "Adherence", value: avgAdh.toFixed(0) + "%", sub: "Span average", level: avgAdh < thr("adh") ? "crit" : avgAdh < thr("adh") + 3 ? "warn" : "ok" },
+      avgAht === null ? { label: "Avg AHT", value: NA, sub: "No AHT from the feed yet", level: "ok", muted: true }
+        : { label: "Avg AHT", value: avgAht + "s", sub: ahts.length < agents.length ? `${ahts.length} of ${agents.length} agents` : "Your span", level: avgAht > 560 ? "warn" : "ok" },
+      avgAdh === null ? { label: "Adherence", value: NA, sub: replay ? "No adherence in this import" : "No adherence feed", level: "ok", muted: true }
+        : { label: "Adherence", value: avgAdh.toFixed(0) + "%", sub: adhs.length < agents.length ? `${adhs.length} of ${agents.length} agents` : "Span average", level: avgAdh < thr("adh") ? "crit" : avgAdh < thr("adh") + 3 ? "warn" : "ok" },
       { label: "Staffed", value: `${onCall + avail}/${agents.length}`, sub: `${onCall} on call · ${aux} aux · ${off} off`, level: off > 2 ? "crit" : aux > 5 ? "warn" : "ok" },
     ];
   }, [queue, rules, agents, replay]);
 }
 
-/** Queue filter options, one group per LOB (the Unmapped tower is one group). */
+/** LOB and queue filter options, one group per LOB (the Unmapped tower is one group). */
 function queueOptions(tree: TreeNode[]) {
-  const groups: { label: string; items: { value: string; label: string }[] }[] = [];
+  const groups: LobGroup[] = [];
   const walk = (n: TreeNode, tower: string) => {
     const qs = n.children.filter(c => c.level === "queue");
-    if (qs.length) groups.push({ label: n.level === "tower" ? n.label : `${tower} · ${n.label}`, items: qs.map(c => ({ value: c.label, label: `${c.label} (${c.agentIds.length})` })) });
+    if (qs.length) groups.push({ key: n.key, label: n.level === "tower" ? n.label : `${tower} · ${n.label}`, items: qs.map(c => ({ value: c.label, label: `${c.label} (${c.agentIds.length})` })) });
     n.children.forEach(c => { if (c.level !== "queue") walk(c, tower); });
   };
   tree.forEach(t => walk(t, t.label));
@@ -97,9 +102,15 @@ function AgentGrid() {
 
   const qn = filters.q.trim().toLowerCase();
   const { quick } = filters;
-  const queueFilter = tree.some(t => t.queues.includes(filters.queue)) ? filters.queue : "";
+  // Picks the tree no longer has (a queue that left the feed, a remapped LOB) are dropped.
+  const lobFilter = filters.lobs.filter(k => queueGroups.some(g => g.key === k));
+  const lobQueues = queueGroups.filter(g => lobFilter.includes(g.key)).flatMap(g => g.items.map(q => q.value));
+  const pickable = new Set(lobFilter.length ? lobQueues : queueGroups.flatMap(g => g.items.map(q => q.value)));
+  const queueFilter = filters.queues.filter(q => pickable.has(q));
+  // Ticked queues win; ticked LOBs alone keep all their queues.
+  const queueSet = queueFilter.length ? new Set(queueFilter) : lobFilter.length ? new Set(lobQueues) : null;
   const scoped = !!(filters.states.length || quick.breach || quick.strikes || quick.hold);
-  const filtering = scoped || !!qn || !!queueFilter;
+  const filtering = scoped || !!qn || !!queueSet;
 
   const inScope = (a: Agent) => {
     if (filters.states.length && !filters.states.includes(a.state)) return false;
@@ -112,7 +123,7 @@ function AgentGrid() {
   const hits = (a: Agent) => a.name.toLowerCase().includes(qn) || (leads[a.uid]?.tl ?? "").toLowerCase().includes(qn);
   const view = filtering
     ? filterTree(tree, {
-      query: qn, queue: queueFilter,
+      query: qn, queues: queueSet,
       inScope: scoped ? new Set(agents.filter(inScope).map(a => a.id)) : null,
       queryHits: new Set(qn ? agents.filter(hits).map(a => a.id) : []),
     })
@@ -161,7 +172,7 @@ function AgentGrid() {
         {perms?.mapping && <PurpleButton variant="outline" compact onClick={() => setMappingOpen(true)}>Queue mapping</PurpleButton>}
       </div>
       <AgentGridToolbar
-        filters={{ ...filters, queue: queueFilter }} onChange={patch => setFilters(f => ({ ...f, ...patch }))} onClear={clear} searchRef={searchRef}
+        filters={{ ...filters, lobs: lobFilter, queues: queueFilter }} onChange={patch => setFilters(f => ({ ...f, ...patch }))} onClear={clear} searchRef={searchRef}
         queueGroups={queueGroups} queueCount={queueCount} quickCounts={quickCounts} filtering={filtering}
         resultText={view ? `${view.agentCount} of ${agents.length} agents · ${plural(view.queueCount, "queue")}` : `${agents.length} agents · ${plural(queueCount, "queue")}`}
         showExpandControls={nodes.length > 1} onExpandAll={expandAll} onCollapseAll={collapseAll}

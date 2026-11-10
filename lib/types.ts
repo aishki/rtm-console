@@ -30,8 +30,12 @@ export interface Agent {
   id: number;
   /** The agent's key, which never changes: the Genesys user ID, or a made-up one for the simulator (sim:…) and imports (csv:…). Names are for display only. */
   uid: string;
-  name: string; team: string; state: AgentState; stTime: number; aht: number;
-  calls: number; shortCalls: number; transfers: number; onHold: boolean; holdTime: number; adh: number;
+  /**
+   * AHT in seconds and adherence in percent; null when nothing has supplied one yet (shown as N/A,
+   * skipped by rules and averages). A real 0 stays 0.
+   */
+  name: string; team: string; state: AgentState; stTime: number; aht: number | null;
+  calls: number; shortCalls: number; transfers: number; onHold: boolean; holdTime: number; adh: number | null;
   /** AHT is the feed's handle time for the day (talk, hold and ACW), not estimated from calls seen. */
   ahtFromFeed?: boolean;
   strikes: Partial<Record<RuleId, number>>; fired: Partial<Record<RuleId, boolean>>;

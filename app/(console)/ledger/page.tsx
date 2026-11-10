@@ -10,6 +10,10 @@ import type { Instance, Stage } from "@/lib/types";
 import { PurpleButton } from "@/components/ui/buttons";
 import { type Column, DataTable } from "@/components/ui/DataTable";
 import { type Kpi, KpiTile, PageTitle, StatusPill } from "@/components/ui/primitives";
+import { queueFilterOptions } from "@/lib/client/queueOptions";
+import { FilterClearIcon } from "@/components/ui/FilterChip";
+import { MultiSelect } from "@/components/ui/MultiSelect";
+import { SearchBox, nameOrIdMatches } from "@/components/ui/SearchBox";
 import { Select, type SelectOption } from "@/components/ui/Select";
 
 const MAX_ROWS = 250;
@@ -73,8 +77,17 @@ export default function LedgerPage() {
   const ledger = useConsole(s => s.ledger);
   const toast = useConsole(s => s.toast);
   const [stage, setStage] = useState<Stage | "">("");
+  const [query, setQuery] = useState("");
+  const [queues, setQueues] = useState<string[]>([]);
+  const queueMap = useConsole(s => s.queueMap);
+  const queueOptions = useMemo(() => queueFilterOptions(ledger.map(r => r.team), queueMap), [ledger, queueMap]);
 
-  const rows = useMemo(() => (stage ? ledger.filter(r => r.stage === stage) : ledger).slice(0, MAX_ROWS), [ledger, stage]);
+  const matching = useMemo(
+    () => ledger.filter(r => (!stage || r.stage === stage) && (!queues.length || queues.includes(r.team)) && nameOrIdMatches(r.agent, query)),
+    [ledger, stage, queues, query],
+  );
+  const rows = matching.slice(0, MAX_ROWS);
+  const filtering = !!(stage || queues.length || query.trim());
   const { kpis, byStage } = useMemo(() => {
     const total = ledger.length;
     const open = ledger.filter(r => r.status === "open").length;
@@ -96,7 +109,6 @@ export default function LedgerPage() {
       <div className="flex flex-wrap items-end gap-4">
         <PageTitle eyebrow="Review" title="Instance ledger" />
         <div className="flex-1" />
-        <Select value={stage} onChange={setStage} options={STAGE_FILTERS} aria-label="Filter by stage" className="field h-[38px] px-3" />
         {perms?.export && <PurpleButton variant="outline" onClick={() => download("/api/export/ledger")}>Export CSV</PurpleButton>}
         {perms?.ackAll && <PurpleButton onClick={ackAll}>Acknowledge all open</PurpleButton>}
       </div>
@@ -104,9 +116,31 @@ export default function LedgerPage() {
         {kpis.map(k => <KpiTile key={k.label} kpi={k} />)}
         <StageMix byStage={byStage} />
       </div>
-      {/* Tall enough to fill the window under the sticky chrome once the page is scrolled to it. */}
-      <div className="panel max-h-[calc(100vh-180px)] min-h-[480px] overflow-auto">
-        <DataTable columns={COLUMNS} rows={rows} rowKey={r => r.n} stickyHeader padX={12} empty="No instances match this filter." />
+      {/* The filters sit in the table's panel as its header strip. Not overflow-hidden: the queue list has
+          to drop out of the panel when few rows are left. */}
+      <div className="panel">
+        <div className="flex min-h-[38px] flex-wrap items-center gap-3 border-b border-pale-purple px-5 py-3.5">
+          <SearchBox value={query} onChange={setQuery} aria-label="Search the ledger by agent" placeholder="Search agent name or ID" className="min-w-[220px] flex-[0_1_320px]" height="h-[38px]" />
+          <MultiSelect
+            value={queues} onChange={setQueues} options={queueOptions} anyLabel={`All queues (${queueOptions.length})`} countLabel={n => `${n} queues`}
+            aria-label="Filter by queue" className="field h-[38px] !max-w-[260px] px-3"
+          />
+          <Select value={stage} onChange={setStage} options={STAGE_FILTERS} aria-label="Filter by stage" className="field h-[38px] px-3" />
+          <div className="flex-1" />
+          <span aria-live="polite" className="text-[13px] text-muted">
+            {filtering ? `${matching.length} of ${ledger.length} instances` : `${ledger.length} instances`}
+            {matching.length > MAX_ROWS ? ` · newest ${MAX_ROWS} shown` : ""}
+          </span>
+          {filtering && (
+            <button type="button" onClick={() => { setQuery(""); setQueues([]); setStage(""); }} className="inline-flex h-8 items-center gap-1.5 rounded-pill border-0 bg-tint px-3 text-[13px] font-semibold text-purple">
+              <FilterClearIcon size={18} active />Clear filters
+            </button>
+          )}
+        </div>
+        {/* Tall enough to fill the window under the sticky chrome and the filter strip once the page is scrolled to it. */}
+        <div className="max-h-[calc(100vh-250px)] min-h-[420px] overflow-auto rounded-b-[20px]">
+          <DataTable columns={COLUMNS} rows={rows} rowKey={r => r.n} stickyHeader padX={12} empty="No instances match this filter." />
+        </div>
       </div>
     </section>
   );

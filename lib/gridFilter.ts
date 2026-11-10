@@ -11,8 +11,8 @@ export const AUTO_OPEN_CARDS = 300;
 export interface GridFilter {
   /** Lowercased, trimmed search text; "" for none. */
   query: string;
-  /** The queue picked in the queue filter; "" for none. */
-  queue: string;
+  /** The queues kept by the LOB and queue filters; null when neither is set. */
+  queues: Set<string> | null;
   /** Ids passing the state and quick filters; null when none is set. */
   inScope: Set<number> | null;
   /** Ids whose own name or team lead contains the query. */
@@ -33,7 +33,7 @@ export interface GridView {
 export const flatten = (nodes: TreeNode[]): TreeNode[] => nodes.flatMap(n => [n, ...flatten(n.children)]);
 
 /**
- * The queue filter picks a branch of the tree, not agents: someone in several queues shows under each.
+ * The LOB and queue filters pick branches of the tree, not agents: someone in several queues shows under each.
  * A search matches a person's name or team lead, or a queue's name; a queue matched by name keeps
  * every member in scope of the other filters.
  */
@@ -43,7 +43,7 @@ export function filterTree(tree: TreeNode[], f: GridFilter): GridView {
   let queueCount = 0;
 
   const walk = (n: TreeNode): TreeNode | null => {
-    if (f.queue && !n.queues.includes(f.queue)) return null;
+    if (f.queues && !n.queues.some(q => f.queues!.has(q))) return null;
     if (n.level === "queue") {
       const named = !!f.query && n.label.toLowerCase().includes(f.query);
       const ids = n.agentIds.filter(id => (!f.inScope || f.inScope.has(id)) && (!f.query || named || f.queryHits.has(id)));

@@ -148,7 +148,7 @@ export async function buildTemplate(): Promise<ArrayBuffer> {
     ["", "Team Lead", "Yes", "Scopes the Team Lead view to this team."],
     ["", "Manager", "Yes", "Scopes the Manager view to every team under this manager."],
     ["", "LOB", "No", "Line of business, shown in the team filter. Defaults to the team name."],
-    ["", "Adherence %", "No", "Shift adherence at the start of the day, 0 to 100. Defaults to 96. It then drifts with time spent in Aux Personal and Offline."],
+    ["", "Adherence %", "No", "Shift adherence at the start of the day, 0 to 100. Leave blank if unknown: the console then shows N/A. A value given drifts with time spent in Aux Personal and Offline."],
     [SHEETS.status, "Agent Name", "Yes", "Must be an agent on the Roster sheet."],
     ["", "Status", "Yes", `The status the agent changed to: ${STATUS_LABELS.join(", ")}. Genesys names such as "On Queue", "After Call Work", "Meal" or "Break" are recognised too.`],
     ["", "Start Time", "Yes", "When that status began, as a date and time (2026-10-01 08:00:00). One row per status change; the status lasts until the agent's next row."],

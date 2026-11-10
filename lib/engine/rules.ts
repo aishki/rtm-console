@@ -1,5 +1,5 @@
 import type { Agent, AgentState, IncidentOwner, Role, Route, Rule, RuleId } from "@/lib/types";
-import { fmt } from "./format";
+import { NA, fmt } from "./format";
 import { ruleFor } from "./overrides";
 
 export const STATES: Record<AgentState, { label: string; color: string }> = {
@@ -75,7 +75,7 @@ export const AGENT_TESTS: Partial<Record<RuleId, Test>> = {
   long: (a, thr) => a.state === "oncall" && a.stTime >= thr,
   hold: (a, thr) => a.state === "oncall" && a.onHold && a.holdTime >= thr,
   outb: (a, thr) => a.state === "outb" && a.stTime >= thr,
-  adh: (a, thr) => a.adh < thr,
+  adh: (a, thr) => a.adh !== null && a.adh < thr,
   xfer: (a, thr) => a.calls >= 5 && (a.transfers / a.calls) * 100 >= thr,
 };
 /** Adherence and Transfer rate fire once per shift and never re-arm. */
@@ -83,7 +83,7 @@ export const ONCE_PER_SHIFT: RuleId[] = ["adh", "xfer"];
 
 const VALUE_OF: Partial<Record<RuleId, (a: Agent) => string>> = {
   hold: a => fmt(a.holdTime),
-  adh: a => a.adh.toFixed(0) + "%",
+  adh: a => (a.adh === null ? NA : a.adh.toFixed(0) + "%"),
   xfer: a => `${((a.transfers / a.calls) * 100).toFixed(0)}% (${a.transfers}/${a.calls})`,
 };
 export const valueOf = (id: RuleId, a: Agent): string => (VALUE_OF[id] ?? (x => fmt(x.stTime)))(a);
@@ -93,7 +93,7 @@ const NUDGE_COPY: Partial<Record<RuleId, (a: Agent, rules: Rule[]) => string>> =
   auxp: a => `You've been in Aux Personal for ${fmt(a.stTime)}. Your team needs you on the queue, so head back when you can.`,
   ovbrk: a => `Your break has run ${fmt(a.stTime)}, past the scheduled window. Please head back to Available.`,
   short: (a, rules) => `That last call released in under ${ruleFor(ruleOf(rules, "short"), a.place).thr}s. If it dropped, log it; if the member hung up, no action needed. This is tracked for patterns.`,
-  adh: a => `Your adherence has dipped to ${a.adh.toFixed(0)}%. Sticking close to your schedule for the rest of the shift will bring it back.`,
+  adh: a => `Your adherence has dipped to ${(a.adh ?? 0).toFixed(0)}%. Sticking close to your schedule for the rest of the shift will bring it back.`,
   hold: a => `The member has been on hold for ${fmt(a.holdTime)}. Check back in, or take them off hold if you're ready.`,
   outb: a => `This outbound call has been running ${fmt(a.stTime)}. If the callback is complete, wrap up and return to the queue.`,
   xfer: a => `Your transfer rate is at ${((a.transfers / Math.max(1, a.calls)) * 100).toFixed(0)}% today. If the transfers feel unavoidable, tell your TL what's driving them.`,
@@ -145,7 +145,9 @@ export function myTargets(a: Agent, rules: Rule[]): Target[] {
       if (p >= 1) { lvl = "breach"; stat = "Breached"; } else if (p >= 0.7) { lvl = "watch"; stat = "Approaching"; }
     };
     if (!r.on) { stat = "Rule off"; lvl = "off"; }
-    else if (r.id === "adh") {
+    else if (r.id === "adh" && a.adh === null) {
+      now = NA; stat = "No data"; lvl = "off";
+    } else if (r.id === "adh" && a.adh !== null) {
       now = a.adh.toFixed(0) + "%";
       if (a.adh < r.thr) { lvl = "breach"; stat = "Breached"; } else if (a.adh < r.thr + 2) { lvl = "watch"; stat = "Watch"; }
     } else if (r.id === "xfer") {

@@ -125,7 +125,7 @@ export function buildFloorImport(sheets: Record<string, Sheet>): ImportResult {
       else if (known.tl !== tl || known.mgr !== mgr) conflicts.push(team);
       names.add(name);
       const adh = rc.adh >= 0 ? num(cells[rc.adh]) : null;
-      roster.push({ uid: csvUid(name), name, team, state: "off", stTime: 0, aht: 420, calls: 0, adh: adh === null ? 96 : Math.max(0, Math.min(100, adh <= 1 ? adh * 100 : adh)) });
+      roster.push({ uid: csvUid(name), name, team, state: "off", stTime: 0, calls: 0, adh: adh === null ? undefined : Math.max(0, Math.min(100, adh <= 1 ? adh * 100 : adh)) });
     }
     if (incomplete.length) errors.push(`${SHEETS.roster}: rows ${capped(incomplete.map(String))} need an agent name, team, team lead and manager.`);
     if (dupes.length) errors.push(`${SHEETS.roster}: agent names must be unique. Repeated: ${capped([...new Set(dupes)])}.`);
