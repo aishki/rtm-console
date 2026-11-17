@@ -4,7 +4,9 @@ import type { Agent, AgentView } from "@/lib/types";
 export function toView(a: Agent, t: number): AgentView {
   const { stTime, holdTime, ...rest } = a;
   // Off hold the engine leaves the last hold's counter as it was; 0 keeps the agent unchanged from tick to tick.
-  return { ...rest, stAt: t - stTime, holdAt: a.onHold ? t - holdTime : 0 };
+  // Adherence goes as a whole percent: a derived one drifts by hundredths every second, which no screen shows,
+  // and rounding down keeps "below a whole-number threshold" the same answer.
+  return { ...rest, adh: a.adh === null ? null : Math.floor(a.adh), stAt: t - stTime, holdAt: a.onHold ? t - holdTime : 0 };
 }
 
 /** The agent with its time in state and on hold as of engine second `t`, for the rule tests. */

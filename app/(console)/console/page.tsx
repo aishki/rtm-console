@@ -79,7 +79,7 @@ function AgentGrid() {
   const agents = useConsole(s => s.agents);
   const rules = useConsole(s => s.rules);
   // Breaches depend on time in state, so they are the one thing here worked out every second.
-  const t = useConsole(s => s.t);
+  const t = useConsole(s => s.agentT);
   const loading = useConsole(s => s.agentsLoading);
   const queues = useConsole(s => s.queues);
   const members = useConsole(s => s.members);

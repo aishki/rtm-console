@@ -57,7 +57,7 @@ export type Engine = ReturnType<typeof createEngine>;
  */
 export function createEngine(hooks: EngineHooks = {}, opts: EngineOptions = {}) {
   const S: EngineState = {
-    t: 0, mode: "live", replay: null, org: [], agents: [], rules: opts.rules ?? defaultRules(),
+    t: 0, agentT: 0, mode: "live", replay: null, org: [], agents: [], rules: opts.rules ?? defaultRules(),
     ledger: [], incidents: [], seq: 0, staleFor: 0, agentsLoading: false, quiet: false, queue: null, queues: {}, members: {}, people: {}, rosterRev: 0, floorFired: {}, groupFired: {}, severalLobs: [], rev: 0,
   };
   /** The mapping and roster the agents were last placed from, and each override's queues under that mapping. */
@@ -160,6 +160,7 @@ export function createEngine(hooks: EngineHooks = {}, opts: EngineOptions = {}) 
   }
 
   function advance() {
+    S.agentT++;
     for (const a of S.agents) {
       a.stTime++;
       if (a.onHold) a.holdTime++;

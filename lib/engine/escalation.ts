@@ -33,6 +33,11 @@ export function incidentCounter(seq: IncidentSeq = { year: 0, n: 0 }, year: () =
 export interface EngineState {
   /** Shift clock, seconds since midnight. */
   t: number;
+  /**
+   * The agents' clock: seconds the state timers have run. It stands still with them on a second the
+   * feed is silent, so the time each state began (`agentT - stTime`) only moves when the state changes.
+   */
+  agentT: number;
   mode: "live" | "replay";
   replay: ReplayMeta | null;
   org: Team[];

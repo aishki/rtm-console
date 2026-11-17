@@ -45,8 +45,8 @@ export interface Agent {
 
 /**
  * An agent as the stream sends it to screens. The time in state and on hold count up every second,
- * so they travel as the engine second each began (`t - stTime`): an agent whose state has not
- * changed then looks the same from one tick to the next and is not sent again.
+ * so they travel as the second each began on the agents' clock (`agentT - stTime`): an agent whose
+ * state has not changed then looks the same from one tick to the next and is not sent again.
  */
 export type AgentView = Omit<Agent, "stTime" | "holdTime"> & { stAt: number; holdAt: number };
 
@@ -213,6 +213,8 @@ export interface SeveralLobs { uid: string; name: string; team: string; lobs: st
 export interface TickMsg {
   type: "tick" | "init";
   t: number; mode: "live" | "replay"; staleFor: number; replay: ReplayMeta | null;
+  /** The agents' clock, which stands still while the feed is silent; time in state is `agentT - stAt`. */
+  agentT: number;
   /** The agents are the last saved roster, or their states have not all arrived: an Offline agent may not be. */
   agentsLoading: boolean;
   queue: Queue | null;

@@ -64,7 +64,7 @@ export default function MyViewPage() {
   const leads = useConsole(s => (who ? s.leads[who] : undefined));
   const ledger = useConsole(s => s.ledger);
   // The timers in My targets read the time in state, so they follow the clock.
-  const t = useConsole(s => s.t);
+  const t = useConsole(s => s.agentT);
   const targets = useMemo(() => (me ? myTargets(withTimes(me, t), rules) : []), [me, rules, t]);
   const log = useMemo(() => ledger.slice(0, LOG_SIZE), [ledger]);
 

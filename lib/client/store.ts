@@ -28,6 +28,8 @@ interface ConsoleState {
   genesysOrg: OrgId | null;
   canSwitchFeed: boolean;
   staleFor: number;
+  /** The agents' clock: time in state is `agentT - stAt`. It stands still while the feed is silent. */
+  agentT: number;
   /** Agents are the saved roster or still waiting for their first state: Offline may not be. */
   agentsLoading: boolean;
   replay: ReplayMeta | null;
@@ -72,7 +74,7 @@ function whenSeen(fn: () => void): void {
 }
 
 export const useConsole = create<ConsoleState>((set, get) => ({
-  status: "connecting", view: null, org: [], people: null, t: 0, mode: "live", feed: "gencloud", realNames: false, genesysOrg: null, canSwitchFeed: false, staleFor: 0, agentsLoading: false, replay: null,
+  status: "connecting", view: null, org: [], people: null, t: 0, mode: "live", feed: "gencloud", realNames: false, genesysOrg: null, canSwitchFeed: false, staleFor: 0, agentT: 0, agentsLoading: false, replay: null,
   queue: null, rules: [], agents: [], queues: {}, members: {}, leads: {}, unsupervised: 0, severalLobs: 0, viewerName: null, queueMap: [], incidents: [], ledger: [], toasts: [], nudge: null,
   toast(kind, title, body) {
     const id = ++toastSeq;
@@ -101,7 +103,7 @@ function apply(msg: StreamMsg) {
   const nudge = devOn("nudges") ? msg.nudges.filter(e => !init || e.n !== shownNudge).at(-1) : undefined;
   if (nudge) shownNudge = nudge.n;
   useConsole.setState(s => ({
-    status: "ready", t: msg.t, mode: msg.mode, staleFor: msg.staleFor, agentsLoading: msg.agentsLoading ?? false, replay: msg.replay, queue: msg.queue,
+    status: "ready", t: msg.t, mode: msg.mode, staleFor: msg.staleFor, agentT: msg.agentT, agentsLoading: msg.agentsLoading ?? false, replay: msg.replay, queue: msg.queue,
     // Left out of a tick means unchanged.
     rules: msg.rules ?? s.rules, incidents: msg.incidents ?? s.incidents, org: msg.org ?? s.org, queues: msg.queues ?? s.queues,
     agents: msg.agents ?? mergeAgents(s.agents, msg.agentsChanged),

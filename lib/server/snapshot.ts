@@ -14,17 +14,11 @@ export const sinceNow = (rt: Runtime): Since => ({ rev: rt.engine.S.rev, rosterR
 
 /** What one subscriber was last sent, so a tick can leave out what has not changed. One per stream connection. */
 export interface Sent {
-  agents: Map<number, { key: string; stAt: number; holdAt: number }>;
+  /** Each agent's wire form as last sent, by id. */
+  agents: Map<number, string>;
   rules?: string; incidents?: string; org?: string; queues?: string;
 }
 export const newSent = (): Sent => ({ agents: new Map() });
-
-/**
- * A start time that moved by less than this is not resent. The engine holds agent timers on a second
- * the feed is silent (live Genesys can go a few seconds between updates), which moves every start time
- * by one; resending the whole floor for that would undo the point of sending only changes.
- */
-const DRIFT = 2;
 
 interface Wire { view: AgentView; key: string }
 /** Each agent's wire form, worked out once per publish and shared by every subscriber. */
@@ -35,8 +29,7 @@ function wireOf(cache: Map<Agent, Wire>, a: Agent, t: number): Wire {
   let w = cache.get(a);
   if (!w) {
     const view = toView(a, t);
-    // Everything but the start times, which are compared with some slack (DRIFT).
-    w = { view, key: JSON.stringify(view, (k, v) => (k === "stAt" || k === "holdAt" ? undefined : v)) };
+    w = { view, key: JSON.stringify(view) };
     cache.set(a, w);
   }
   return w;
@@ -47,7 +40,7 @@ function agentDelta(agents: Agent[], t: number, batch: Batch, sent: Sent | undef
   let cache = wireCache.get(batch);
   if (!cache) wireCache.set(batch, (cache = new Map()));
   const wires = agents.map(a => wireOf(cache, a, t));
-  const record = (w: Wire) => sent?.agents.set(w.view.id, { key: w.key, stAt: w.view.stAt, holdAt: w.view.holdAt });
+  const record = (w: Wire) => sent?.agents.set(w.view.id, w.key);
   // The span changed (a roster reload, a different set of people): start over with the whole list.
   if (!sent || full || sent.agents.size !== wires.length || wires.some(w => !sent.agents.has(w.view.id))) {
     sent?.agents.clear();
@@ -56,8 +49,7 @@ function agentDelta(agents: Agent[], t: number, batch: Batch, sent: Sent | undef
   }
   const changed: AgentView[] = [];
   for (const w of wires) {
-    const was = sent.agents.get(w.view.id)!;
-    if (was.key !== w.key || Math.abs(was.stAt - w.view.stAt) >= DRIFT || Math.abs(was.holdAt - w.view.holdAt) >= DRIFT) {
+    if (sent.agents.get(w.view.id) !== w.key) {
       changed.push(w.view);
       record(w);
     }
@@ -95,10 +87,10 @@ export function tickMsg(rt: Runtime, view: View, since: Since | null, batch: Bat
     leads = Object.fromEntries(agents.map(a => { const l = leadersOf(S.people, a.uid); return [a.uid, { tl: l.tl?.name ?? null, mgr: l.mgr?.name ?? null }]; }));
   }
   return {
-    type: "tick", t: S.t, mode: S.mode, staleFor: S.staleFor, agentsLoading: S.agentsLoading, replay: S.replay, queue: S.queue,
+    type: "tick", t: S.t, agentT: S.agentT, mode: S.mode, staleFor: S.staleFor, agentsLoading: S.agentsLoading, replay: S.replay, queue: S.queue,
     rules: ifChanged("rules", S.rules, json.rules),
     org: ifChanged("org", scopeTeams(S, view)),
-    ...agentDelta(agents, S.t, batch, sent, !since || since.rosterRev !== S.rosterRev),
+    ...agentDelta(agents, S.agentT, batch, sent, !since || since.rosterRev !== S.rosterRev),
     incidents: ifChanged("incidents", scopeIncidents(S, view, S.incidents)),
     ledger: since === null ? ledger : ledger.filter(r => r.rev > since.rev),
     queues: ifChanged("queues", S.queues ?? {}, json.queues), members, leads, unsupervised: noSupervisor, severalLobs: manyLobs, viewerName: viewerName(view, S),

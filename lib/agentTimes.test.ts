@@ -23,6 +23,12 @@ describe("agent times on the wire", () => {
     expect(toView(a, 1001)).toEqual(first);
   });
 
+  it("sends adherence as a whole percent, so a drift of hundredths changes nothing", () => {
+    expect(toView(agent({ adh: 84.97 }), 1000).adh).toBe(84);
+    expect(toView(agent({ adh: 84.01 }), 1000)).toEqual(toView(agent({ adh: 84.6 }), 1000));
+    expect(toView(agent({ adh: null }), 1000).adh).toBeNull();
+  });
+
   it("ignores the last hold's counter once the agent is off hold", () => {
     const v = toView(agent({ holdTime: 30 }), 1000);
     expect(v.holdAt).toBe(0);

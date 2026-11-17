@@ -111,19 +111,19 @@ describe("tickMsg deltas for one connection", () => {
     const m = next();
     expect(m.agents).toBeUndefined();
     expect(m.agentsChanged).toHaveLength(1);
-    expect(m.agentsChanged![0]).toMatchObject({ uid: "u-bea", state: "acw", stAt: engine.S.t });
+    expect(m.agentsChanged![0]).toMatchObject({ uid: "u-bea", state: "acw", stAt: engine.S.agentT });
     expect(m.agentsChanged![0]).not.toHaveProperty("stTime");
   });
 
-  it("does not resend agents whose start time slipped by a silent second", () => {
+  it("resends nothing while the feed is silent: the agents' clock holds with their timers", () => {
     const { engine, next } = connected();
     engine.tick(); // the roster load counts as a heartbeat: timers move with the clock
     expect(next().agentsChanged).toBeUndefined();
-    // Then no heartbeat and no states: the engine holds every timer while the clock moves on.
-    engine.tick();
-    expect(next().agentsChanged).toBeUndefined();
-    engine.tick();
-    expect(next().agentsChanged).toHaveLength(3);
+    const at = engine.S.agentT;
+    // Then no heartbeat and no states: the engine holds every timer while the shift clock moves on.
+    for (let i = 0; i < 5; i++) { engine.tick(); expect(next().agentsChanged).toBeUndefined(); }
+    expect(engine.S.agentT).toBe(at);
+    expect(next().agentT).toBe(at);
   });
 
   it("sends a rule change once", () => {
