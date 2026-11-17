@@ -150,6 +150,8 @@ function AgentGrid() {
   const nodes = flatten(visible);
 
   const { sortBy } = filters;
+  // Any change to the filters, search or sort sends every open queue back to its first page.
+  const filterKey = useMemo(() => JSON.stringify(filters), [filters]);
   const order = useMemo(() => {
     const sorter = SORTERS[sortBy];
     return new Map((sorter ? [...agents].sort(sorter) : agents).map((a, i) => [a.id, i]));
@@ -204,7 +206,7 @@ function AgentGrid() {
         {visible.map(node => (
           <TreeGroup
             key={node.key} node={node} depth={0} agentsById={agentsById} shown={view?.shown ?? null} order={order} breaching={breaching} queues={queues} rules={rules}
-            expanded={isOpen} onToggle={toggle} query={qn} showMetrics
+            expanded={isOpen} onToggle={toggle} query={qn} filterKey={filterKey} showMetrics
           />
         ))}
         {visible.length === 0 && (

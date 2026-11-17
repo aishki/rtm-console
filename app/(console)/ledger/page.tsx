@@ -15,8 +15,8 @@ import { FilterClearIcon } from "@/components/ui/FilterChip";
 import { MultiSelect } from "@/components/ui/MultiSelect";
 import { SearchBox, nameOrIdMatches } from "@/components/ui/SearchBox";
 import { Select, type SelectOption } from "@/components/ui/Select";
+import { Pager, usePaged } from "@/components/ui/Pager";
 
-const MAX_ROWS = 250;
 const STAGE_FILTERS: SelectOption<Stage | "">[] = [
   { value: "", label: "All stages" },
   { value: "nudge", label: "Nudge (agent)" },
@@ -86,7 +86,8 @@ export default function LedgerPage() {
     () => ledger.filter(r => (!stage || r.stage === stage) && (!queues.length || queues.includes(r.team)) && nameOrIdMatches(r.agent, query)),
     [ledger, stage, queues, query],
   );
-  const rows = matching.slice(0, MAX_ROWS);
+  // A new filter or search starts again at the first page.
+  const { rows, pager } = usePaged(matching, 50, `${stage}|${queues.join(",")}|${query.trim()}`);
   const filtering = !!(stage || queues.length || query.trim());
   const { kpis, byStage } = useMemo(() => {
     const total = ledger.length;
@@ -129,7 +130,6 @@ export default function LedgerPage() {
           <div className="flex-1" />
           <span aria-live="polite" className="text-[13px] text-muted">
             {filtering ? `${matching.length} of ${ledger.length} instances` : `${ledger.length} instances`}
-            {matching.length > MAX_ROWS ? ` · newest ${MAX_ROWS} shown` : ""}
           </span>
           {filtering && (
             <button type="button" onClick={() => { setQuery(""); setQueues([]); setStage(""); }} className="inline-flex h-8 items-center gap-1.5 rounded-pill border-0 bg-tint px-3 text-[13px] font-semibold text-purple">
@@ -138,9 +138,11 @@ export default function LedgerPage() {
           )}
         </div>
         {/* Tall enough to fill the window under the sticky chrome and the filter strip once the page is scrolled to it. */}
-        <div className="max-h-[calc(100vh-250px)] min-h-[420px] overflow-auto rounded-b-[20px]">
+        {/* Keyed by page: a new page opens scrolled to its top. */}
+        <div key={pager.slice.page} className="max-h-[calc(100vh-250px)] min-h-[420px] overflow-auto rounded-b-[20px]">
           <DataTable columns={COLUMNS} rows={rows} rowKey={r => r.n} stickyHeader padX={12} empty="No instances match this filter." />
         </div>
+        <Pager {...pager} noun="instances" className="justify-end border-t border-pale-purple px-5 py-2.5" />
       </div>
     </section>
   );
