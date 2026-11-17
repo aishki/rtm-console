@@ -112,7 +112,7 @@ export const isBreach = (a: Agent, rules: Rule[]): boolean => rules.some(r => ru
 export const isCrit = (a: Agent, rules: Rule[]): boolean =>
   (a.state === "oncall" && a.stTime >= ruleFor(ruleOf(rules, "long"), a.place).thr) || (a.state === "off" && a.stTime >= ruleFor(ruleOf(rules, "offl"), a.place).thr);
 
-export const strikesOf = (a: Agent): number => Object.values(a.strikes).reduce((x, y) => x + (y ?? 0), 0);
+export const strikesOf = (a: Pick<Agent, "strikes">): number => Object.values(a.strikes).reduce((x, y) => x + (y ?? 0), 0);
 
 /**
  * One pass of the agent-level rules, each as it applies at the agent's LOB. A rule fires once per

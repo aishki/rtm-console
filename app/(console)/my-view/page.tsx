@@ -1,7 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { NO_LEADER, agentMetrics, clock, fmt, splitAgent } from "@/lib/engine/format";
+import { NO_LEADER, agentMetrics, clock, splitAgent } from "@/lib/engine/format";
+import { withTimes } from "@/lib/agentTimes";
+import { Elapsed } from "@/components/ui/Elapsed";
 import { STATES, type Target, myTargets } from "@/lib/engine/rules";
 import { api, attempt } from "@/lib/client/api";
 import { useConsole } from "@/lib/client/store";
@@ -61,7 +63,9 @@ export default function MyViewPage() {
   const rules = useConsole(s => s.rules);
   const leads = useConsole(s => (who ? s.leads[who] : undefined));
   const ledger = useConsole(s => s.ledger);
-  const targets = useMemo(() => (me ? myTargets(me, rules) : []), [me, rules]);
+  // The timers in My targets read the time in state, so they follow the clock.
+  const t = useConsole(s => s.t);
+  const targets = useMemo(() => (me ? myTargets(withTimes(me, t), rules) : []), [me, rules, t]);
   const log = useMemo(() => ledger.slice(0, LOG_SIZE), [ledger]);
 
   const state = me ? STATES[me.state] ?? STATES.avail : null;
@@ -81,7 +85,7 @@ export default function MyViewPage() {
                 <span className="h-3 w-3 rounded-full" style={{ background: state.color }} />{state.label}
                 {me.onHold && <span className="rounded-pill bg-warning-tint px-2 py-px font-ui text-xs font-semibold text-warning-text">Hold</span>}
               </div>
-              <span className="num text-[64px] font-semibold leading-[1.1] tracking-[-0.02em]">{fmt(me.stTime)}</span>
+              <span className="num text-[64px] font-semibold leading-[1.1] tracking-[-0.02em]"><Elapsed since={me.stAt} /></span>
               <div className="num mt-2 flex flex-wrap justify-center gap-4 text-xs text-muted">
                 {metric("AHT", agentMetrics(me).aht)}{metric("Calls", agentMetrics(me).calls)}{metric("Xfr", agentMetrics(me).transfers)}{metric("Short", agentMetrics(me).short)}{metric("Adh", agentMetrics(me).adh)}
               </div>

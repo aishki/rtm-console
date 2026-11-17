@@ -1,10 +1,11 @@
 "use client";
 
 import { create } from "zustand";
+import { mergeAgents } from "@/lib/agentTimes";
 import { alertsFor } from "@/lib/alerts";
 import type { QueueMapRow } from "@/lib/import/queueMap";
 import type { OrgId } from "@/lib/orgs";
-import type { Agent, AgentLeads, FeedKind, Incident, InitMsg, Instance, NudgeEvent, PeopleDirectory, Queue, QueueCounts, ReplayMeta, Rule, StreamMsg, Team, ToastKind, View } from "@/lib/types";
+import type { AgentLeads, AgentView, FeedKind, Incident, InitMsg, Instance, NudgeEvent, PeopleDirectory, Queue, QueueCounts, ReplayMeta, Rule, StreamMsg, Team, ToastKind, View } from "@/lib/types";
 import { alertWhileHidden, syncAlerts } from "./alerts";
 import { devOn } from "./devSettings";
 
@@ -32,7 +33,8 @@ interface ConsoleState {
   replay: ReplayMeta | null;
   queue: Queue | null;
   rules: Rule[];
-  agents: Agent[];
+  /** The viewer's agents. An agent that did not change keeps the same object from tick to tick. */
+  agents: AgentView[];
   /** Every queue's call counts. */
   queues: Record<string, QueueCounts>;
   /** Queue name to the ids of the viewer's agents in it. Kept from the last tick that carried it. */
@@ -100,7 +102,9 @@ function apply(msg: StreamMsg) {
   if (nudge) shownNudge = nudge.n;
   useConsole.setState(s => ({
     status: "ready", t: msg.t, mode: msg.mode, staleFor: msg.staleFor, agentsLoading: msg.agentsLoading ?? false, replay: msg.replay, queue: msg.queue,
-    rules: msg.rules, agents: msg.agents, incidents: msg.incidents, org: msg.org, queues: msg.queues ?? {},
+    // Left out of a tick means unchanged.
+    rules: msg.rules ?? s.rules, incidents: msg.incidents ?? s.incidents, org: msg.org ?? s.org, queues: msg.queues ?? s.queues,
+    agents: msg.agents ?? mergeAgents(s.agents, msg.agentsChanged),
     members: msg.members ?? (init ? {} : s.members), leads: msg.leads ?? (init ? {} : s.leads), unsupervised: msg.unsupervised ?? (init || msg.leads ? 0 : s.unsupervised), severalLobs: msg.severalLobs ?? (init || msg.leads ? 0 : s.severalLobs), viewerName: msg.viewerName ?? null, queueMap: msg.queueMap ?? (init ? [] : s.queueMap),
     ...(init
       ? { view: init.view, people: init.people, feed: init.feed, realNames: init.realNames, genesysOrg: init.genesysOrg ?? null, canSwitchFeed: init.canSwitchFeed, ledger: msg.ledger }

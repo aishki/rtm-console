@@ -2,7 +2,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent } from "react";
 import { NO_LEADER, causeSummary } from "@/lib/engine/format";
-import type { Agent, AgentLeads, Incident } from "@/lib/types";
+import type { AgentLeads, AgentView, Incident } from "@/lib/types";
 import { SearchBox, nameOrIdMatches } from "@/components/ui/SearchBox";
 
 /** Collapsed, the tiles show this many rows; the part-row peeking out at the bottom says there is more to scroll. */
@@ -26,7 +26,7 @@ function measureCap(grid: HTMLElement): number | null {
 }
 
 /** Agents with incident reports: one tile per agent, with why each incident was opened. */
-export function IncidentTiles({ incidents, agents, leads }: { incidents: Incident[]; agents: Agent[]; leads: Record<string, AgentLeads> }) {
+export function IncidentTiles({ incidents, agents, leads }: { incidents: Incident[]; agents: AgentView[]; leads: Record<string, AgentLeads> }) {
   const byAgent = new Map<string, Incident[]>();
   // By uid: two agents with the same name keep separate tiles.
   for (const i of incidents) byAgent.set(i.agentId, [...(byAgent.get(i.agentId) ?? []), i]);

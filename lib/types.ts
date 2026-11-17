@@ -43,6 +43,13 @@ export interface Agent {
   place?: Place;
 }
 
+/**
+ * An agent as the stream sends it to screens. The time in state and on hold count up every second,
+ * so they travel as the engine second each began (`t - stTime`): an agent whose state has not
+ * changed then looks the same from one tick to the next and is not sent again.
+ */
+export type AgentView = Omit<Agent, "stTime" | "holdTime"> & { stAt: number; holdAt: number };
+
 /** A place in the WFM mapping. A Tower-wide place has an empty subTower and lob; a Sub-Tower-wide one an empty lob. */
 export interface Place { tower: string; subTower: string; lob: string }
 
@@ -208,15 +215,25 @@ export interface TickMsg {
   t: number; mode: "live" | "replay"; staleFor: number; replay: ReplayMeta | null;
   /** The agents are the last saved roster, or their states have not all arrived: an Offline agent may not be. */
   agentsLoading: boolean;
-  queue: Queue | null; rules: Rule[]; agents: Agent[]; incidents: Incident[];
-  /** The scoped team/org model. Sent on every snapshot (not just init) so clients that
-   *  connected before the roster loaded still receive it — the Gencloud feed resolves the
-   *  roster asynchronously, after clients have connected. */
-  org: Team[];
+  queue: Queue | null;
+  /**
+   * Fields marked "when changed" are sent on a snapshot and then only when they differ from what
+   * this subscriber last got; left out means unchanged.
+   */
+  /** When changed. */
+  rules?: Rule[];
+  /** Every agent in the viewer's span: on a snapshot, after a roster change, or when the span changes. */
+  agents?: AgentView[];
+  /** Otherwise only the agents that changed since the last tick, matched by `id`. */
+  agentsChanged?: AgentView[];
+  /** When changed. */
+  incidents?: Incident[];
+  /** The scoped team/org model, when changed. The Gencloud feed loads the roster after clients have connected, so it can arrive on any tick. */
+  org?: Team[];
   /** init: the whole scoped ledger (newest first). tick: only changed or new instances. */
   ledger: Instance[];
-  /** Every queue's call counts, same for every viewer: queue numbers are floor-visible to all leaders. */
-  queues: Record<string, QueueCounts>;
+  /** Every queue's call counts, same for every viewer (queue numbers are floor-visible to all leaders). When changed. */
+  queues?: Record<string, QueueCounts>;
   /** Queue name to the ids of the viewer's agents in it. Sent on a snapshot and whenever the roster reloads; otherwise left out. */
   members?: Record<string, number[]>;
   /** Each of the viewer's agents' Team Lead and Manager, by uid. Sent with `members`. */

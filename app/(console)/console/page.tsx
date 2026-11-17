@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { STATES, STATE_IDS, isBreach, strikesOf, thrOf } from "@/lib/engine/rules";
+import { STATES, STATE_IDS, isBreach, isCrit, strikesOf, thrOf } from "@/lib/engine/rules";
+import { withTimes } from "@/lib/agentTimes";
 import { NA } from "@/lib/engine/format";
 import { api, attempt } from "@/lib/client/api";
 import { usePerms } from "@/lib/client/hooks";
@@ -9,9 +10,10 @@ import { useConsole } from "@/lib/client/store";
 import { queueLevels } from "@/lib/queueStats";
 import { autoOpenQueues, expandAllKeys, filterTree, flatten } from "@/lib/gridFilter";
 import { type TreeNode, buildTree } from "@/lib/queueTree";
-import type { Agent, Instance } from "@/lib/types";
+import type { Agent, AgentView, Instance } from "@/lib/types";
 import { PurpleButton } from "@/components/ui/buttons";
 import { type Kpi, KpiTile } from "@/components/ui/primitives";
+import type { BreachLevel } from "@/components/console/AgentCard";
 import { AgentGridToolbar, type GridFilters, type LobGroup, NO_FILTERS, type QuickKey } from "@/components/console/AgentGridToolbar";
 import { IncidentTiles } from "@/components/console/IncidentTiles";
 import { QueueMapDialog } from "@/components/console/QueueMapDialog";
@@ -52,6 +54,13 @@ function useKpis(): Kpi[] {
   }, [queue, rules, agents, replay]);
 }
 
+/** "state" follows the legend's order, On Call first; agents in the same state keep their roster order. */
+const SORTERS: Partial<Record<GridFilters["sortBy"], (x: AgentView, y: AgentView) => number>> = {
+  state: (x, y) => STATE_IDS.indexOf(x.state) - STATE_IDS.indexOf(y.state),
+  // Longest in state first: the earliest start.
+  time: (x, y) => x.stAt - y.stAt, strikes: (x, y) => strikesOf(y) - strikesOf(x), name: (x, y) => x.name.localeCompare(y.name),
+};
+
 /** LOB and queue filter options, one group per LOB (the Unmapped tower is one group). */
 function queueOptions(tree: TreeNode[]) {
   const groups: LobGroup[] = [];
@@ -69,6 +78,8 @@ function AgentGrid() {
   const leads = useConsole(s => s.leads);
   const agents = useConsole(s => s.agents);
   const rules = useConsole(s => s.rules);
+  // Breaches depend on time in state, so they are the one thing here worked out every second.
+  const t = useConsole(s => s.t);
   const loading = useConsole(s => s.agentsLoading);
   const queues = useConsole(s => s.queues);
   const members = useConsole(s => s.members);
@@ -97,7 +108,14 @@ function AgentGrid() {
   const queueGroups = useMemo(() => queueOptions(tree), [tree]);
   const agentsById = useMemo(() => new Map(agents.map(a => [a.id, a])), [agents]);
   // Once per tick, not once per queue membership: the same person sits in many queues.
-  const breaching = useMemo(() => new Set(agents.filter(a => isBreach(a, rules)).map(a => a.id)), [agents, rules]);
+  const breaching = useMemo(() => {
+    const out = new Map<number, Exclude<BreachLevel, null>>();
+    for (const v of agents) {
+      const a = withTimes(v, t);
+      if (isBreach(a, rules)) out.set(a.id, isCrit(a, rules) ? "crit" : "warn");
+    }
+    return out;
+  }, [agents, rules, t]);
   const queueCount = tree.reduce((n, t) => n + t.queues.length, 0);
 
   const qn = filters.q.trim().toLowerCase();
@@ -112,7 +130,7 @@ function AgentGrid() {
   const scoped = !!(filters.states.length || quick.breach || quick.strikes || quick.hold);
   const filtering = scoped || !!qn || !!queueSet;
 
-  const inScope = (a: Agent) => {
+  const inScope = (a: AgentView) => {
     if (filters.states.length && !filters.states.includes(a.state)) return false;
     if (quick.breach && !breaching.has(a.id)) return false;
     if (quick.strikes && !strikesOf(a)) return false;
@@ -120,7 +138,7 @@ function AgentGrid() {
     return true;
   };
   // A person matches on their name or their Team Lead's; queue membership stands in for their home team.
-  const hits = (a: Agent) => a.name.toLowerCase().includes(qn) || (leads[a.uid]?.tl ?? "").toLowerCase().includes(qn);
+  const hits = (a: AgentView) => a.name.toLowerCase().includes(qn) || (leads[a.uid]?.tl ?? "").toLowerCase().includes(qn);
   const view = filtering
     ? filterTree(tree, {
       query: qn, queues: queueSet,
@@ -131,13 +149,11 @@ function AgentGrid() {
   const visible = view?.nodes ?? tree;
   const nodes = flatten(visible);
 
-  // "state" follows the legend's order, On Call first; agents in the same state keep their roster order.
-  const sorters: Partial<Record<GridFilters["sortBy"], (x: Agent, y: Agent) => number>> = {
-    state: (x, y) => STATE_IDS.indexOf(x.state) - STATE_IDS.indexOf(y.state),
-    time: (x, y) => y.stTime - x.stTime, strikes: (x, y) => strikesOf(y) - strikesOf(x), name: (x, y) => x.name.localeCompare(y.name),
-  };
-  const sorter = sorters[filters.sortBy];
-  const order = new Map((sorter ? [...agents].sort(sorter) : agents).map((a, i) => [a.id, i]));
+  const { sortBy } = filters;
+  const order = useMemo(() => {
+    const sorter = SORTERS[sortBy];
+    return new Map((sorter ? [...agents].sort(sorter) : agents).map((a, i) => [a.id, i]));
+  }, [agents, sortBy]);
 
   const prefix = filtering ? "f:" : "";
   const keyOf = (node: TreeNode) => prefix + node.key;
@@ -154,9 +170,9 @@ function AgentGrid() {
     setExpanded(ex => Object.fromEntries(Object.entries(ex).filter(([k]) => !k.startsWith("f:"))));
   };
 
-  const quickCounts: Record<QuickKey, number> = {
+  const quickCounts = useMemo<Record<QuickKey, number>>(() => ({
     breach: breaching.size, strikes: agents.filter(a => strikesOf(a) > 0).length, hold: agents.filter(a => a.onHold).length,
-  };
+  }), [agents, breaching]);
 
   return (
     <div className="panel min-w-0 flex-[1_1_560px]">

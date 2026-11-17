@@ -8,7 +8,7 @@ import type { Team, View } from "@/lib/types";
 import type { Runtime } from "./runtime";
 import { queueMapRev, saveQueueMap } from "./queueMapStore";
 import { memoryStore } from "@/lib/store/memory";
-import { type Since, tickMsg } from "./snapshot";
+import { type Since, initMsg, newSent, tickMsg } from "./snapshot";
 
 const ORG: Team[] = [
   { team: "Team Alpha", tl: "Rina Velasco", mgr: "Ava Santiago", lob: "PAP Intake" },
@@ -71,5 +71,71 @@ describe("tickMsg queue data", () => {
     expect(m.members).toEqual({ "Team Alpha": [0, 1], "Team Bravo": [] });
     const agent = tickMsg(rt, { role: "agent", who: "u-bea" }, null, BATCH);
     expect(agent.members).toEqual({ "Team Alpha": [], "Team Bravo": [2] });
+  });
+});
+
+describe("tickMsg deltas for one connection", () => {
+  /** A connection that has had its snapshot, as the stream route keeps it. */
+  function connected() {
+    const s = setup();
+    const rt = { ...s.rt, feed: { kind: "sim" }, pendingNudge: () => null } as unknown as Runtime;
+    const sent = newSent();
+    const init = initMsg(rt, ADMIN, sent);
+    let since = s.now();
+    /** The next tick's message, as the stream route would send it. */
+    const next = (batch = { toasts: [], nudges: [] }) => { const m = tickMsg(rt, ADMIN, since, batch, sent); since = s.now(); return m; };
+    return { ...s, rt, init, next };
+  }
+
+  it("sends everything on connect, then nothing that has not changed", () => {
+    const { init, engine, next } = connected();
+    expect(init.agents).toHaveLength(3);
+    expect(init.rules).toBeDefined();
+    expect(init.incidents).toBeDefined();
+    expect(init.org).toBeDefined();
+    expect(init.queues).toBeDefined();
+    engine.tick();
+    const m = next();
+    expect(m.agents).toBeUndefined();
+    expect(m.agentsChanged).toBeUndefined();
+    expect(m.rules).toBeUndefined();
+    expect(m.incidents).toBeUndefined();
+    expect(m.org).toBeUndefined();
+    expect(m.queues).toBeUndefined();
+  });
+
+  it("sends only the agent whose state changed, with when it began", () => {
+    const { engine, next } = connected();
+    engine.ingest.onAgentState({ uid: "u-bea", state: "acw" });
+    engine.tick();
+    const m = next();
+    expect(m.agents).toBeUndefined();
+    expect(m.agentsChanged).toHaveLength(1);
+    expect(m.agentsChanged![0]).toMatchObject({ uid: "u-bea", state: "acw", stAt: engine.S.t });
+    expect(m.agentsChanged![0]).not.toHaveProperty("stTime");
+  });
+
+  it("does not resend agents whose start time slipped by a silent second", () => {
+    const { engine, next } = connected();
+    engine.tick(); // the roster load counts as a heartbeat: timers move with the clock
+    expect(next().agentsChanged).toBeUndefined();
+    // Then no heartbeat and no states: the engine holds every timer while the clock moves on.
+    engine.tick();
+    expect(next().agentsChanged).toBeUndefined();
+    engine.tick();
+    expect(next().agentsChanged).toHaveLength(3);
+  });
+
+  it("sends a rule change once", () => {
+    const { engine, next } = connected();
+    engine.S.rules = engine.S.rules.map(r => (r.id === "acw" ? { ...r, thr: r.thr + 30 } : r));
+    expect(next().rules).toBeDefined();
+    expect(next().rules).toBeUndefined();
+  });
+
+  it("sends the whole list again after the roster reloads", () => {
+    const { engine, next } = connected();
+    engine.ingest.onRoster({ org: ORG, agents: AGENTS, people: teamLines(ORG, AGENTS, "") });
+    expect(next().agents).toHaveLength(3);
   });
 });
