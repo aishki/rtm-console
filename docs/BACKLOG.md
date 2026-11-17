@@ -9,8 +9,8 @@ Related: [README](../README.md) (code layout, API reference, backend task list) 
 - **Live on CGSPH** (rtm.teamcgs.io), on `main` at b672e32 since 9 November 2026: the five screens, the rules engine, the live Genesys floor and PostgreSQL storage. All 24 tables are in production and filling from the live floor (checked in pgAdmin on 9 November).
 - **Saved and carried over a restart:** rules and rule overrides, people, queues and the WFM mapping, shifts, call-outs, strikes, incidents (with owner, notes and closing note), desktop-alert subscriptions and deliveries, the audit trail, and today's raw Genesys events.
 - **Tests:** 309 (285 unit, 24 PostgreSQL integration). Typecheck and lint pass.
-- **On branch `feat/ui-multiselect-search` (not merged yet):** multi-pick LOB and queue filters on the agent grid; agent name or ID search on Agents with incident reports, the investigation register and the Instance Ledger; multi-pick queue filters on the register and the ledger, whose filters now sit in the table panel. AHT and adherence show **N/A** instead of the old 420s and 96% defaults, and an Offline agent with no calls today shows N/A for every number (items 9 and 30).
-- **Pull requests merged:** up to #54. `main` is the only branch.
+- **Merged 10 Nov 2026 (PR #55), not yet redeployed:** multi-pick LOB and queue filters on the agent grid; agent name or ID search on Agents with incident reports, the investigation register and the Instance Ledger; multi-pick queue filters on the register and the ledger, whose filters now sit in the table panel. AHT and adherence show **N/A** instead of the old 420s and 96% defaults, and an Offline agent with no calls today shows N/A for every number (items 9 and 30).
+- **Pull requests merged:** up to #55. `main` is the only branch.
 - **Not built:** sign-in (item 2, on hold), the incident-report form (item 7), history screens (item 28), and the Genesys parts that need conversation and adherence data (items 9 and 10).
 
 ## 1. Before a wider rollout

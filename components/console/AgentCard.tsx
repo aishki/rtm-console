@@ -1,8 +1,9 @@
 import { memo } from "react";
 import { useConsole } from "@/lib/client/store";
-import { agentMetrics, fmt, splitAgent } from "@/lib/engine/format";
-import { STATES, isBreach, isCrit, strikesOf } from "@/lib/engine/rules";
-import type { Agent, Rule } from "@/lib/types";
+import { agentMetrics, splitAgent } from "@/lib/engine/format";
+import { STATES, strikesOf } from "@/lib/engine/rules";
+import type { AgentView } from "@/lib/types";
+import { Elapsed } from "@/components/ui/Elapsed";
 
 function Name({ name, query }: { name: string; query: string }) {
   const i = query ? name.toLowerCase().indexOf(query) : -1;
@@ -10,16 +11,22 @@ function Name({ name, query }: { name: string; query: string }) {
   return <>{name.slice(0, i)}<mark>{name.slice(i, i + query.length)}</mark>{name.slice(i + query.length)}</>;
 }
 
-interface Props { agent: Agent; rules: Rule[]; /** Lower-cased search text to highlight in the name. */ query: string; showMetrics: boolean }
+/** "crit" or "warn" while the agent breaches a rule (worked out once per tick for the whole grid), else null. */
+export type BreachLevel = "crit" | "warn" | null;
+
+interface Props { agent: AgentView; breach: BreachLevel; /** Lower-cased search text to highlight in the name. */ query: string; showMetrics: boolean }
 
 /** While states load, Offline only means "not heard from yet". */
 const UNKNOWN = { label: "Loading state…", color: "var(--border-hairline)" };
 
-/** One agent on the grid: state, time in state, strikes, and a breach glow. */
-export const AgentCard = memo(function AgentCard({ agent: a, rules, query, showMetrics }: Props) {
+/**
+ * One agent on the grid: state, time in state, strikes, and a breach glow. Memoized: it re-renders when
+ * its agent or breach level changes, while the timers follow the clock by themselves.
+ */
+export const AgentCard = memo(function AgentCard({ agent: a, breach: level, query, showMetrics }: Props) {
   const unknown = useConsole(s => s.agentsLoading) && a.state === "off";
   const s = unknown ? UNKNOWN : STATES[a.state] ?? STATES.avail;
-  const breach = isBreach(a, rules), crit = breach && isCrit(a, rules);
+  const breach = level !== null, crit = level === "crit";
   const strikes = strikesOf(a);
   const m = agentMetrics(a);
   const { who, id } = splitAgent(a.name);
@@ -38,8 +45,8 @@ export const AgentCard = memo(function AgentCard({ agent: a, rules, query, showM
       <div className="flex items-center gap-2">
         <span className="h-[9px] w-[9px] shrink-0 rounded-full" style={{ background: s.color }} />
         <span className={`truncate text-[13px] font-medium ${unknown ? "text-muted" : ""}`}>{s.label}</span>
-        {a.onHold && <span className="rounded-pill bg-warning-tint px-[7px] py-px font-ui text-[11px] font-semibold text-warning-text">Hold {fmt(a.holdTime)}</span>}
-        <span className={`num ml-auto text-[13px] font-semibold ${crit ? "text-error-text" : breach ? "text-warning-text" : "text-ink"}`}>{unknown ? "–" : fmt(a.stTime)}</span>
+        {a.onHold && <span className="rounded-pill bg-warning-tint px-[7px] py-px font-ui text-[11px] font-semibold text-warning-text">Hold <Elapsed since={a.holdAt} /></span>}
+        <span className={`num ml-auto text-[13px] font-semibold ${crit ? "text-error-text" : breach ? "text-warning-text" : "text-ink"}`}>{unknown ? "–" : <Elapsed since={a.stAt} />}</span>
       </div>
       {showMetrics && (
         // Two tidy rows in three columns that line up from card to card: handling on the first row, call quality on the second.

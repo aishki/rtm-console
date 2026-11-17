@@ -385,22 +385,23 @@ mount(h(Demo));`);
 card("AgentCard", "Console", 190, "components/console/AgentCard.tsx", 20, `
 One agent on the floor grid: name and ID, a state dot with its label, time in state, and a strike count. A breach changes the card's ring and fill, yellow for a warning and red for a critical one.
 
-- You provide the \`agent\`, the current \`rules\` (they decide whether the agent is breaching), \`query\` (lower-cased search text to highlight in the name; empty for none) and \`showMetrics\`.
+- You provide the \`agent\` (as the stream sends it, with \`stAt\` and \`holdAt\`), \`breach\` (\`"crit"\`, \`"warn"\` or \`null\`, worked out once per tick for the whole grid), \`query\` (lower-cased search text to highlight in the name; empty for none) and \`showMetrics\`.
+- The time in state and on hold follow the floor clock by themselves (\`Elapsed\`), so the card re-renders only when its agent changes.
 - \`showMetrics\` adds two rows of small figures: AHT, calls, adherence, short calls, transfers. Turn it on for a single team, off for a whole floor.
 - Cards carry no team line; always place them under their team's header, in a grid of \`minmax(190px, 1fr)\` columns.
 `, `
 var A = R.demo.agents;
 mount(grid(190, [
-  h(R.AgentCard, { key: 1, agent: A[0], rules: R.demo.rules, query: '', showMetrics: true }),
-  h(R.AgentCard, { key: 2, agent: A[1], rules: R.demo.rules, query: 'bea', showMetrics: true }),
-  h(R.AgentCard, { key: 3, agent: A[2], rules: R.demo.rules, query: '', showMetrics: true }),
-  h(R.AgentCard, { key: 4, agent: A[4], rules: R.demo.rules, query: '', showMetrics: true })
+  h(R.AgentCard, { key: 1, agent: A[0], breach: R.demo.breachOf(A[0]), query: '', showMetrics: true }),
+  h(R.AgentCard, { key: 2, agent: A[1], breach: R.demo.breachOf(A[1]), query: 'bea', showMetrics: true }),
+  h(R.AgentCard, { key: 3, agent: A[2], breach: R.demo.breachOf(A[2]), query: '', showMetrics: true }),
+  h(R.AgentCard, { key: 4, agent: A[4], breach: R.demo.breachOf(A[4]), query: '', showMetrics: true })
 ]));`);
 
 card("TreeGroup", "Console", 300, "components/console/TreeGroup.tsx", 20, `
 One node of the agent grid's Tower → Sub-tower → LOB → Queue tree. Its row shows the name, a sub-line (queues, agents, how many are breaching), the rolled-up calls in queue, SL, ASA and abandon, and the state mix as counts and a bar. Opened, a parent shows its children and a queue shows its agent cards (100 at most, then "Show all").
 
-- You provide the \`node\` (from \`buildTree\`) and its \`depth\`, \`agentsById\`, \`shownIds\` (the agents to show, id to sort position), \`breaching\` (ids breaching now), the \`queues\` counts and the \`rules\`, plus \`expanded(node)\` and \`onToggle(node)\`.
+- You provide the \`node\` (from \`buildTree\`) and its \`depth\`, \`agentsById\`, \`shownIds\` (the agents to show, id to sort position), \`breaching\` (a map of the ids breaching now to \`"crit"\` or \`"warn"\`), the \`queues\` counts and the \`rules\`, plus \`expanded(node)\` and \`onToggle(node)\`.
 - Prune the tree to the filter before passing it. Pass \`query\` and \`showMetrics\` through to the cards.
 - Towers draw as cards, stacked 10px apart under one \`TreeHeader\`; deeper levels are rows inside, indented 20px a level. Rows drop the mix counts and keep the bar when the panel is narrow.
 `, `
@@ -418,7 +419,7 @@ function Demo() {
   qs.forEach(function (q, i) { counts[q.label] = { waiting: 3 + i * 6, offered: 120, answered: 112, abandoned: 8 - i * 4, answerSec: 112 * 24, slWithin: 96 - i * 20, slCounted: 112 }; });
   var open = function (n) { return ex[0][n.key] !== undefined ? ex[0][n.key] : n.level !== 'queue'; };
   return h('div', { style: { display: 'flex', flexDirection: 'column', gap: 10 } }, h(R.TreeHeader), h(R.TreeGroup, {
-    node: node, depth: 0, agentsById: byId, shownIds: shown, breaching: new Set(), queues: counts, rules: rules, query: '', showMetrics: false,
+    node: node, depth: 0, agentsById: byId, shownIds: shown, breaching: new Map(A.flatMap(function (a) { var b = R.demo.breachOf(a); return b ? [[a.id, b]] : []; })), queues: counts, rules: rules, query: '', showMetrics: false,
     expanded: open, onToggle: function (n) { var next = Object.assign({}, ex[0]); next[n.key] = !open(n); ex[1](next); }
   }));
 }

@@ -1,6 +1,7 @@
-import { defaultRules } from "@/lib/engine/rules";
+import { defaultRules, isBreach, isCrit } from "@/lib/engine/rules";
+import { toView, withTimes } from "@/lib/agentTimes";
 import { type People, leadersOf, peopleDirectory } from "@/lib/engine/scope";
-import type { Agent, Incident, Instance, NudgeEvent, Team } from "@/lib/types";
+import type { Agent, AgentView, Incident, Instance, NudgeEvent, Team } from "@/lib/types";
 import { useConsole } from "@/lib/client/store";
 
 // Sample floor for the previews. Every name, ID and number here is invented.
@@ -49,13 +50,23 @@ const incidents: Incident[] = [
 ];
 const nudge: NudgeEvent = { n: 12, agentId: uidOf("Example, Carlo - AH10003"), agent: "Example, Carlo - AH10003", team: A, first: "Carlo", body: "Your member has been on hold for over 2 minutes. If you need more time, check back in with them or tell your TL what's holding things up." };
 
+/** The floor clock in the previews, and the agents as the stream sends them at that second. */
+const T = 36500;
+const views: AgentView[] = agents.map(x => toView(x, T));
+const rules = defaultRules();
+/** How badly a sample agent breaches at T, as the grid works it out: "crit", "warn" or null. */
+const breachOf = (v: AgentView): "crit" | "warn" | null => {
+  const x = withTimes(v, T);
+  return isBreach(x, rules) ? (isCrit(x, rules) ? "crit" : "warn") : null;
+};
+
 /** Sample data, and `use()` to load it into the stand-in store that Navbar, ContextBar, the toasts and the nudge read. */
 export const demo = {
-  org, agents, ledger, incidents, nudge, rules: defaultRules(),
+  org, agents: views, ledger, incidents, nudge, rules, breachOf,
   use(patch: Record<string, unknown> = {}): void {
     useConsole.setState({
-      status: "ready", view: { role: "mgr", who: "demo:mgr" }, viewerName: "Sample, Morgan", leads, org, people: peopleDirectory({ org, agents, people }), t: 36500, mode: "live", feed: "sim",
-      realNames: false, genesysOrg: null, canSwitchFeed: false, staleFor: 0, agentsLoading: false, replay: null, rules: defaultRules(), agents, incidents, ledger, toasts: [], nudge: null, ...patch,
+      status: "ready", view: { role: "mgr", who: "demo:mgr" }, viewerName: "Sample, Morgan", leads, org, people: peopleDirectory({ org, agents, people }), t: T, mode: "live", feed: "sim",
+      realNames: false, genesysOrg: null, canSwitchFeed: false, staleFor: 0, agentsLoading: false, replay: null, rules, agents: views, incidents, ledger, toasts: [], nudge: null, ...patch,
     });
   },
 };

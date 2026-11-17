@@ -4,9 +4,9 @@ import { type CSSProperties, useState } from "react";
 import { queueLevels, rollUp } from "@/lib/queueStats";
 import { rulesAt } from "@/lib/engine/overrides";
 import type { TreeNode } from "@/lib/queueTree";
-import type { Agent, AgentState, QueueCounts, Rule } from "@/lib/types";
+import type { AgentState, AgentView, QueueCounts, Rule } from "@/lib/types";
 import { LVL } from "@/lib/ui/palette";
-import { AgentCard } from "./AgentCard";
+import { AgentCard, type BreachLevel } from "./AgentCard";
 
 const MIX: { label: string; states: AgentState[]; color: string }[] = [
   { label: "On call", states: ["oncall", "outb"], color: "#00BBBA" },
@@ -48,13 +48,13 @@ export function TreeHeader() {
 interface Props {
   node: TreeNode;
   depth: number;
-  agentsById: Map<number, Agent>;
+  agentsById: Map<number, AgentView>;
   /** While filtering, node key → the ids it shows; null shows every agent. */
   shown: Map<string, number[]> | null;
   /** Every agent's position in the chosen sort, by id. */
   order: Map<number, number>;
-  /** Ids of the agents breaching a rule this tick, worked out once for the whole tree. */
-  breaching: Set<number>;
+  /** The agents breaching a rule this tick and how badly, by id, worked out once for the whole tree. */
+  breaching: Map<number, Exclude<BreachLevel, null>>;
   queues: Record<string, QueueCounts>;
   rules: Rule[];
   expanded: (node: TreeNode) => boolean;
@@ -126,7 +126,7 @@ export function TreeGroup(props: Props) {
   const body = open && (isQueue ? (
     <div className="flex flex-col gap-2.5 pb-4 pr-4 pt-1" style={{ paddingLeft: 16 + (depth + 1) * INDENT }}>
       <div className="grid grid-cols-[repeat(auto-fill,minmax(190px,1fr))] gap-2.5">
-        {cards.map(a => <AgentCard key={a.id} agent={a} rules={rules} query={query} showMetrics={showMetrics} />)}
+        {cards.map(a => <AgentCard key={a.id} agent={a} breach={breaching.get(a.id) ?? null} query={query} showMetrics={showMetrics} />)}
       </div>
       {cards.length < listed.length && (
         <button type="button" onClick={() => setShowAll(true)} className="h-8 self-start border-0 bg-transparent px-0 text-[13px] font-semibold text-purple hover:text-purple-hover">

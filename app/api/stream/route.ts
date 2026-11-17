@@ -1,13 +1,16 @@
 import { resolveView } from "@/lib/engine/scope";
 import { authorize } from "@/lib/server/guard";
 import { liveRuntime, onFloorChange } from "@/lib/server/runtime";
-import { initMsg, sinceNow, tickMsg } from "@/lib/server/snapshot";
+import { initMsg, newSent, sinceNow, tickMsg } from "@/lib/server/snapshot";
 import type { StreamMsg } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-/** Server-sent events: one scoped snapshot on connect (and after a data source switch), then a delta every engine second. */
+/**
+ * Server-sent events: one scoped snapshot on connect (and after a data source switch), then every engine
+ * second a delta with only what changed for this connection.
+ */
 export async function GET(req: Request) {
   const ctx = await authorize();
   if (ctx instanceof Response) return ctx;
@@ -22,9 +25,11 @@ export async function GET(req: Request) {
       const attach = () => {
         const view = resolveView(rt.engine.S, ctx.view);
         let since = sinceNow(rt);
-        send(initMsg(rt, view));
+        // What this connection has, so each tick carries only the agents, incidents and counts that changed.
+        const sent = newSent();
+        send(initMsg(rt, view, sent));
         unsubscribe = rt.subscribe(batch => {
-          const msg = tickMsg(rt, view, since, batch);
+          const msg = tickMsg(rt, view, since, batch, sent);
           since = sinceNow(rt);
           try { send(msg); } catch { close(); }
         });

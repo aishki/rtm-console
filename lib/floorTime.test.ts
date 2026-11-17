@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { floorDate, floorMidnight, floorSeconds, wallClock } from "./floorTime";
+import { floorDate, floorMidnight, floorSeconds, floorZoneAbbr, wallClock } from "./floorTime";
 
 const NY = "America/New_York";
 
@@ -33,5 +33,12 @@ describe("floor time", () => {
   it("counts a just-after-midnight moment as the new day", () => {
     expect(floorMidnight(new Date("2026-10-08T04:00:05Z"), NY).toISOString()).toBe("2026-10-08T04:00:00.000Z");
     expect(floorSeconds(new Date("2026-10-08T04:00:05Z"), NY)).toBe(5);
+  });
+});
+
+describe("floorZoneAbbr", () => {
+  it("names US Eastern standard and daylight time", () => {
+    expect(floorZoneAbbr(new Date("2026-01-15T12:00:00Z"), "America/New_York")).toBe("EST");
+    expect(floorZoneAbbr(new Date("2026-07-15T12:00:00Z"), "America/New_York")).toBe("EDT");
   });
 });
