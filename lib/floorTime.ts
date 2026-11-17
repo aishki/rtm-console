@@ -38,3 +38,11 @@ export function floorMidnight(at: Date, timeZone = FLOOR_TIME_ZONE): Date {
   guess = wallUtc - offset(guess);
   return new Date(guess);
 }
+
+const zoneNames = new Map<string, Intl.DateTimeFormat>();
+/** The floor zone's short name at `at`, such as EST or EDT: it follows daylight saving. */
+export function floorZoneAbbr(at: Date, timeZone = FLOOR_TIME_ZONE): string {
+  let f = zoneNames.get(timeZone);
+  if (!f) zoneNames.set(timeZone, (f = new Intl.DateTimeFormat("en-US", { timeZone, timeZoneName: "short" })));
+  return f.formatToParts(at).find(p => p.type === "timeZoneName")?.value ?? "";
+}

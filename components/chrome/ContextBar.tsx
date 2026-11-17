@@ -1,6 +1,7 @@
 "use client";
 
 import { clock } from "@/lib/engine/format";
+import { floorZoneAbbr } from "@/lib/floorTime";
 import { ROLE_LABEL } from "@/lib/engine/rules";
 import { enableAlerts, useAlertState } from "@/lib/client/alerts";
 import { api, attempt } from "@/lib/client/api";
@@ -95,6 +96,7 @@ export function ContextBar() {
       <div className="flex items-baseline gap-2">
         <span className="text-[13px] text-muted">Shift clock</span>
         <span className="num text-base font-semibold">{ready ? clock(t) : "--:--:--"}</span>
+        <span className="text-[13px] font-semibold text-muted" title="US Eastern time">{floorZoneAbbr(new Date(), "America/New_York")}</span>
       </div>
     </div>
   );
