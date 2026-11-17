@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useDeferredValue, useMemo, useState } from "react";
 import { clock, splitAgent } from "@/lib/engine/format";
 import { api, attempt, download } from "@/lib/client/api";
 import { avgResponse, usePerms } from "@/lib/client/hooks";
@@ -13,7 +13,8 @@ import { type Kpi, KpiTile, PageTitle, StatusPill } from "@/components/ui/primit
 import { queueFilterOptions } from "@/lib/client/queueOptions";
 import { FilterClearIcon } from "@/components/ui/FilterChip";
 import { MultiSelect } from "@/components/ui/MultiSelect";
-import { SearchBox, nameOrIdMatches } from "@/components/ui/SearchBox";
+import { SearchBox } from "@/components/ui/SearchBox";
+import { ledgerMatches, withFilter } from "@/lib/listFilters";
 import { Select, type SelectOption } from "@/components/ui/Select";
 import { Pager, usePaged } from "@/components/ui/Pager";
 
@@ -82,12 +83,11 @@ export default function LedgerPage() {
   const queueMap = useConsole(s => s.queueMap);
   const queueOptions = useMemo(() => queueFilterOptions(ledger.map(r => r.team), queueMap), [ledger, queueMap]);
 
-  const matching = useMemo(
-    () => ledger.filter(r => (!stage || r.stage === stage) && (!queues.length || queues.includes(r.team)) && nameOrIdMatches(r.agent, query)),
-    [ledger, stage, queues, query],
-  );
+  // The box shows every key at once; the rows follow a moment later, so typing never waits on a long ledger.
+  const search = useDeferredValue(query);
+  const matching = useMemo(() => ledger.filter(ledgerMatches({ q: search, queues, stage })), [ledger, stage, queues, search]);
   // A new filter or search starts again at the first page.
-  const { rows, pager } = usePaged(matching, 50, `${stage}|${queues.join(",")}|${query.trim()}`);
+  const { rows, pager } = usePaged(matching, 50, `${stage}|${queues.join(",")}|${search.trim()}`);
   const filtering = !!(stage || queues.length || query.trim());
   const { kpis, byStage } = useMemo(() => {
     const total = ledger.length;
@@ -110,7 +110,12 @@ export default function LedgerPage() {
       <div className="flex flex-wrap items-end gap-4">
         <PageTitle eyebrow="Review" title="Instance ledger" />
         <div className="flex-1" />
-        {perms?.export && <PurpleButton variant="outline" onClick={() => download("/api/export/ledger")}>Export CSV</PurpleButton>}
+        {perms?.export && (
+          // The download holds what the search and filters show.
+          <PurpleButton variant="outline" onClick={() => download(withFilter("/api/export/ledger", { q: query, queues, stage }))}>
+            {filtering ? `Export ${matching.length} filtered` : "Export CSV"}
+          </PurpleButton>
+        )}
         {perms?.ackAll && <PurpleButton onClick={ackAll}>Acknowledge all open</PurpleButton>}
       </div>
       <div className="grid grid-cols-[repeat(auto-fit,minmax(170px,1fr))] gap-4">

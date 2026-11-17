@@ -42,8 +42,5 @@ export function SearchBox({ value, onChange, placeholder, inputRef, slashHint = 
   );
 }
 
-/** True when an agent's Genesys name ("Last, First - AH12345") contains the search, so it matches a name or a Domain ID. */
-export const nameOrIdMatches = (name: string, query: string): boolean => {
-  const q = query.trim().toLowerCase();
-  return !q || name.toLowerCase().includes(q);
-};
+// Lives in lib/listFilters so the server's CSV exports match rows the same way.
+export { nameOrIdMatches } from "@/lib/listFilters";

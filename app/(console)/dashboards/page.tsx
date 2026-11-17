@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useMemo, useRef, useState } from "react";
+import { useDeferredValue, useMemo, useRef, useState } from "react";
 import { clock, splitAgent } from "@/lib/engine/format";
 import { type LeadRow, agentQueues, leadRows } from "@/lib/engine/leadRows";
 import { DISPOSITIONS, PENDING_DISPOSITION, canClose, ownerLabel } from "@/lib/engine/rules";
@@ -19,7 +19,8 @@ import { MorphText } from "@/components/ui/MorphText";
 import { type Kpi, KpiTile, PageTitle, StatusPill } from "@/components/ui/primitives";
 import { queueFilterOptions } from "@/lib/client/queueOptions";
 import { MultiSelect } from "@/components/ui/MultiSelect";
-import { SearchBox, nameOrIdMatches } from "@/components/ui/SearchBox";
+import { SearchBox } from "@/components/ui/SearchBox";
+import { incidentMatches, withFilter } from "@/lib/listFilters";
 import { Select } from "@/components/ui/Select";
 
 type Counts = Record<Stage, number> & { total: number };
@@ -182,12 +183,10 @@ export default function DashboardsPage() {
   const [incQueues, setIncQueues] = useState<string[]>([]);
   const queueMap = useConsole(s => s.queueMap);
   const incQueueOptions = useMemo(() => queueFilterOptions(incidents.map(i => i.team), queueMap), [incidents, queueMap]);
-  const shownIncidents = useMemo(
-    () => incidents.filter(i => (!incQueues.length || incQueues.includes(i.team)) && nameOrIdMatches(i.agent, incQuery)),
-    [incidents, incQueues, incQuery],
-  );
+  const incSearch = useDeferredValue(incQuery);
+  const shownIncidents = useMemo(() => incidents.filter(incidentMatches({ q: incSearch, queues: incQueues })), [incidents, incQueues, incSearch]);
   const incFiltering = !!(incQueues.length || incQuery.trim());
-  const { rows: incidentPage, pager: incidentPager } = usePaged(shownIncidents, 25, `${incQueues.join(",")}|${incQuery.trim()}`);
+  const { rows: incidentPage, pager: incidentPager } = usePaged(shownIncidents, 25, `${incQueues.join(",")}|${incSearch.trim()}`);
   const kpis = useMemo<Kpi[]>(() => {
     const by = (s: Stage) => ledger.filter(r => r.stage === s).length;
     return [
@@ -282,7 +281,11 @@ export default function DashboardsPage() {
             />
           )}
           <SearchBox value={incQuery} onChange={setIncQuery} aria-label="Search the investigation register by agent" placeholder="Search name or ID" className="w-full sm:w-[260px]" height="h-[38px]" />
-          {perms?.export && <PurpleButton variant="outline" onClick={() => download("/api/export/incidents")}>Export incidents CSV</PurpleButton>}
+          {perms?.export && (
+            <PurpleButton variant="outline" onClick={() => download(withFilter("/api/export/incidents", { q: incQuery, queues: incQueues }))}>
+              {incFiltering ? `Export ${shownIncidents.length} filtered` : "Export incidents CSV"}
+            </PurpleButton>
+          )}
           {perms?.mapping && unsupervised > 0 && (
             <PurpleButton variant="outline" title="Agents with no supervisor in Genesys or the CGS directory: their call-outs reach admins only until one is set in Genesys" onClick={() => download("/api/export/no-supervisor")}>
               No supervisor ({unsupervised}) CSV
