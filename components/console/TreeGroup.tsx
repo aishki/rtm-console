@@ -1,11 +1,12 @@
 "use client";
 
-import { type CSSProperties, useState } from "react";
+import type { CSSProperties } from "react";
 import { queueLevels, rollUp } from "@/lib/queueStats";
 import { rulesAt } from "@/lib/engine/overrides";
 import type { TreeNode } from "@/lib/queueTree";
 import type { AgentState, AgentView, QueueCounts, Rule } from "@/lib/types";
 import { LVL } from "@/lib/ui/palette";
+import { Pager, usePaged } from "@/components/ui/Pager";
 import { AgentCard, type BreachLevel } from "./AgentCard";
 
 const MIX: { label: string; states: AgentState[]; color: string }[] = [
@@ -17,8 +18,8 @@ const MIX: { label: string; states: AgentState[]; color: string }[] = [
 ];
 /** State → index into MIX, so a row's mix is one pass over its agents. */
 const BUCKET = Object.fromEntries(MIX.flatMap((m, i) => m.states.map(s => [s, i]))) as Record<AgentState, number>;
-/** An open queue draws this many cards before asking to show the rest. */
-const CARD_LIMIT = 100;
+/** An open queue draws this many cards a page: a queue of hundreds never puts them all on screen at once. */
+const CARDS_PER_PAGE = 60;
 const INDENT = 20;
 const plural = (n: number, word: string) => `${n} ${word}${n !== 1 ? "s" : ""}`;
 
@@ -60,6 +61,8 @@ interface Props {
   expanded: (node: TreeNode) => boolean;
   onToggle: (node: TreeNode) => void;
   query: string;
+  /** Changes whenever the grid's filters, search or sort do: a queue then goes back to its first page. */
+  filterKey: string;
   showMetrics: boolean;
 }
 
@@ -69,8 +72,7 @@ interface Props {
  * are rows inside them. The caller passes a tree already pruned to the filter.
  */
 export function TreeGroup(props: Props) {
-  const { node, depth, agentsById, shown, order, breaching, queues, rules, expanded, onToggle, query, showMetrics } = props;
-  const [showAll, setShowAll] = useState(false);
+  const { node, depth, agentsById, shown, order, breaching, queues, rules, expanded, onToggle, query, filterKey, showMetrics } = props;
   const open = expanded(node);
   const isQueue = node.level === "queue";
 
@@ -98,7 +100,8 @@ export function TreeGroup(props: Props) {
   const listed = isQueue && open
     ? [...(matching ?? node.agentIds)].sort((a, b) => (order.get(a) ?? 0) - (order.get(b) ?? 0)).flatMap(id => agentsById.get(id) ?? [])
     : [];
-  const cards = showAll ? listed : listed.slice(0, CARD_LIMIT);
+  // A new search or filter goes back to the first page.
+  const { rows: cards, pager } = usePaged(listed, CARDS_PER_PAGE, filterKey);
 
   const row = (
     <button
@@ -128,11 +131,7 @@ export function TreeGroup(props: Props) {
       <div className="grid grid-cols-[repeat(auto-fill,minmax(190px,1fr))] gap-2.5">
         {cards.map(a => <AgentCard key={a.id} agent={a} breach={breaching.get(a.id) ?? null} query={query} showMetrics={showMetrics} />)}
       </div>
-      {cards.length < listed.length && (
-        <button type="button" onClick={() => setShowAll(true)} className="h-8 self-start border-0 bg-transparent px-0 text-[13px] font-semibold text-purple hover:text-purple-hover">
-          Show all {listed.length}
-        </button>
-      )}
+      <Pager {...pager} onSize={undefined} noun="agents" />
     </div>
   ) : node.children.map(c => <TreeGroup key={c.key} {...props} node={c} depth={depth + 1} />));
 

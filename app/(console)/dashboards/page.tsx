@@ -14,6 +14,7 @@ import { CsvImportDialog } from "@/components/chrome/CsvImportDialog";
 import { IncidentNotesDialog, type NotesMode } from "@/components/chrome/IncidentNotesDialog";
 import { PurpleButton } from "@/components/ui/buttons";
 import { type Column, DataTable } from "@/components/ui/DataTable";
+import { Pager, usePaged } from "@/components/ui/Pager";
 import { MorphText } from "@/components/ui/MorphText";
 import { type Kpi, KpiTile, PageTitle, StatusPill } from "@/components/ui/primitives";
 import { queueFilterOptions } from "@/lib/client/queueOptions";
@@ -186,6 +187,7 @@ export default function DashboardsPage() {
     [incidents, incQueues, incQuery],
   );
   const incFiltering = !!(incQueues.length || incQuery.trim());
+  const { rows: incidentPage, pager: incidentPager } = usePaged(shownIncidents, 25, `${incQueues.join(",")}|${incQuery.trim()}`);
   const kpis = useMemo<Kpi[]>(() => {
     const by = (s: Stage) => ledger.filter(r => r.stage === s).length;
     return [
@@ -294,10 +296,11 @@ export default function DashboardsPage() {
         </div>
         <div className="overflow-x-auto rounded-b-[20px]">
           <DataTable
-            columns={incidentColumns} rows={shownIncidents} rowKey={i => i.inc}
+            columns={incidentColumns} rows={incidentPage} rowKey={i => i.inc}
             empty={incFiltering ? "No incidents match the search and queue filter." : "No agents currently meet the investigation threshold (3 instances of the same rule in one shift)."}
           />
         </div>
+        <Pager {...incidentPager} noun="incidents" className="justify-end border-t border-pale-purple px-5 py-2.5" />
       </div>
 
       <div className="panel overflow-hidden">
