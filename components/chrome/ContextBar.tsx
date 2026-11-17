@@ -7,6 +7,7 @@ import { enableAlerts, useAlertState } from "@/lib/client/alerts";
 import { api, attempt } from "@/lib/client/api";
 import { usePerms } from "@/lib/client/hooks";
 import { useConsole } from "@/lib/client/store";
+import { useDevSettings } from "@/lib/client/devSettings";
 import { orgOf } from "@/lib/orgs";
 import { PurpleButton } from "@/components/ui/buttons";
 
@@ -57,7 +58,10 @@ export function ContextBar() {
   const org = useConsole(s => s.genesysOrg);
   // The usual cause of a silent Gencloud feed is an expired token; Admins get a shortcut to replace it.
   const gencloudDown = ready && !isReplay && source === "gencloud" && feedDown && view?.role === "admin";
-  const alerts = useAlertState();
+  // The dev bar's switch can mute alerts the browser allows; without the dev bar it is always on.
+  const permission = useAlertState();
+  const desktopOn = useDevSettings(s => s.desktop);
+  const alerts = permission === "granted" && !desktopOn ? "muted" : permission;
   const turnOnAlerts = async () => {
     const state = await enableAlerts();
     if (state === "granted") toast("info", "Desktop alerts are on", "Nudges and escalations will pop up on this computer, even with the browser minimized.");
