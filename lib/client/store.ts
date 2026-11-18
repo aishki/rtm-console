@@ -6,7 +6,7 @@ import { alertsFor } from "@/lib/alerts";
 import type { QueueMapRow } from "@/lib/import/queueMap";
 import type { OrgId } from "@/lib/orgs";
 import type { AgentLeads, AgentView, FeedKind, Incident, InitMsg, Instance, NudgeEvent, PeopleDirectory, Queue, QueueCounts, ReplayMeta, Rule, StreamMsg, Team, ToastKind, View } from "@/lib/types";
-import { alertWhileHidden, syncAlerts } from "./alerts";
+import { alertWhileHidden, pauseAlerts, syncAlerts } from "./alerts";
 import { devOn } from "./devSettings";
 
 export interface ToastItem { id: number; kind: ToastKind; title: string; body: string }
@@ -114,7 +114,9 @@ function apply(msg: StreamMsg) {
     ...(nudge ? { nudge } : null),
   }));
   if (devOn("toasts")) for (const t of msg.toasts) toast(t.kind, t.title, t.body);
-  if (init && devOn("desktop")) void syncAlerts().catch(() => {});
+  // Every connect brings this browser's push subscription in line with the switch: one left over from a build
+  // without the dev bar (where alerts are always on) would otherwise keep pushing after the switch is off.
+  if (init) void (devOn("desktop") ? syncAlerts() : pauseAlerts()).catch(() => {});
   const role = useConsole.getState().view?.role;
   if (role && !init && devOn("desktop")) alertWhileHidden(alertsFor(role, msg.nudges, msg.toasts));
 }
