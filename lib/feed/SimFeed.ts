@@ -1,5 +1,5 @@
 import { rollUp } from "@/lib/queueStats";
-import type { AgentState, AgentStateEvent, Instance, Queue, QueueCounts, RuleId, Team } from "@/lib/types";
+import type { AgentState, AgentStateEvent, Instance, OrgPerson, Queue, QueueCounts, RuleId, Team } from "@/lib/types";
 import type { FeedHandlers, FeedSource } from "./FeedSource";
 import { teamLines } from "./teamLines";
 
@@ -35,8 +35,16 @@ function makeNames(n: number): string[] {
 /** A simulated agent's uid. Never a Genesys ID, so simulated records can't be taken for real people's. */
 export const simUid = (name: string): string => `sim:${name}`;
 
-/** Who sits on the simulated floor. `real`: the names were borrowed from the Gencloud roster. */
-export interface SimSeed { org: Team[]; seats: { name: string; team: string }[]; real: boolean }
+/**
+ * Who sits on the simulated floor. `real`: the names were borrowed from the Gencloud roster.
+ * The demo floor (lib/feed/demoSeed.ts) also gives each seat its uid, the queue membership and the
+ * reporting lines; without them, uids come from the names, queues are the teams and lines come from `org`.
+ */
+export interface SimSeed {
+  org: Team[]; seats: { name: string; team: string; uid?: string }[]; real: boolean;
+  members?: Record<string, string[]>;
+  people?: OrgPerson[];
+}
 
 function sampleSeed(): SimSeed {
   const seats = ORG_DEFAULT.flatMap(t => Array.from({ length: t.size }, () => t.team));
