@@ -12,7 +12,7 @@ export type RuleId =
 export type TabId = "console" | "myview" | "dash" | "rules" | "ledger";
 export type ToastKind = "warn" | "crit" | "esc" | "info";
 /** Which adapter feeds a floor: the real Gencloud feed, the simulator, or a replayed export. */
-export type FeedKind = "gencloud" | "sim" | "csv";
+export type FeedKind = "gencloud" | "sim" | "csv" | "demo";
 /** What the live floor can be switched between. */
 export type FloorSource = Exclude<FeedKind, "csv">;
 

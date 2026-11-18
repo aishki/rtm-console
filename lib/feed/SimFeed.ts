@@ -91,7 +91,8 @@ const INTERVAL_CALLS = 1500;
 /** Chance per second of a backlog spike on the floor, and its size in calls. */
 const SPIKE_CHANCE = 0.004, SPIKE_CALLS = 7;
 
-interface SimAgent { uid: string; name: string; team: string; state: AgentState; stTime: number; onHold: boolean; holdTime: number; rogue: Rogue | null }
+/** `pinned`: held by a demo cue; nothing organic moves the agent until unpinned. */
+interface SimAgent { uid: string; name: string; team: string; state: AgentState; stTime: number; onHold: boolean; holdTime: number; rogue: Rogue | null; pinned?: boolean }
 
 /** What the simulator reads back from the engine: live thresholds and strike counts. */
 export interface SimProbe {
@@ -100,8 +101,13 @@ export interface SimProbe {
   strikes(uid: string, id: RuleId): number;
 }
 
+export interface SimOptions {
+  /** "demo": the demo floor (lib/feed/demoSeed.ts) rather than the simulator. Default "sim". */
+  kind?: "sim" | "demo";
+}
+
 export class SimFeed implements FeedSource {
-  readonly kind = "sim" as const;
+  readonly kind: "sim" | "demo";
   private h: FeedHandlers | null = null;
   private agents: SimAgent[] = [];
   /** The floor's numbers: the roll-up of the teams' queues. Agents read its `cq`. */
@@ -112,9 +118,13 @@ export class SimFeed implements FeedSource {
   private outage = 0;
   /** Engine second at which the feed goes silent for a while. */
   outageAt = -1;
+  /** Demo cues waiting for the next tick: the state to put the agent in, and how long they have been in it. */
+  private cues = new Map<string, { state: AgentState; elapsed: number }>();
 
-  constructor(private readonly probe: SimProbe, private readonly rnd: () => number = Math.random, readonly seed: SimSeed = sampleSeed()) {
-    const teams = seed.org.map(t => t.team), n = teams.length;
+  constructor(private readonly probe: SimProbe, private readonly rnd: () => number = Math.random, readonly seed: SimSeed = sampleSeed(), opts: SimOptions = {}) {
+    this.kind = opts.kind ?? "sim";
+    // One simulated queue per real queue when the seed has the membership, otherwise one per team.
+    const teams = seed.members ? Object.keys(seed.members) : seed.org.map(t => t.team), n = teams.length;
     // One slot per team across the heat range, dealt out in random order.
     const slots = teams.map((_, i) => HEAT_MIN + HEAT_SPAN * ((i + rnd()) / n));
     const heats = teams.map(() => slots.splice(Math.floor(rnd() * slots.length), 1)[0]);
@@ -151,15 +161,15 @@ export class SimFeed implements FeedSource {
     this.h = handlers;
     const { org, seats } = this.seed;
     // Seat names are unique (seedFromRoster skips repeats), so they make the made-up uids.
-    const roster = seats.map(({ name, team }, i) => ({
-      uid: simUid(name), name, team,
+    const roster = seats.map(({ name, team, uid }, i) => ({
+      uid: uid ?? simUid(name), name, team,
       state: (i % 12 === 11 ? "off" : this.rnd() < 0.55 ? "oncall" : "avail") as AgentState,
       stTime: Math.floor(this.rnd() * 200), aht: 380 + Math.floor(this.rnd() * 160),
       calls: Math.floor(this.rnd() * 8), adh: 93 + Math.floor(this.rnd() * 7),
     }));
     this.agents = roster.map(a => ({ uid: a.uid, name: a.name, team: a.team, state: a.state, stTime: a.stTime, onHold: false, holdTime: 0, rogue: null }));
     // Each team's agents report to its Team Lead, and the Team Lead to the team's Manager.
-    handlers.onRoster({ org, agents: roster, people: teamLines(org, roster, "sim:") });
+    handlers.onRoster({ org, agents: roster, people: this.seed.people ?? teamLines(org, roster, "sim:"), ...(this.seed.members && { members: this.seed.members }) });
     return () => { this.h = null; };
   }
 
@@ -167,6 +177,13 @@ export class SimFeed implements FeedSource {
     if (!this.h) return;
     if (this.outage === 0 && t === this.outageAt) this.outage = 44;
     if (this.outage > 0) { this.outage--; return; } // silent: no events, no heartbeat
+    for (const [uid, c] of this.cues) {
+      const a = this.agents.find(x => x.uid === uid);
+      if (!a) continue;
+      a.state = c.state; a.stTime = c.elapsed; a.onHold = false; a.holdTime = 0;
+      this.emit({ uid, state: c.state, elapsed: c.elapsed });
+    }
+    this.cues.clear();
     for (const a of this.agents) this.tickAgent(a);
     this.tickQueue();
     this.maybeRogue(t);
@@ -187,9 +204,28 @@ export class SimFeed implements FeedSource {
   }
   private endCall(a: SimAgent) { this.toState(a, "acw", { transferred: this.rnd() < 0.1 }); }
 
+  /**
+   * Demo cue: hold the agent and put them in `state` as of `elapsed` seconds ago, on the next tick.
+   * An agent already in `state` goes Available first, so a rule they breach fires again.
+   */
+  cue(uid: string, state: AgentState, elapsed: number): void {
+    const a = this.agents.find(x => x.uid === uid);
+    if (!a) return;
+    a.pinned = true; a.rogue = null;
+    if (a.state === state) this.toState(a, "avail");
+    this.cues.set(uid, { state, elapsed });
+  }
+
+  /** Let a cued agent move on their own again. */
+  unpin(uid: string): void {
+    const a = this.agents.find(x => x.uid === uid);
+    if (a) a.pinned = false;
+  }
+
   private tickAgent(a: SimAgent) {
     const thr = this.probe.thr;
     a.stTime++;
+    if (a.pinned) return;
     const r = this.rnd();
     switch (a.state) {
       case "avail": if (r < (this.queue.cq > 6 ? 0.2 : 0.06)) this.toState(a, "oncall"); break;
@@ -250,7 +286,7 @@ export class SimFeed implements FeedSource {
   /** Organic repeat behaviour so the escalation ladder shows up without any demo controls. */
   private maybeRogue(t: number) {
     if (t % 60 !== 0) return;
-    const c = this.agents.filter(a => !a.rogue && a.state !== "off");
+    const c = this.agents.filter(a => !a.rogue && !a.pinned && a.state !== "off");
     if (!c.length || this.agents.filter(a => a.rogue).length >= 4) return;
     const a = c[Math.floor(this.rnd() * c.length)];
     const kind = (["acw", "aux", "break", "short", "off", "hold"] as Rogue[])[Math.floor(this.rnd() * 6)];
