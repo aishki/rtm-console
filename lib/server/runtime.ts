@@ -15,7 +15,9 @@ import { cgsManagerLookup } from "@/lib/directory/cgsManagers";
 import { loadQueueMap, queueMapRev } from "./queueMapStore";
 import type { QueueMapRow } from "@/lib/import/queueMap";
 import { genesysToken } from "./tokenStore";
-import { DEFAULT_ORG, type OrgId, orgOf, queueMapFor, queueNamesFor } from "@/lib/orgs";
+import { DEFAULT_ORG, ORGS, type OrgId, orgOf, queueMapFor, queueNamesFor } from "@/lib/orgs";
+import { demoSeed } from "@/lib/feed/demoSeed";
+import { CUE_OVER, CUE_RULE, type DemoState, SHIFT_START, WARM_SECONDS as DEMO_WARM_SECONDS, pickCueAgent, warmInChunks } from "./demo";
 import { floorDate, floorMidnight, floorSeconds } from "@/lib/floorTime";
 import { recordingEvents } from "@/lib/feed/recordingEvents";
 import { env } from "@/lib/env";
@@ -60,7 +62,7 @@ function mappingFor(org?: OrgId): NonNullable<EngineOptions["mapping"]> {
 }
 const MAX_REPLAYS = 8;
 
-function createRuntime(kind: Runtime["kind"], rules: Rule[], speed: number, engineOpts: Omit<EngineOptions, "rules">, makeFeed: (engine: Engine) => FeedSource, prepare: (engine: Engine, feed: FeedSource) => void, afterTick?: (engine: Engine) => void): Runtime {
+function createRuntime(kind: Runtime["kind"], rules: Rule[], speed: number, engineOpts: Omit<EngineOptions, "rules">, makeFeed: (engine: Engine) => FeedSource, prepare: (engine: Engine, feed: FeedSource) => void, afterTick?: (engine: Engine) => void, paused?: () => boolean): Runtime {
   const listeners = new Set<Listener>();
   const lastNudge = new Map<string, NudgeEvent>();
   let batch: Batch = { toasts: [], nudges: [] };
@@ -76,6 +78,7 @@ function createRuntime(kind: Runtime["kind"], rules: Rule[], speed: number, engi
     for (const fn of listeners) fn(out);
   };
   const step = () => {
+    if (paused?.()) return;
     for (let i = 0; i < speed; i++) { feed.tick?.(engine.S.t + 1); engine.tick(); afterTick?.(engine); }
     publish();
     if (engine.S.replay?.done) clearInterval(timer);
@@ -204,14 +207,44 @@ function warm({ engine, feed }: Runtime) {
   (feed as SimFeed).outageAt = S.t + 240;
 }
 
+/** The demo floor: the real structure with invented people, and the presenter's cue agent. */
+export type DemoRuntime = Runtime & { demo: DemoState };
+
+/**
+ * The demo floor (docs/superpowers/specs/2026-11-19-demo-mode-design.md): every cached org's structure
+ * under invented names, warmed to about three hours into a shift in the background. Its rules are a
+ * copy, nothing it does is saved, and it sends no desktop alerts.
+ */
+function createDemo(rules: Rule[]): DemoRuntime {
+  const seed = demoSeed(ORGS.flatMap(o => loadRoster(o.id) ?? [])) ?? undefined;
+  const demo: DemoState = { cueAgent: null, warming: true };
+  let stopped = false;
+  const rt = createRuntime("live", structuredClone(rules), 1, { deriveAdh: true, mapping: mappingFor() },
+    engine => new SimFeed({ thr: engine.thr, strikes: (uid, id) => engine.S.agents.find(a => a.uid === uid)?.strikes[id] ?? 0 }, Math.random, seed, { kind: "demo" }),
+    engine => engine.reset({ t: SHIFT_START }),
+    engine => simulateReplies(engine.S, engine.comment),
+    () => demo.warming,
+  );
+  void warmInChunks(rt, DEMO_WARM_SECONDS, () => stopped)
+    .catch(err => console.error("Demo floor warm-up failed:", err))
+    .finally(() => {
+      demo.warming = false;
+      demo.cueAgent = pickCueAgent(rt.engine.S);
+      rt.engine.S.rev++;
+      // Open streams get a fresh snapshot of the warmed floor.
+      if (!stopped) for (const fn of [...registry.watchers]) fn();
+    });
+  return { ...rt, demo, stop() { stopped = true; rt.stop(); } };
+}
+
 interface Registry {
   rules: Rule[];
   /** Which floor everyone is looking at: a Genesys org's, or the simulator. */
   source: FloorSource;
   /** The org Gencloud shows. Kept while the simulator is on. */
   org: OrgId;
-  /** The simulator, while it is on. */
-  floors: { sim?: Runtime };
+  /** The simulator or the demo floor, while it is on. */
+  floors: { sim?: Runtime; demo?: DemoRuntime };
   /** Each org's floor, from its first use on. One that is not on screen keeps running. */
   orgs: Partial<Record<OrgId, Runtime>>;
   replays: Map<string, Runtime>;
@@ -237,7 +270,7 @@ registry.instanceSeq ??= { n: bootLastInstance() };
 const sharedIncidents: IncidentCounter = incidentCounter(registry.incidentSeq);
 
 /** The floor on screen, if it is running. */
-const onScreen = (): Runtime | undefined => (registry.source === "sim" ? registry.floors.sim : registry.orgs[registry.org]);
+const onScreen = (): Runtime | undefined => (registry.source === "gencloud" ? registry.orgs[registry.org] : registry.floors[registry.source]);
 
 /** Real names for the simulator: from the org's running floor, else from the roster it last delivered. */
 function realSeed(): SimSeed | undefined {
@@ -249,9 +282,11 @@ function realSeed(): SimSeed | undefined {
 export function liveRuntime(): Runtime {
   const running = onScreen();
   if (running) return running;
-  const rt = registry.source === "sim"
-    ? (registry.floors.sim = createSim(registry.rules, realSeed()))
+  const rt = registry.source === "sim" ? (registry.floors.sim = createSim(registry.rules, realSeed()))
+    : registry.source === "demo" ? (registry.floors.demo = createDemo(registry.rules))
     : (registry.orgs[registry.org] = createGencloud(registry.rules, registry.org, sharedIncidents, registry.instanceSeq));
+  // The demo floor alerts nobody: its people are invented.
+  if (registry.source === "demo") return rt;
   // Desktop alerts reach people who have no stream open (browser minimized or closed).
   // Only the floor on screen alerts: the other orgs, and Gencloud behind a simulation, keep running quietly.
   // A Genesys floor's alerts are logged; the simulator's call-outs are not saved, so neither are its alerts.
@@ -274,11 +309,34 @@ export function setFloorSource(source: FloorSource, org: OrgId = registry.org, b
   if (source === registry.source && org === registry.org) return liveRuntime();
   store().feedSwitched({ source: registry.source, org: registry.org }, { source, org }, by, new Date());
   if (registry.source === "sim" && source !== "sim") { registry.floors.sim?.stop(); delete registry.floors.sim; }
+  if (registry.source === "demo" && source !== "demo") { registry.floors.demo?.stop(); delete registry.floors.demo; }
   registry.source = source;
   if (org !== registry.org) { registry.org = org; store().activeOrgChanged(org); }
   const rt = liveRuntime();
   for (const fn of [...registry.watchers]) fn();
   return rt;
+}
+
+/** The demo floor, while it is the floor on screen. */
+export const demoFloor = (): DemoRuntime | undefined => (registry.source === "demo" ? registry.floors.demo : undefined);
+
+/**
+ * A presenter's cue on the demo floor. "next": the cue agent goes on a break already past the limit,
+ * so the next Overbreak strike fires (nudge, then team lead, then operations and an incident); nothing
+ * after the third. "reset": a fresh cue agent. Null while there is no warmed demo floor.
+ */
+export function demoCue(action: "next" | "reset"): { cueAgent: string | null; strikes: number } | null {
+  const rt = demoFloor();
+  if (!rt || rt.demo.warming) return null;
+  const S = rt.engine.S, feed = rt.feed as SimFeed;
+  const strikesOf = (uid: string | null) => (uid && S.agents.find(a => a.uid === uid)?.strikes[CUE_RULE]) || 0;
+  if (action === "reset" || !rt.demo.cueAgent) {
+    if (rt.demo.cueAgent) feed.unpin(rt.demo.cueAgent);
+    rt.demo.cueAgent = pickCueAgent(S, rt.demo.cueAgent);
+  } else if (strikesOf(rt.demo.cueAgent) < 3) {
+    feed.cue(rt.demo.cueAgent, "auxb", rt.engine.thr(CUE_RULE) + CUE_OVER);
+  }
+  return { cueAgent: rt.demo.cueAgent, strikes: strikesOf(rt.demo.cueAgent) };
 }
 
 /**
