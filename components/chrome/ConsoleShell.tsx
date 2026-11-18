@@ -11,6 +11,7 @@ import { ContextBar } from "./ContextBar";
 import { DevBar } from "./DevBar";
 import { Navbar } from "./Navbar";
 import { NudgePopup } from "./NudgePopup";
+import { useDemoKeys } from "@/lib/client/demoKeys";
 import { ToastStack } from "./ToastStack";
 
 /** Notes on the left, wrapping as one block; the credit on the right, centred against however many lines the notes take. */
@@ -39,6 +40,7 @@ export function ConsoleShell({ children }: { children: ReactNode }) {
   const router = useRouter();
 
   useEffect(() => { void connect(); return disconnect; }, []);
+  useDemoKeys();
 
   const current = TABS.find(t => pathname === t.href || pathname.startsWith(t.href + "/"))?.id;
   const allowed = !!perms && !!current && perms.tabs.includes(current);

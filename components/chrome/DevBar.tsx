@@ -16,9 +16,12 @@ import { PersonSearch } from "./PersonSearch";
 
 const ROLE_OPTIONS: SelectOption<Role>[] = ROLES.map(([value, label]) => ({ value, label }));
 /** Each Genesys org's live feed, then the simulator. */
-const SOURCES: { org: OrgId | null; label: string; hint: string; dot: string }[] = [
-  ...ORGS.map(o => ({ org: o.id, label: o.name.replace(/^Anthem /, ""), hint: `${o.name} · Genesys ${o.region}`, dot: "var(--turquoise)" })),
-  { org: null, label: "Simulation", hint: "Invented activity", dot: "var(--light-purple)" },
+/** A data source choice: a Genesys org's live feed, the simulator or the demo floor. */
+type Choice = OrgId | "sim" | "demo";
+const SOURCES: { id: Choice; label: string; hint: string; dot: string }[] = [
+  ...ORGS.map(o => ({ id: o.id, label: o.name.replace(/^Anthem /, ""), hint: `${o.name} · Genesys ${o.region}`, dot: "var(--turquoise)" })),
+  { id: "sim", label: "Simulation", hint: "Invented activity", dot: "var(--light-purple)" },
+  { id: "demo", label: "Demo", hint: "For presenting: the real queues and teams, invented people. Keys 1, 2, 3 walk the cue agent up the ladder; 0 picks another.", dot: "var(--light-purple)" },
 ];
 const SWITCHES: { key: DevSwitch; label: string; hint: string }[] = [
   { key: "toasts", label: "Toasts", hint: "Toasts raised by the floor. Toasts from your own clicks still show." },
@@ -80,16 +83,19 @@ function DataSource() {
   const canSwitch = useConsole(s => s.canSwitchFeed);
   const isReplay = useConsole(s => s.mode === "replay");
   const toast = useConsole(s => s.toast);
+  const cueAgent = useConsole(s => s.cueAgent);
   if (!ready || isReplay || source === "csv") return null;
-  const isOn = (org: OrgId | null) => (org ? source === "gencloud" && shown === org : source === "sim");
-  const pick = async (org: OrgId | null) => {
-    if (isOn(org)) return;
-    const res = await attempt(org ? api.setFeed("gencloud", org) : api.setFeed("sim"));
+  const isOn = (id: Choice) => (id === "sim" || id === "demo" ? source === id : source === "gencloud" && shown === id);
+  const pick = async (id: Choice) => {
+    if (isOn(id)) return;
+    const res = await attempt(id === "sim" || id === "demo" ? api.setFeed(id) : api.setFeed("gencloud", id));
     if (!res) return;
     if (res.genesysOrg) {
       const o = orgOf(res.genesysOrg);
-      toast("info", `Live feed: ${o.name}`, `Genesys ${o.region}.${source === "sim" ? " The simulation was cleared." : ""} The first time, agent states take a few minutes to load.`);
-    } else if (res.realNames) toast("info", "Simulation is on", "Team and agent names are real. Every state change, call-out and incident is invented.");
+      const cleared = source === "sim" ? " The simulation was cleared." : source === "demo" ? " The demo floor was cleared." : "";
+      toast("info", `Live feed: ${o.name}`, `Genesys ${o.region}.${cleared} The first time, agent states take a few minutes to load.`);
+    } else if (res.feed === "demo") toast("info", "Demo floor is on", "The queues and teams are real; every person and everything they do is invented. Nothing is saved. It stays on until you switch back.");
+    else if (res.realNames) toast("info", "Simulation is on", "Team and agent names are real. Every state change, call-out and incident is invented.");
     else toast("info", "Simulation is on", "No Genesys roster was available, so the sample teams and names are in use.");
   };
   return (
@@ -100,10 +106,10 @@ function DataSource() {
         className="inline-flex rounded-pill bg-white/10 p-0.5 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.18)]"
       >
         {SOURCES.map(s => {
-          const on = isOn(s.org);
+          const on = isOn(s.id);
           return (
             <button
-              key={s.org ?? "sim"} type="button" role="radio" aria-checked={on} title={s.hint} disabled={!canSwitch && !on} onClick={() => void pick(s.org)}
+              key={s.id} type="button" role="radio" aria-checked={on} title={s.id === "demo" && on && cueAgent ? `${s.hint} Cue agent: ${cueAgent}.` : s.hint} disabled={!canSwitch && !on} onClick={() => void pick(s.id)}
               className={`inline-flex h-6 items-center gap-1.5 rounded-pill px-3 font-semibold transition-colors duration-200 ease-standard disabled:cursor-not-allowed disabled:opacity-50 ${on ? "bg-white text-purple-900" : "text-[#D9D2EE] enabled:hover:bg-white/10"}`}
             >
               <span className="h-[7px] w-[7px] rounded-full" style={{ background: on ? s.dot : "rgba(255,255,255,0.35)" }} />

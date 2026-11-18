@@ -28,12 +28,15 @@ function useFeedPill() {
   const staleFor = useConsole(s => s.staleFor);
   const down = useFeedDown();
   const sim = useConsole(s => s.feed === "sim");
+  const demo = useConsole(s => s.feed === "demo");
   const realNames = useConsole(s => s.realNames);
   const loading = useConsole(s => s.agentsLoading);
   const org = useConsole(s => s.genesysOrg);
   const where = org ? `${orgOf(org).name} · ${orgOf(org).region}` : "Gencloud/NICE API";
   if (status !== "ready") return { bg: "#F5F5F5", fg: "#5C5C6F", dot: "#929299", text: status === "unauthorized" ? "Not signed in" : "Connecting…" };
   if (mode === "replay" && replay) return { bg: "#EBE4FF", fg: "#5009B5", dot: "#5009B5", text: `Data replay · ${replay.agents} agents · ${replay.events} events${replay.done ? " · complete" : ""}` };
+  // The demo floor is never shown as live: its people and activity are invented.
+  if (demo) return { bg: "#EBE4FF", fg: "#5009B5", dot: "#5009B5", text: loading ? "Demo floor · preparing the shift…" : "Demo floor", pulse: loading };
   if (down) return { bg: "#FDF3D7", fg: "#7A5300", dot: "#F2BC35", text: sim ? `Simulation · feed stale ${staleFor}s` : `Gencloud not responding · feed stale ${staleFor}s` };
   if (sim) return { bg: "#EBE4FF", fg: "#5009B5", dot: "#5009B5", text: realNames ? "Simulation · real names, invented activity" : "Simulation · sample floor" };
   if (loading) return { bg: "#D9F5F5", fg: "#028283", dot: "#00BBBA", text: `Live feed · ${where} · loading agent states…`, pulse: true };

@@ -27,6 +27,8 @@ interface ConsoleState {
   /** The Genesys org on screen; null on the simulator and in a replay. */
   genesysOrg: OrgId | null;
   canSwitchFeed: boolean;
+  /** Demo floor, presenter only: the name of the agent the cue keys move. */
+  cueAgent: string | null;
   staleFor: number;
   /** The agents' clock: time in state is `agentT - stAt`. It stands still while the feed is silent. */
   agentT: number;
@@ -74,7 +76,7 @@ function whenSeen(fn: () => void): void {
 }
 
 export const useConsole = create<ConsoleState>((set, get) => ({
-  status: "connecting", view: null, org: [], people: null, t: 0, mode: "live", feed: "gencloud", realNames: false, genesysOrg: null, canSwitchFeed: false, staleFor: 0, agentT: 0, agentsLoading: false, replay: null,
+  status: "connecting", view: null, org: [], people: null, t: 0, mode: "live", feed: "gencloud", realNames: false, genesysOrg: null, canSwitchFeed: false, cueAgent: null, staleFor: 0, agentT: 0, agentsLoading: false, replay: null,
   queue: null, rules: [], agents: [], queues: {}, members: {}, leads: {}, unsupervised: 0, severalLobs: 0, viewerName: null, queueMap: [], incidents: [], ledger: [], toasts: [], nudge: null,
   toast(kind, title, body) {
     const id = ++toastSeq;
@@ -109,7 +111,7 @@ function apply(msg: StreamMsg) {
     agents: msg.agents ?? mergeAgents(s.agents, msg.agentsChanged),
     members: msg.members ?? (init ? {} : s.members), leads: msg.leads ?? (init ? {} : s.leads), unsupervised: msg.unsupervised ?? (init || msg.leads ? 0 : s.unsupervised), severalLobs: msg.severalLobs ?? (init || msg.leads ? 0 : s.severalLobs), viewerName: msg.viewerName ?? null, queueMap: msg.queueMap ?? (init ? [] : s.queueMap),
     ...(init
-      ? { view: init.view, people: init.people, feed: init.feed, realNames: init.realNames, genesysOrg: init.genesysOrg ?? null, canSwitchFeed: init.canSwitchFeed, ledger: msg.ledger }
+      ? { view: init.view, people: init.people, feed: init.feed, realNames: init.realNames, genesysOrg: init.genesysOrg ?? null, canSwitchFeed: init.canSwitchFeed, cueAgent: init.cueAgent ?? null, ledger: msg.ledger }
       : { ledger: mergeLedger(s.ledger, msg.ledger) }),
     ...(nudge ? { nudge } : null),
   }));
