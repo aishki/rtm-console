@@ -262,5 +262,7 @@ export interface InitMsg extends TickMsg {
   genesysOrg: OrgId | null;
   /** The viewer may switch the floor's data source (Admin only). */
   canSwitchFeed: boolean;
+  /** Demo floor, presenter only: the name of the agent the cue keys move. */
+  cueAgent: string | null;
 }
 export type StreamMsg = TickMsg | InitMsg;

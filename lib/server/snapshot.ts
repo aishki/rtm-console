@@ -5,6 +5,7 @@ import { queueMapRev, loadQueueMap } from "./queueMapStore";
 import { SimFeed } from "@/lib/feed/SimFeed";
 import type { Batch, Runtime } from "./runtime";
 import { VIEW_AS } from "./session";
+import { cueAgentName, isDemoPresenter } from "./demo";
 
 /** What a subscriber already has: the ledger revision, the roster it got members from, and the mapping revision. */
 export interface Since { rev: number; rosterRev: number; mapRev: number }
@@ -67,6 +68,9 @@ export function tickMsg(rt: Runtime, view: View, since: Since | null, batch: Bat
   const S = rt.engine.S;
   const replay = S.mode === "replay";
   const leader = view.role !== "agent";
+  // On the demo floor the presenter sees the cue agent's nudges, and only the cue agent's call-outs pop up as toasts.
+  const presenter = isDemoPresenter(rt, PERMS[view.role]);
+  const cued = (agentId: string | null | undefined) => presenter && !!agentId && isDemoPresenter(rt, PERMS[view.role], { agentId });
   const ledger = scopeLedger(S, view, S.ledger);
   const agents = scopeAgents(S, view);
   let json = jsonCache.get(batch);
@@ -98,10 +102,10 @@ export function tickMsg(rt: Runtime, view: View, since: Since | null, batch: Bat
     // Call-out toasts go to the leaders whose span they are in; feed notices go to everyone.
     // A replay only announces its own progress.
     toasts: batch.toasts
-      .filter(e => (replay ? e.kind === "info" : !e.instance || (leader && inScope(S, view, e.instance))))
+      .filter(e => (replay ? e.kind === "info" : !e.instance || (leader && inScope(S, view, e.instance) && (!presenter || cued(e.instance.agentId)))))
       .map(({ kind, title, body, instance }) => ({ kind, title, body, n: instance?.n, team: instance && !instance.isFloor ? instance.team : undefined })),
     // A nudge is private: it goes to the agent it is about and to nobody else.
-    nudges: replay || leader ? [] : batch.nudges.filter(n => n.agentId === view.who),
+    nudges: replay ? [] : presenter ? batch.nudges.filter(n => cued(n.agentId)) : leader ? [] : batch.nudges.filter(n => n.agentId === view.who),
   };
 }
 
@@ -117,5 +121,6 @@ export function initMsg(rt: Runtime, view: View, sent?: Sent): InitMsg {
     ...tickMsg(rt, view, null, { toasts: [], nudges: waiting ? [waiting] : [] }, sent),
     type: "init", view, people: VIEW_AS ? peopleDirectory(S) : null,
     feed: rt.feed.kind, realNames: usesRealNames(rt), genesysOrg: rt.genesysOrg ?? null, canSwitchFeed: PERMS[view.role].feed,
+    cueAgent: isDemoPresenter(rt, PERMS[view.role]) ? cueAgentName(rt) : null,
   };
 }

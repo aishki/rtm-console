@@ -2,7 +2,8 @@ import type { EngineState } from "@/lib/engine/escalation";
 import type { Engine } from "@/lib/engine/engine";
 import type { FeedSource } from "@/lib/feed/FeedSource";
 import { simulateReplies } from "@/lib/feed/SimFeed";
-import type { Instance, RuleId } from "@/lib/types";
+import type { Instance, Perms, RuleId } from "@/lib/types";
+import type { Runtime } from "./runtime";
 
 // The demo floor's pieces that do not need the server: who the presenter's cues move, and the
 // warm-up that makes the floor look a few hours into a shift.
@@ -37,6 +38,22 @@ export function pickCueAgent(S: Pick<EngineState, "agents">, exclude?: string | 
     .sort((a, b) => (size.get(b.team)! - size.get(a.team)!) || a.team.localeCompare(b.team) || a.name.localeCompare(b.name));
   return fits[0]?.uid ?? null;
 }
+
+/**
+ * The presenter on the demo floor: anyone who may switch the floor (Admin) while it is the demo.
+ * With `rec`, only for the cue agent's call-outs: the presenter answers the nudge for them.
+ */
+export function isDemoPresenter(rt: Runtime, perms: Pick<Perms, "feed">, rec?: Pick<Instance, "agentId"> | null): boolean {
+  const demo = (rt as Runtime & { demo?: DemoState }).demo;
+  if (!demo || rt.feed.kind !== "demo" || !perms.feed) return false;
+  return !rec || (!!demo.cueAgent && rec.agentId === demo.cueAgent);
+}
+
+/** The cue agent's name, for the presenter. */
+export const cueAgentName = (rt: Runtime): string | null => {
+  const uid = (rt as Runtime & { demo?: DemoState }).demo?.cueAgent;
+  return (uid && rt.engine.S.agents.find(a => a.uid === uid)?.name) || null;
+};
 
 /** Leaders acknowledge about this share of earlier call-outs during the warm-up. */
 const ACK_SHARE = 0.6;

@@ -1,5 +1,6 @@
 import { authorize, deny } from "@/lib/server/guard";
 import { canAck } from "@/lib/engine/scope";
+import { isDemoPresenter } from "@/lib/server/demo";
 
 /** Acknowledge one call-out: leaders for their span, agents for their own nudges. */
 export async function POST(req: Request, { params }: { params: Promise<{ n: string }> }) {
@@ -9,7 +10,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ n: stri
   const n = Number((await params).n);
   const rec = ctx.S.ledger.find(r => r.n === n);
   // Out-of-span instances are reported as missing so their existence is not revealed.
-  if (!rec || !canAck(ctx.S, ctx.view, rec)) return deny(404, "Instance not found in your span.");
+  if (!rec || !(canAck(ctx.S, ctx.view, rec) || isDemoPresenter(ctx.rt, ctx.perms, rec))) return deny(404, "Instance not found in your span.");
   // ?via=push: from a desktop alert's Acknowledge button.
   const via = new URL(req.url).searchParams.get("via") === "push" ? "push" : "console";
   const instance = ctx.rt.engine.ack(n, ctx.view, via);
