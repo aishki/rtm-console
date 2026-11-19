@@ -21,7 +21,7 @@ export interface FeedHandlers {
  * adapter is behind this: Gencloud or the simulator on the live floor, a CSV during replay.
  */
 export interface FeedSource {
-  readonly kind: "gencloud" | "sim" | "csv";
+  readonly kind: "gencloud" | "sim" | "csv" | "demo";
   /** Start delivering to the handlers. Returns an unsubscribe function. */
   subscribe(handlers: FeedHandlers): () => void;
   /**

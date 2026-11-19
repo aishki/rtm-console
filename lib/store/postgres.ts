@@ -337,7 +337,7 @@ export function postgresStore(db: Kysely<DB>, opts: { foldMs?: number; log?: (ms
       }
       case "feed": {
         await tx.insertInto("audit_event").values({
-          at: e.at, ...actor(e.by), action: "feed.switch", target_type: "feed", target_id: e.to.source === "sim" ? "sim" : e.to.org,
+          at: e.at, ...actor(e.by), action: "feed.switch", target_type: "feed", target_id: e.to.source === "gencloud" ? e.to.org : e.to.source,
           before: JSON.stringify(e.from), after: JSON.stringify(e.to),
         }).execute();
         return;

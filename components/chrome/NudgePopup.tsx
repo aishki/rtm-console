@@ -19,6 +19,8 @@ const RECHECK_MS = 6000;
 export function NudgePopup() {
   const nudge = useConsole(s => s.nudge);
   const role = useConsole(s => s.view?.role);
+  // On the demo floor the presenter sees the cue agent's nudge, as the agent would.
+  const demo = useConsole(s => s.feed === "demo");
   const setNudge = useConsole(s => s.setNudge);
   const toast = useConsole(s => s.toast);
   const [draft, setDraft] = useState({ n: -1, text: "" });
@@ -63,7 +65,7 @@ export function NudgePopup() {
   const acked = useConsole(s => !!s.nudge && s.ledger.some(r => r.n === s.nudge!.n && r.status === "acked"));
   useEffect(() => { if (acked) close(); }, [acked, close]);
 
-  if (!nudge || role !== "agent") return null;
+  if (!nudge || (role !== "agent" && !demo)) return null;
   const text = draft.n === nudge.n ? draft.text : "";
 
   const gotIt = () => { void attempt(api.ack(nudge.n)); close(); };

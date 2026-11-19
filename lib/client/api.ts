@@ -42,8 +42,14 @@ export const api = {
   },
   /** Switch the floor for everyone, to an org's Genesys feed or the simulator. The open stream follows with a fresh snapshot. */
   async setFeed(source: FloorSource, org?: OrgId) {
-    const res = await post<{ feed: FeedKind; genesysOrg: OrgId | null; realNames: boolean }>("/api/feed", { source, org });
+    const res = await post<{ feed: FeedKind; genesysOrg: OrgId | null; realNames: boolean; cueAgent: string | null }>("/api/feed", { source, org });
     useConsole.setState({ nudge: null });
+    return res;
+  },
+  /** Demo floor: move the cue agent to their next strike ("next") or pick a fresh one ("reset"). */
+  async demoCue(action: "next" | "reset") {
+    const res = await post<{ cueAgent: string | null; strikes: number }>("/api/demo/cue", { action });
+    useConsole.setState({ cueAgent: res.cueAgent });
     return res;
   },
   /** Dev "View as": every agent's current state, for the person box. */

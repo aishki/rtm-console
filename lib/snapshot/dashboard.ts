@@ -41,6 +41,7 @@ export interface DashboardSnapshot {
 const SOURCE: Record<FeedKind, { label: string; notice: string }> = {
   gencloud: { label: "Live Genesys", notice: "" },
   sim: { label: "Simulation", notice: "Simulation: every state change, call-out and incident in this snapshot is invented." },
+  demo: { label: "Demo floor", notice: "Demo floor: the queues and teams are real; every person, state change, call-out and incident in this snapshot is invented." },
   csv: { label: "Data replay", notice: "Data replay: these results come from an imported file run through the rules engine, not from the live floor." },
 };
 const UNNAMED: Partial<Record<Role, string>> = { admin: "WFM Admin", senior: "Senior Leader" };

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { rollUp } from "@/lib/queueStats";
+import { createEngine } from "@/lib/engine/engine";
 import type { Instance, Queue, QueueCounts, Roster, Team } from "@/lib/types";
 import { SimFeed, seedFromRoster, simulateReplies } from "./SimFeed";
 
@@ -118,4 +119,85 @@ describe("simulated per-queue numbers", () => {
       expect([seed, ab >= 1 && ab <= 15]).toEqual([seed, true]);
     }
   });
+});
+
+describe("demo floor feed", () => {
+  const seedOf = () => ({
+    org: [{ team: "Q1", tl: "Lead", mgr: "Mgr", lob: "L" }],
+    seats: [{ uid: "demo:1", name: "Cue Person", team: "Q1" }, { uid: "demo:2", name: "Other Person", team: "Q1" }],
+    real: false,
+    members: { Q1: ["demo:1", "demo:2"], Q2: ["demo:2"] },
+    people: [{ uid: "demo:1", name: "Cue Person", supervisor: "demo:lead:1" }, { uid: "demo:2", name: "Other Person", supervisor: "demo:lead:1" }, { uid: "demo:lead:1", name: "Lead", supervisor: null }],
+  });
+  const setup = () => {
+    const engine = createEngine({}, { deriveAdh: true });
+    const feed = new SimFeed({ thr: engine.thr, strikes: (uid, id) => engine.S.agents.find(a => a.uid === uid)?.strikes[id] ?? 0 }, Math.random, seedOf(), { kind: "demo" });
+    engine.reset({ t: 8 * 3600 });
+    feed.subscribe(engine.ingest);
+    const step = (n = 1) => { for (let i = 0; i < n; i++) { feed.tick(engine.S.t + 1); engine.tick(); } };
+    return { engine, feed, step };
+  };
+
+  it("reports itself as the demo and passes the seed's uids, lines and queues through", () => {
+    let roster: Roster | null = null;
+    const feed = new SimFeed({ thr: () => 900, strikes: () => 0 }, Math.random, seedOf(), { kind: "demo" });
+    feed.subscribe({ onRoster: r => { roster = r; }, onAgentState: () => {}, onQueue: () => {}, onHeartbeat: () => {} });
+    expect(feed.kind).toBe("demo");
+    expect(roster!.agents.map(a => a.uid)).toEqual(["demo:1", "demo:2"]);
+    expect(roster!.members).toEqual({ Q1: ["demo:1", "demo:2"], Q2: ["demo:2"] });
+    expect(roster!.people!.map(p => p.uid)).toContain("demo:lead:1");
+  });
+
+  it("keys each queue's counts by the real queue names", () => {
+    let byQueue: Record<string, QueueCounts> | undefined;
+    const feed = new SimFeed({ thr: () => 900, strikes: () => 0 }, Math.random, seedOf(), { kind: "demo" });
+    feed.subscribe({ onRoster: () => {}, onAgentState: () => {}, onQueue: (_q, b) => { byQueue = b; }, onHeartbeat: () => {} });
+    feed.tick(1);
+    expect(Object.keys(byQueue!).sort()).toEqual(["Q1", "Q2"]);
+  });
+
+  it("cue fires a call-out on the next ticks, as a break already past the limit", () => {
+    const { engine, feed, step } = setup();
+    step(2);
+    feed.cue("demo:1", "auxb", engine.thr("ovbrk") + 30);
+    step(2);
+    const rows = engine.S.ledger.filter(r => r.agentId === "demo:1" && r.ruleId === "ovbrk");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ strikes: 1, stage: "nudge" });
+    expect(engine.S.agents.find(a => a.uid === "demo:1")).toMatchObject({ state: "auxb" });
+  });
+
+  it("cue re-arms the rule: three cues walk the ladder to an incident", () => {
+    const { engine, feed, step } = setup();
+    step(2);
+    for (let i = 0; i < 3; i++) { feed.cue("demo:1", "auxb", engine.thr("ovbrk") + 30); step(2); }
+    const rows = engine.S.ledger.filter(r => r.agentId === "demo:1" && r.ruleId === "ovbrk").reverse();
+    expect(rows.map(r => [r.strikes, r.stage])).toEqual([[1, "nudge"], [2, "lead"], [3, "ops"]]);
+    expect(engine.S.incidents.filter(i => i.agentId === "demo:1")).toHaveLength(1);
+  });
+
+  it("holds a cued agent still until unpinned", () => {
+    const { engine, feed, step } = setup();
+    step(1);
+    feed.cue("demo:1", "auxb", 10);
+    step(500);
+    const a = engine.S.agents.find(x => x.uid === "demo:1")!;
+    expect(a.state).toBe("auxb");
+    expect(a.stTime).toBeGreaterThanOrEqual(500);
+  });
+
+  it("keeps short calls rare, so they do not crowd out the cued escalation", () => {
+    const shortCalls = (kind: "sim" | "demo") => {
+      let s = 7;
+      const rnd = () => { s = (s * 1103515245 + 12345) % 2147483648; return s / 2147483648; };
+      const seed = { org: [team("Q1")], seats: Array.from({ length: 500 }, (_, i) => ({ uid: `demo:${i + 1}`, name: `P ${i + 1}`, team: "Q1" })), real: false };
+      const engine = createEngine({}, { deriveAdh: true });
+      const feed = new SimFeed({ thr: engine.thr, strikes: (uid, id) => engine.S.agents.find(a => a.uid === uid)?.strikes[id] ?? 0 }, rnd, seed, { kind });
+      engine.reset({ t: 8 * 3600 });
+      feed.subscribe(engine.ingest);
+      for (let i = 0; i < 2400; i++) { feed.tick(engine.S.t + 1); engine.tick(); }
+      return engine.S.agents.reduce((n, a) => n + a.shortCalls, 0);
+    };
+    expect(shortCalls("demo")).toBeLessThan(shortCalls("sim") / 3);
+  }, 30_000);
 });

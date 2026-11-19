@@ -139,3 +139,25 @@ describe("tickMsg deltas for one connection", () => {
     expect(next().agents).toHaveLength(3);
   });
 });
+
+describe("tickMsg on the demo floor", () => {
+  const nudge = (agentId: string, n: number) => ({ n, agentId, agent: "x", team: "Team Alpha", first: "x", body: "b" });
+  const toast = (agentId: string, n: number) => ({ kind: "warn" as const, title: "t", body: "b", instance: { n, agentId, team: "Team Alpha", isFloor: false } as never });
+  const demoRt = (rt: Runtime) => ({ ...rt, feed: { kind: "demo" }, demo: { cueAgent: "u-amara", warming: false } }) as unknown as Runtime;
+
+  it("shows the presenter the cue agent's nudge and toasts, and nobody else's", () => {
+    const { rt } = setup();
+    const batch = { nudges: [nudge("u-amara", 1), nudge("u-joshua", 2)], toasts: [toast("u-amara", 1), toast("u-joshua", 2)] };
+    const m = tickMsg(demoRt(rt), ADMIN, null, batch);
+    expect(m.nudges.map(n => n.n)).toEqual([1]);
+    expect(m.toasts.map(t => t.n)).toEqual([1]);
+  });
+
+  it("leaves other roles as they are, and the presenter role as before off the demo floor", () => {
+    const { rt } = setup();
+    const batch = { nudges: [nudge("u-amara", 1)], toasts: [toast("u-joshua", 2)] };
+    expect(tickMsg(demoRt(rt), { role: "tl", who: null }, null, batch).nudges).toEqual([]);
+    expect(tickMsg({ ...rt, feed: { kind: "sim" } } as unknown as Runtime, ADMIN, null, batch).nudges).toEqual([]);
+    expect(tickMsg({ ...rt, feed: { kind: "sim" } } as unknown as Runtime, ADMIN, null, batch).toasts.map(t => t.n)).toEqual([2]);
+  });
+});

@@ -1,14 +1,17 @@
 import { authorize, deny, readJson } from "@/lib/server/guard";
 import { canComment } from "@/lib/engine/scope";
+import { isDemoPresenter } from "@/lib/server/demo";
 
 /** Attach the associate's reason to their own call-out: { text, ack? }. */
 export async function POST(req: Request, { params }: { params: Promise<{ n: string }> }) {
   const ctx = await authorize();
   if (ctx instanceof Response) return ctx;
-  if (ctx.view.role !== "agent") return deny(403, "Only the associate can attach a reason to their call-out.");
   const n = Number((await params).n);
   const rec = ctx.S.ledger.find(r => r.n === n);
-  if (!rec || !canComment(ctx.view, rec)) return deny(404, "Instance not found.");
+  // On the demo floor the presenter answers the cue agent's nudge for them.
+  const presenter = isDemoPresenter(ctx.rt, ctx.perms, rec);
+  if (ctx.view.role !== "agent" && !presenter) return deny(403, "Only the associate can attach a reason to their call-out.");
+  if (!rec || !(presenter || canComment(ctx.view, rec))) return deny(404, "Instance not found.");
   const body = await readJson(req);
   const text = typeof body.text === "string" ? body.text.trim() : "";
   if (!text) return deny(400, "Nothing to save.");

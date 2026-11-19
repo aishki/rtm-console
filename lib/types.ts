@@ -12,7 +12,7 @@ export type RuleId =
 export type TabId = "console" | "myview" | "dash" | "rules" | "ledger";
 export type ToastKind = "warn" | "crit" | "esc" | "info";
 /** Which adapter feeds a floor: the real Gencloud feed, the simulator, or a replayed export. */
-export type FeedKind = "gencloud" | "sim" | "csv";
+export type FeedKind = "gencloud" | "sim" | "csv" | "demo";
 /** What the live floor can be switched between. */
 export type FloorSource = Exclude<FeedKind, "csv">;
 
@@ -262,5 +262,7 @@ export interface InitMsg extends TickMsg {
   genesysOrg: OrgId | null;
   /** The viewer may switch the floor's data source (Admin only). */
   canSwitchFeed: boolean;
+  /** Demo floor, presenter only: the name of the agent the cue keys move. */
+  cueAgent: string | null;
 }
 export type StreamMsg = TickMsg | InitMsg;
