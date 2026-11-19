@@ -325,10 +325,15 @@ export const demoFloor = (): DemoRuntime | undefined => (registry.source === "de
  * so the next Overbreak strike fires (nudge, then team lead, then operations and an incident); nothing
  * after the third. "reset": a fresh cue agent. Null while there is no warmed demo floor.
  */
-export function demoCue(action: "next" | "reset"): { cueAgent: string | null; strikes: number } | null {
+export function demoCue(action: "next" | "reset", viewed?: string | null): { cueAgent: string | null; strikes: number } | null {
   const rt = demoFloor();
   if (!rt || rt.demo.warming) return null;
   const S = rt.engine.S, feed = rt.feed as SimFeed;
+  // In an agent's view the cues move the agent on screen, so the nudge pops up right there.
+  if (action === "next" && viewed && viewed !== rt.demo.cueAgent && S.agents.some(a => a.uid === viewed)) {
+    if (rt.demo.cueAgent) feed.unpin(rt.demo.cueAgent);
+    rt.demo.cueAgent = viewed;
+  }
   const strikesOf = (uid: string | null) => (uid && S.agents.find(a => a.uid === uid)?.strikes[CUE_RULE]) || 0;
   if (action === "reset" || !rt.demo.cueAgent) {
     if (rt.demo.cueAgent) feed.unpin(rt.demo.cueAgent);

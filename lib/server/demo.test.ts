@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { createEngine } from "@/lib/engine/engine";
 import { SimFeed } from "@/lib/feed/SimFeed";
-import { CUE_RULE, pickCueAgent, warmInChunks } from "./demo";
+import { CUE_RULE, canCue, pickCueAgent, warmInChunks } from "./demo";
+import type { Runtime } from "./runtime";
 
 const floor = () => {
   const engine = createEngine({}, { deriveAdh: true });
@@ -30,6 +31,16 @@ describe("the cue agent", () => {
 
   it("is nobody on an empty floor", () => {
     expect(pickCueAgent({ agents: [] })).toBeNull();
+  });
+});
+
+describe("who may press the cue keys", () => {
+  const on = (kind: string) => ({ feed: { kind } }) as unknown as Runtime;
+  it("is an Admin, or any view while View as is on, and only on the demo floor", () => {
+    expect(canCue(on("demo"), { feed: true }, false)).toBe(true);
+    expect(canCue(on("demo"), { feed: false }, true)).toBe(true);
+    expect(canCue(on("demo"), { feed: false }, false)).toBe(false);
+    expect(canCue(on("sim"), { feed: true }, true)).toBe(false);
   });
 });
 

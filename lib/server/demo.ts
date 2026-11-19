@@ -49,6 +49,14 @@ export function isDemoPresenter(rt: Runtime, perms: Pick<Perms, "feed">, rec?: P
   return !rec || (!!demo.cueAgent && rec.agentId === demo.cueAgent);
 }
 
+/**
+ * Who may press the cue keys on the demo floor: an Admin, or anyone while "View as" is on (they can
+ * switch to Admin anyway), so the presenter keeps the keys after switching to an agent or a leader.
+ */
+export function canCue(rt: Runtime, perms: Pick<Perms, "feed">, viewAs: boolean): boolean {
+  return rt.feed.kind === "demo" && (perms.feed || viewAs);
+}
+
 /** The cue agent's name, for the presenter. */
 export const cueAgentName = (rt: Runtime): string | null => {
   const uid = (rt as Runtime & { demo?: DemoState }).demo?.cueAgent;

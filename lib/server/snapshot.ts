@@ -5,7 +5,7 @@ import { queueMapRev, loadQueueMap } from "./queueMapStore";
 import { SimFeed } from "@/lib/feed/SimFeed";
 import type { Batch, Runtime } from "./runtime";
 import { VIEW_AS } from "./session";
-import { cueAgentName, isDemoPresenter } from "./demo";
+import { canCue, cueAgentName, isDemoPresenter } from "./demo";
 
 /** What a subscriber already has: the ledger revision, the roster it got members from, and the mapping revision. */
 export interface Since { rev: number; rosterRev: number; mapRev: number }
@@ -121,6 +121,7 @@ export function initMsg(rt: Runtime, view: View, sent?: Sent): InitMsg {
     ...tickMsg(rt, view, null, { toasts: [], nudges: waiting ? [waiting] : [] }, sent),
     type: "init", view, people: VIEW_AS ? peopleDirectory(S) : null,
     feed: rt.feed.kind, realNames: usesRealNames(rt), genesysOrg: rt.genesysOrg ?? null, canSwitchFeed: PERMS[view.role].feed,
-    cueAgent: isDemoPresenter(rt, PERMS[view.role]) ? cueAgentName(rt) : null,
+    cueAgent: canCue(rt, PERMS[view.role], VIEW_AS) ? cueAgentName(rt) : null,
+    canCue: canCue(rt, PERMS[view.role], VIEW_AS),
   };
 }
