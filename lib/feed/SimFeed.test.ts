@@ -185,4 +185,19 @@ describe("demo floor feed", () => {
     expect(a.state).toBe("auxb");
     expect(a.stTime).toBeGreaterThanOrEqual(500);
   });
+
+  it("keeps short calls rare, so they do not crowd out the cued escalation", () => {
+    const shortCalls = (kind: "sim" | "demo") => {
+      let s = 7;
+      const rnd = () => { s = (s * 1103515245 + 12345) % 2147483648; return s / 2147483648; };
+      const seed = { org: [team("Q1")], seats: Array.from({ length: 500 }, (_, i) => ({ uid: `demo:${i + 1}`, name: `P ${i + 1}`, team: "Q1" })), real: false };
+      const engine = createEngine({}, { deriveAdh: true });
+      const feed = new SimFeed({ thr: engine.thr, strikes: (uid, id) => engine.S.agents.find(a => a.uid === uid)?.strikes[id] ?? 0 }, rnd, seed, { kind });
+      engine.reset({ t: 8 * 3600 });
+      feed.subscribe(engine.ingest);
+      for (let i = 0; i < 2400; i++) { feed.tick(engine.S.t + 1); engine.tick(); }
+      return engine.S.agents.reduce((n, a) => n + a.shortCalls, 0);
+    };
+    expect(shortCalls("demo")).toBeLessThan(shortCalls("sim") / 3);
+  }, 30_000);
 });

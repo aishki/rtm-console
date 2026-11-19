@@ -108,6 +108,9 @@ export interface SimOptions {
 
 export class SimFeed implements FeedSource {
   readonly kind: "sim" | "demo";
+  /** Per-tick chance an ordinary call ends early (15-30 s, a short call). The demo floor keeps short calls
+   *  rare so its call-outs are not mostly "Short call ×3" and the presenter's cued escalation stands out. */
+  private readonly earlyEnd: number;
   private h: FeedHandlers | null = null;
   private agents: SimAgent[] = [];
   /** The floor's numbers: the roll-up of the teams' queues. Agents read its `cq`. */
@@ -123,6 +126,7 @@ export class SimFeed implements FeedSource {
 
   constructor(private readonly probe: SimProbe, private readonly rnd: () => number = Math.random, readonly seed: SimSeed = sampleSeed(), opts: SimOptions = {}) {
     this.kind = opts.kind ?? "sim";
+    this.earlyEnd = this.kind === "demo" ? 0.0002 : 0.0018;
     // One simulated queue per real queue when the seed has the membership, otherwise one per team.
     const teams = seed.members ? Object.keys(seed.members) : seed.org.map(t => t.team), n = teams.length;
     // One slot per team across the heat range, dealt out in random order.
@@ -237,7 +241,7 @@ export class SimFeed implements FeedSource {
         } else if (r < (a.rogue === "hold" ? 0.012 : 0.0015)) this.setHold(a, true);
         if (a.rogue === "short") { if (a.stTime > 8 && r < 0.14) this.endCall(a); }
         else if (a.stTime > 120 && r < 0.012 && !a.onHold) this.endCall(a);
-        else if (!a.rogue && a.stTime > 15 && r < 0.0018) this.endCall(a);
+        else if (!a.rogue && a.stTime > 15 && r < this.earlyEnd) this.endCall(a);
         break;
       case "outb": if (a.stTime > 120 && r < 0.02) this.endCall(a); break;
       case "acw":
