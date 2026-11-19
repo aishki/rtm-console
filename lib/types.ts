@@ -264,5 +264,7 @@ export interface InitMsg extends TickMsg {
   canSwitchFeed: boolean;
   /** Demo floor, presenter only: the name of the agent the cue keys move. */
   cueAgent: string | null;
+  /** The demo floor's cue keys work for this viewer: an Admin, or any view while "View as" is on. */
+  canCue: boolean;
 }
 export type StreamMsg = TickMsg | InitMsg;

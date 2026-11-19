@@ -1,8 +1,9 @@
 import type { EngineState } from "@/lib/engine/escalation";
+import { chainAbove } from "@/lib/engine/scope";
 import type { Engine } from "@/lib/engine/engine";
 import type { FeedSource } from "@/lib/feed/FeedSource";
 import { simulateReplies } from "@/lib/feed/SimFeed";
-import type { Instance, Perms, RuleId } from "@/lib/types";
+import type { Instance, Perms, Role, RuleId } from "@/lib/types";
 import type { Runtime } from "./runtime";
 
 // The demo floor's pieces that do not need the server: who the presenter's cues move, and the
@@ -47,6 +48,27 @@ export function isDemoPresenter(rt: Runtime, perms: Pick<Perms, "feed">, rec?: P
   const demo = (rt as Runtime & { demo?: DemoState }).demo;
   if (!demo || rt.feed.kind !== "demo" || !perms.feed) return false;
   return !rec || (!!demo.cueAgent && rec.agentId === demo.cueAgent);
+}
+
+/**
+ * Who may press the cue keys on the demo floor: an Admin, or anyone while "View as" is on (they can
+ * switch to Admin anyway), so the presenter keeps the keys after switching to an agent or a leader.
+ */
+export function canCue(rt: Runtime, perms: Pick<Perms, "feed">, viewAs: boolean): boolean {
+  return rt.feed.kind === "demo" && (perms.feed || viewAs);
+}
+
+/**
+ * On the demo floor, whom a "View as" role switch lands on when no person was picked: the cue agent
+ * for Agent, their Team Lead for Team Lead, their Manager for Manager, so each step of the walk shows
+ * the same story. Null for other roles, off the demo floor, or before there is a cue agent.
+ */
+export function demoViewWho(rt: Runtime, role: Role): string | null {
+  const cue = (rt as Runtime & { demo?: DemoState }).demo?.cueAgent;
+  if (rt.feed.kind !== "demo" || !cue) return null;
+  if (role === "agent") return cue;
+  const chain = chainAbove(rt.engine.S.people, cue);
+  return (role === "tl" ? chain[0] : role === "mgr" ? chain[1] : null) ?? null;
 }
 
 /** The cue agent's name, for the presenter. */

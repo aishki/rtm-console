@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { createEngine } from "@/lib/engine/engine";
 import { SimFeed } from "@/lib/feed/SimFeed";
-import { CUE_RULE, pickCueAgent, warmInChunks } from "./demo";
+import { CUE_RULE, canCue, demoViewWho, pickCueAgent, warmInChunks } from "./demo";
+import type { Runtime } from "./runtime";
 
 const floor = () => {
   const engine = createEngine({}, { deriveAdh: true });
@@ -30,6 +31,31 @@ describe("the cue agent", () => {
 
   it("is nobody on an empty floor", () => {
     expect(pickCueAgent({ agents: [] })).toBeNull();
+  });
+});
+
+describe("who may press the cue keys", () => {
+  const on = (kind: string) => ({ feed: { kind } }) as unknown as Runtime;
+  it("is an Admin, or any view while View as is on, and only on the demo floor", () => {
+    expect(canCue(on("demo"), { feed: true }, false)).toBe(true);
+    expect(canCue(on("demo"), { feed: false }, true)).toBe(true);
+    expect(canCue(on("demo"), { feed: false }, false)).toBe(false);
+    expect(canCue(on("sim"), { feed: true }, true)).toBe(false);
+  });
+});
+
+describe("where a role switch lands on the demo floor", () => {
+  const people = { "demo:1": { name: "A", supervisor: "demo:lead:1" }, "demo:lead:1": { name: "L", supervisor: "demo:lead:2" }, "demo:lead:2": { name: "M", supervisor: null } };
+  const rt = (kind: string, cueAgent: string | null) => ({ feed: { kind }, engine: { S: { people } }, demo: { cueAgent, warming: false } }) as unknown as Runtime;
+  it("follows the cue agent: their own view, their Team Lead, their Manager", () => {
+    expect(demoViewWho(rt("demo", "demo:1"), "agent")).toBe("demo:1");
+    expect(demoViewWho(rt("demo", "demo:1"), "tl")).toBe("demo:lead:1");
+    expect(demoViewWho(rt("demo", "demo:1"), "mgr")).toBe("demo:lead:2");
+    expect(demoViewWho(rt("demo", "demo:1"), "admin")).toBeNull();
+  });
+  it("leaves the default alone off the demo floor or with no cue agent yet", () => {
+    expect(demoViewWho(rt("sim", "demo:1"), "tl")).toBeNull();
+    expect(demoViewWho(rt("demo", null), "tl")).toBeNull();
   });
 });
 

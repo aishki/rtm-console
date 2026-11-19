@@ -8,12 +8,13 @@ import { useConsole } from "./store";
 const TYPING = "input, textarea, select, [contenteditable=''], [contenteditable='true']";
 
 /**
- * The presenter's cue keys on the demo floor (Admin only): 1, 2 or 3 moves the cue agent to their next
- * Overbreak strike (nudge, team lead, operations and an incident); 0 picks a fresh cue agent.
+ * The presenter's cue keys on the demo floor (Admin, or any view while "View as" is on): 1, 2 or 3 moves
+ * the cue agent to their next Overbreak strike (nudge, team lead, operations and an incident); 0 picks a
+ * fresh cue agent. In an agent's view the cue agent is the agent on screen.
  * Off on every other floor, while typing, and with a modifier key held.
  */
 export function useDemoKeys(): void {
-  const on = useConsole(s => s.feed === "demo" && s.canSwitchFeed);
+  const on = useConsole(s => s.feed === "demo" && s.canCue);
   useEffect(() => {
     if (!on) return;
     const onKey = (e: KeyboardEvent) => {
